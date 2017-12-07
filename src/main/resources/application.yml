@@ -1,0 +1,28 @@
+spring.application.name: arcstorage
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/arcstorage
+    username: arcstorage
+    password: vuji61oilo
+    driver-class-name: org.postgresql.Driver
+    name: mainPool
+  jpa:
+    show-sql: false
+    database-platform: org.hibernate.dialect.PostgreSQL9Dialect
+    hibernate:
+      ddl-auto: validate
+      naming-strategy: org.hibernate.cfg.ImprovedNamingStrategy
+      use-new-id-generator-mappings: true
+  http:
+    multipart:
+      maxFileSize: -1
+      maxRequestSize: -1
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+liquibase:
+  changeLog: classpath:/dbchangelog.arcstorage.xml
+  url: jdbc:postgresql://localhost:5432/arcstorage
+  user: arcstorage
+  password: vuji61oilo
+
