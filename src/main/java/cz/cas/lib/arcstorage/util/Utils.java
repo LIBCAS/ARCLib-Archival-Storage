@@ -157,7 +157,7 @@ public class Utils {
         }
     }
 
-    public static boolean isUUID(String id) {
+    public static boolean isUuid(String id) {
         try {
             UUID.fromString(id);
             return true;
@@ -166,7 +166,7 @@ public class Utils {
         }
     }
 
-    public static boolean isMD5(String string) {
+    public static boolean isMd5(String string) {
         if (string.length() != 32)
             return false;
         try {

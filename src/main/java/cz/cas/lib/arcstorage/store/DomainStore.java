@@ -269,6 +269,10 @@ public abstract class DomainStore<T extends DomainObject, Q extends EntityPathBa
         }
     }
 
+    public void deleteAll() {
+        queryFactory.delete(qObject).execute();
+    }
+
     /**
      * Creates QueryDSL query object.
      *

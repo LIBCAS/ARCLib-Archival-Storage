@@ -8,17 +8,17 @@ import java.util.List;
 
 @Getter
 @Setter
-public class StorageStateDto extends BasicStateInfo {
+public class StorageState extends BasicStateInfo {
 
     private StorageType type;
 
-    private List<NodeStateDto> nodes = new ArrayList<>();
+    private List<NodeState> nodes = new ArrayList<>();
 
-    public void addNode(NodeStateDto node) {
+    public void addNode(NodeState node) {
         this.nodes.add(node);
     }
 
-    public StorageStateDto(long capacity, long free, boolean running, StorageType type) {
+    public StorageState(long capacity, long free, boolean running, StorageType type) {
         super(capacity, free, running);
         this.setType(type);
     }

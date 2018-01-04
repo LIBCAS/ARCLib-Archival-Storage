@@ -18,7 +18,7 @@ public class AipXmlStore extends DomainStore<AipXml, QAipXml> {
         QAipXml xml = qObject();
         Integer lastVersion = query().select(xml.version.max()).where(xml.sip.id.eq(sipId)).fetchFirst();
         if (lastVersion == null) {
-            log.warn(String.format("Could not find any XML version of AIP: %s", sipId));
+            log.warn("Could not find any XML version of AIP: " + sipId);
             throw new MissingObject(AipSip.class, sipId);
         }
         return 1 + lastVersion;

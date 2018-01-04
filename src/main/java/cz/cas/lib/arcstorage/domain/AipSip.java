@@ -3,6 +3,7 @@ package cz.cas.lib.arcstorage.domain;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
@@ -14,7 +15,8 @@ import java.util.Comparator;
 import java.util.List;
 
 @Entity
-@Table(name = "arclib_aip_sip")
+@Table(name = "arcstorage_aip_sip")
+@NoArgsConstructor
 /**
  * SIP database entity. Its id is used in API calls and is projected into storage layer.
  */
@@ -36,12 +38,8 @@ public class AipSip extends ArchivalObject {
     @Enumerated(EnumType.STRING)
     private AipState state;
 
-    public AipSip() {
-        super(null, null);
-    }
-
     public AipSip(String id) {
-        super(id, null);
+        this.id = id;
     }
 
     public AipSip(String id, String md5, AipState state) {
@@ -56,7 +54,7 @@ public class AipSip extends ArchivalObject {
         }
     }
 
-    public void addXml(AipXml aipXml) {
+    private void addXml(AipXml aipXml) {
         xmls.add(aipXml);
     }
 
@@ -70,6 +68,6 @@ public class AipSip extends ArchivalObject {
 
     @JsonIgnore
     public AipXml getLatestXml() {
-        return this.xmls.stream().max(Comparator.comparingInt(xml -> xml.getVersion())).get();
+        return this.xmls.stream().max(Comparator.comparingInt(AipXml::getVersion)).get();
     }
 }

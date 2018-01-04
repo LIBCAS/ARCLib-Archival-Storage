@@ -9,7 +9,7 @@ import lombok.Setter;
 @NoArgsConstructor
 @Getter
 @Setter
-public class AipCreationMd5InfoDto {
-    private String sipMd5;
-    private String xmlMd5;
+public class AipCreationChecksumInfo {
+    private Checksum sipChecksum;
+    private Checksum xmlChecksum;
 }

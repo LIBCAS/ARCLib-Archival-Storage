@@ -3,13 +3,12 @@ package cz.cas.lib.arcstorage.domain;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import cz.cas.lib.arcstorage.store.InstantGenerator;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.GenerationTime;
 import org.hibernate.annotations.GeneratorType;
 
-import javax.persistence.Column;
-import javax.persistence.MappedSuperclass;
-import javax.persistence.Transient;
+import javax.persistence.*;
 import java.time.Instant;
 
 /**
@@ -18,6 +17,7 @@ import java.time.Instant;
 @Getter
 @Setter
 @MappedSuperclass
+@NoArgsConstructor
 public abstract class ArchivalObject extends DomainObject {
     @Column(updatable = false, nullable = false)
     @JsonIgnore
