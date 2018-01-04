@@ -1,6 +1,7 @@
 package cz.cas.lib.arcstorage.domain;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import cz.cas.lib.arcstorage.gateway.dto.Checksum;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -28,15 +29,15 @@ public class AipXml extends ArchivalObject {
     @Enumerated(EnumType.STRING)
     private XmlState state;
 
-    public AipXml(String id, String md5, AipSip sip, int version, XmlState state) {
-        super(id, md5);
+    public AipXml(String id, Checksum checksum, AipSip sip, int version, XmlState state) {
+        super(id, checksum);
         this.sip = sip;
         this.version = version;
         this.state = state;
     }
 
-    public AipXml(String md5, AipSip sip, int version, XmlState state) {
-        super(md5);
+    public AipXml(Checksum checksum, AipSip sip, int version, XmlState state) {
+        super(checksum);
         this.sip = sip;
         this.version = version;
         this.state = state;

@@ -2,6 +2,7 @@ package cz.cas.lib.arcstorage.domain;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import cz.cas.lib.arcstorage.gateway.dto.Checksum;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -42,13 +43,13 @@ public class AipSip extends ArchivalObject {
         this.id = id;
     }
 
-    public AipSip(String id, String md5, AipState state) {
-        super(id, md5);
+    public AipSip(String id, Checksum checksum, AipState state) {
+        super(id, checksum);
         this.state = state;
     }
 
-    public AipSip(String id, String md5, AipState state, AipXml... xmls) {
-        this(id, md5, state);
+    public AipSip(String id, Checksum checksum, AipState state, AipXml... xmls) {
+        this(id, checksum, state);
         for (AipXml xml : xmls) {
             addXml(xml);
         }
