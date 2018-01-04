@@ -25,4 +25,8 @@ liquibase:
   url: jdbc:postgresql://localhost:5432/arcstorage
   user: arcstorage
   password: vuji61oilo
+arcstorage:
+  tmp-folder: tmp
+  auth-key: src/main/resources/arcstorage.ppk
+  thread-count: 8
 
