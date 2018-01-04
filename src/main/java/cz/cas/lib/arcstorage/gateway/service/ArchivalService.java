@@ -11,7 +11,7 @@ import cz.cas.lib.arcstorage.gateway.exception.DeletedException;
 import cz.cas.lib.arcstorage.gateway.exception.RollbackedException;
 import cz.cas.lib.arcstorage.gateway.exception.StillProcessingException;
 import cz.cas.lib.arcstorage.gateway.storage.StorageService;
-import cz.cas.lib.arcstorage.gateway.storage.StorageUtils;
+import cz.cas.lib.arcstorage.gateway.storage.shared.StorageUtils;
 import cz.cas.lib.arcstorage.gateway.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.store.StorageConfigStore;
 import lombok.extern.log4j.Log4j;

@@ -1,12 +1,15 @@
-package cz.cas.lib.arcstorage.gateway;
+package cz.cas.lib.arcstorage.gateway.storage;
 
-import cz.cas.lib.arcstorage.gateway.dto.AipCreationMd5InfoDto;
-import cz.cas.lib.arcstorage.gateway.dto.StorageStateDto;
+import cz.cas.lib.arcstorage.domain.AipState;
+import cz.cas.lib.arcstorage.domain.StorageConfig;
+import cz.cas.lib.arcstorage.gateway.dto.*;
+import cz.cas.lib.arcstorage.gateway.storage.exception.StorageException;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Implementation <b>must</b> store files in that way that later it is possible to retrieve:
@@ -19,18 +22,18 @@ import java.util.Map;
  * <li>for XML its version and ID of SIP</li>
  * </ul>
  */
-public interface ArchivalStorageAdapter {
+
+public interface StorageService {
+
+    StorageConfig getStorageConfig();
 
     /**
      * Stores Aip files into storage.
      *
-     * @param sip
-     * @param sipId
-     * @param xml
      * @return Object containing MD5 checksums computed from stored files.
      * @throws IOException
      */
-    AipCreationMd5InfoDto storeAip(InputStream sip, String sipId, InputStream xml) throws IOException;
+    void storeAip(AipRef aipRef, AtomicBoolean rollback) throws StorageException;
 
     /**
      * Retrieves references to Aip files. Caller is responsible for closing retrieved streams.
@@ -45,13 +48,10 @@ public interface ArchivalStorageAdapter {
     /**
      * Stores XML files into storage.
      *
-     * @param sipId
-     * @param version
-     * @param xml
-     * @return MD5 checksum computed from stored file
+     * @return checksum computed from stored file
      * @throws IOException
      */
-    String storeXml(InputStream xml, String sipId, int version) throws IOException;
+    void storeXml(String sipId, XmlFileRef xmlFileRef, AtomicBoolean rollback) throws IOException;
 
     /**
      * Retrieves reference to AipXml file. Caller is responsible for closing retrieved stream.
@@ -67,10 +67,19 @@ public interface ArchivalStorageAdapter {
      * Deletes SIP file from storage. Must not fail if SIP is already deleted.
      *
      * @param id
-     * @param rollback false if the deletion is due to user request, true if it is due to storage/application failure
      * @throws IOException
      */
-    void deleteSip(String id, boolean rollback) throws IOException;
+    void deleteSip(String id) throws IOException;
+
+    /**
+     * Logically removes SIP. Must not fail if SIP is already removed.
+     *
+     * @param id
+     * @throws IOException
+     */
+    void remove(String id) throws IOException;
+
+    void rollbackAip(String sipId) throws StorageException;
 
     /**
      * Deletes XML file from storage. Used only in case of storage/application failure.
@@ -82,25 +91,7 @@ public interface ArchivalStorageAdapter {
      * @param version
      * @throws IOException
      */
-    void deleteXml(String sipId, int version) throws IOException;
-
-    /**
-     * Logically removes SIP. Must not fail if SIP is already removed.
-     *
-     * @param id
-     * @throws IOException
-     */
-    void remove(String id) throws IOException;
-
-    /**
-     * Computes and retrieves MD5 checksums of XML files.
-     *
-     * @param sipId
-     * @param xmlVersions
-     * @return Map with versions of XML as keys and MD5 strings with fixity information as values. If XML file does not exist or is locked (e.g. accessed by other process) value assigned to its ID should be null.
-     * @throws IOException
-     */
-    Map<Integer, String> getXmlsMD5(String sipId, List<Integer> xmlVersions) throws IOException;
+    void rollbackXml(String sipId, int version) throws StorageException;
 
     /**
      * Computes and retrieves MD5 checksum of SIP file.
@@ -109,12 +100,12 @@ public interface ArchivalStorageAdapter {
      * @return MD5 checksum of SIP file or null if file does not exist or is locked (e.g. accessed by other process)
      * @throws IOException
      */
-    String getSipMD5(String sipId) throws IOException;
+    AipStateInfo getAipInfo(String sipId, Checksum sipChecksum, AipState aipState, Map<Integer, Checksum> xmlVersions) throws StorageException;
 
     /**
      * Returns state of currently used storage.
      *
      * @return
      */
-    StorageStateDto getStorageState();
+    StorageState getStorageState();
 }
