@@ -297,6 +297,34 @@ public class Utils {
         }
     }
 
+    public static String strSA(String storageName, String aipId) {
+        return strS(storageName) + strA(aipId);
+    }
+
+    public static String strSX(String storageName, String xmlId) {
+        return strS(storageName) + strX(xmlId);
+    }
+
+    public static String strSF(String storageName, String fileId) {
+        return strS(storageName) + strF(fileId);
+    }
+
+    public static String strA(String aipId) {
+        return "Aip: " + aipId + " ";
+    }
+
+    public static String strF(String fileId) {
+        return "File: " + fileId + " ";
+    }
+
+    public static String strX(String xmlId) {
+        return "Xml: " + xmlId + " ";
+    }
+
+    public static String strS(String storageName) {
+        return "Storage: " + storageName + " ";
+    }
+
     public static String bytesToHexString(byte[] bytes) {
         final StringBuilder builder = new StringBuilder();
         for (byte b : bytes) {
