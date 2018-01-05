@@ -4,22 +4,30 @@ import cz.cas.lib.arcstorage.domain.AipState;
 import cz.cas.lib.arcstorage.domain.ChecksumType;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.gateway.dto.*;
+import cz.cas.lib.arcstorage.gateway.storage.StorageService;
 import cz.cas.lib.arcstorage.gateway.storage.exception.FileCorruptedAfterStoreException;
 import cz.cas.lib.arcstorage.gateway.storage.exception.FileDoesNotExistException;
 import cz.cas.lib.arcstorage.gateway.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.gateway.storage.exception.StorageException;
+import lombok.extern.log4j.Log4j;
 
 import java.io.*;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static cz.cas.lib.arcstorage.gateway.storage.shared.StorageUtils.computeChecksum;
 import static cz.cas.lib.arcstorage.gateway.storage.shared.StorageUtils.toXmlId;
+import static cz.cas.lib.arcstorage.util.Utils.strSF;
+import static cz.cas.lib.arcstorage.util.Utils.strSX;
 
-public class LocalStorageProcessor implements StorageProcessor {
+@Log4j
+public class LocalStorageProcessor implements StorageService {
 
     private StorageConfig storageConfig;
     private String S;
@@ -27,6 +35,11 @@ public class LocalStorageProcessor implements StorageProcessor {
     public LocalStorageProcessor(StorageConfig storageConfig, String separator) {
         this.storageConfig = storageConfig;
         this.S = separator;
+    }
+
+    @Override
+    public StorageConfig getStorageConfig() {
+        throw new UnsupportedOperationException();
     }
 
     @Override
@@ -38,8 +51,70 @@ public class LocalStorageProcessor implements StorageProcessor {
     }
 
     @Override
+    public List<InputStream> getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException {
+        List<InputStream> refs = new ArrayList<>();
+        String fileToOpen = sipId;
+        try {
+            refs.add(new FileInputStream(getSipPath(sipId).resolve(sipId).toFile()));
+            for (int version : xmlVersions) {
+                fileToOpen = toXmlId(sipId, version);
+                refs.add(new FileInputStream(getXmlPath(sipId).resolve(fileToOpen).toFile()));
+            }
+        } catch (FileNotFoundException e) {
+            for (InputStream stream : refs) {
+                try {
+                    stream.close();
+                } catch (IOException ex) {
+                    log.error("could not close stream: " + ex.getMessage());
+                }
+            }
+            throw new FileDoesNotExistException(strSF(storageConfig.getName(), fileToOpen));
+        }
+        return refs;
+    }
+
+    @Override
     public void storeXml(String sipId, XmlFileRef xml, AtomicBoolean rollback) throws StorageException {
         storeFile(getXmlPath(sipId), toXmlId(sipId, xml.getVersion()), xml.getStream(), xml.getChecksum(), rollback);
+    }
+
+    @Override
+    public InputStream getXml(String sipId, int version) throws FileDoesNotExistException {
+        String xmlId = toXmlId(sipId, version);
+        try {
+            return new FileInputStream(getSipPath(sipId).resolve(sipId).toFile());
+        } catch (FileNotFoundException e) {
+            throw new FileDoesNotExistException(strSX(storageConfig.getName(), xmlId));
+        }
+    }
+
+    @Override
+    public void deleteSip(String sipId) throws IOStorageException {
+        Path sipPath = getSipPath(sipId);
+        try {
+            if (Files.notExists(sipPath.resolve(sipId + ".LOCK")))
+                Files.createFile(sipPath.resolve(sipId + ".LOCK"));
+            Files.deleteIfExists(sipPath.resolve(sipId));
+            Files.deleteIfExists(sipPath.resolve(sipId + ".REMOVED"));
+            Files.deleteIfExists(sipPath.resolve(sipId + ".ROLLBACKED"));
+            for (ChecksumType checksumType : ChecksumType.values()) {
+                Files.deleteIfExists(sipPath.resolve(sipId + "." + checksumType));
+            }
+            Files.delete(sipPath.resolve(sipId + ".LOCK"));
+        } catch (IOException ex) {
+            throw new IOStorageException(ex);
+        }
+    }
+
+    @Override
+    public void remove(String sipId) throws IOStorageException {
+        Path filePath = getSipPath(sipId);
+        try {
+            Files.createFile(filePath.resolve(String.format("%s.REMOVED", sipId)));
+        } catch (FileAlreadyExistsException e) {
+        } catch (IOException ex) {
+            throw new IOStorageException(ex);
+        }
     }
 
     @Override
@@ -113,6 +188,11 @@ public class LocalStorageProcessor implements StorageProcessor {
         return info;
     }
 
+    @Override
+    public StorageState getStorageState() {
+        throw new UnsupportedOperationException();
+    }
+
     private void storeFile(Path filePath, String id, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws StorageException {
         try {
             Files.createDirectories(filePath);
@@ -142,7 +222,7 @@ public class LocalStorageProcessor implements StorageProcessor {
             Files.delete(filePath.resolve(id + ".LOCK"));
         } catch (FileNotFoundException e) {
             rollback.set(true);
-            throw new IOStorageException(e);
+            throw new FileDoesNotExistException(e);
         } catch (IOException e) {
             rollback.set(true);
             throw new IOStorageException(e);
@@ -150,10 +230,10 @@ public class LocalStorageProcessor implements StorageProcessor {
     }
 
     private Path getSipPath(String fileName) {
-        return Paths.get(storageConfig.getSipLocation() + S + fileName.substring(0, 2) + S + fileName.substring(2, 4) + S + fileName.substring(4, 6));
+        return Paths.get(storageConfig.getLocation() + S + "sip" + S + fileName.substring(0, 2) + S + fileName.substring(2, 4) + S + fileName.substring(4, 6));
     }
 
     private Path getXmlPath(String fileName) {
-        return Paths.get(storageConfig.getXmlLocation() + S + fileName.substring(0, 2) + S + fileName.substring(2, 4) + S + fileName.substring(4, 6));
+        return Paths.get(storageConfig.getLocation() + S + "xml" + S + fileName.substring(0, 2) + S + fileName.substring(2, 4) + S + fileName.substring(4, 6));
     }
 }

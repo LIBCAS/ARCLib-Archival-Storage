@@ -3,10 +3,9 @@ package cz.cas.lib.arcstorage.gateway.storage.shared;
 import cz.cas.lib.arcstorage.domain.AipState;
 import cz.cas.lib.arcstorage.domain.ChecksumType;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
-import cz.cas.lib.arcstorage.gateway.dto.AipRef;
-import cz.cas.lib.arcstorage.gateway.dto.AipStateInfo;
-import cz.cas.lib.arcstorage.gateway.dto.Checksum;
-import cz.cas.lib.arcstorage.gateway.dto.XmlFileRef;
+import cz.cas.lib.arcstorage.exception.GeneralException;
+import cz.cas.lib.arcstorage.gateway.dto.*;
+import cz.cas.lib.arcstorage.gateway.storage.StorageService;
 import cz.cas.lib.arcstorage.gateway.storage.exception.*;
 import net.schmizz.sshj.SSHClient;
 import net.schmizz.sshj.connection.ConnectionException;
@@ -17,12 +16,13 @@ import net.schmizz.sshj.xfer.InMemorySourceFile;
 import org.apache.log4j.Logger;
 
 import java.io.*;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static cz.cas.lib.arcstorage.gateway.storage.shared.StorageUtils.*;
 
-public class RemoteStorageProcessor implements StorageProcessor {
+public class RemoteStorageProcessor implements StorageService {
 
     private StorageConfig storageConfig;
     private String S;
@@ -30,6 +30,12 @@ public class RemoteStorageProcessor implements StorageProcessor {
     public RemoteStorageProcessor(StorageConfig storageConfig, String separator) {
         this.storageConfig = storageConfig;
         this.S = separator;
+    }
+
+
+    @Override
+    public StorageConfig getStorageConfig() {
+        throw new UnsupportedOperationException();
     }
 
     @Override
@@ -55,6 +61,11 @@ public class RemoteStorageProcessor implements StorageProcessor {
     }
 
     @Override
+    public List<InputStream> getAip(String sipId, Integer... xmlVersions) throws StorageException {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public void storeXml(String sipId, XmlFileRef xml, AtomicBoolean rollback) throws StorageException {
         try (SSHClient ssh = new SSHClient()) {
             ssh.addHostKeyVerifier(new PromiscuousVerifier());
@@ -69,6 +80,54 @@ public class RemoteStorageProcessor implements StorageProcessor {
             throw new StorageConnectionException(e);
         } catch (IOException e) {
             rollback.set(true);
+            throw new SshException(e);
+        }
+    }
+
+    @Override
+    public InputStream getXml(String sipId, int version) throws StorageException {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void deleteSip(String sipId) throws StorageException {
+        String sipPath = getSipPath(sipId);
+        String sipFilePath = sipPath + S + sipId;
+        try (SSHClient ssh = new SSHClient()) {
+            ssh.addHostKeyVerifier(new PromiscuousVerifier());
+            ssh.connect(storageConfig.getHost(), storageConfig.getPort());
+            ssh.authPublickey("root", keyFilePath);
+            try (SFTPClient sftp = ssh.newSFTPClient()) {
+                sftp.put(new InputStreamSource(new ByteArrayInputStream("".getBytes()), sipId + ".LOCK"), sipPath);
+                deleteIfExistsSftp(sftp, sipFilePath);
+                deleteIfExistsSftp(sftp, sipFilePath + ".REMOVED");
+                deleteIfExistsSftp(sftp, sipFilePath + ".ROLLBACKED");
+                for (ChecksumType checksumType : ChecksumType.values()) {
+                    deleteIfExistsSftp(sftp, sipFilePath + "." + checksumType);
+                }
+                sftp.rm(sipFilePath + ".LOCK");
+            }
+        } catch (ConnectionException e) {
+            throw new StorageConnectionException(e);
+        } catch (IOException e) {
+            throw new SshException(e);
+        }
+    }
+
+    @Override
+    public void remove(String sipId) throws StorageException {
+        String sipPath = getSipPath(sipId);
+        String sipFilePath = sipPath + S + sipId;
+        try (SSHClient ssh = new SSHClient()) {
+            ssh.addHostKeyVerifier(new PromiscuousVerifier());
+            ssh.connect(storageConfig.getHost(), storageConfig.getPort());
+            ssh.authPublickey("root", keyFilePath);
+            try (SFTPClient sftp = ssh.newSFTPClient()) {
+                sftp.put(new InputStreamSource(new ByteArrayInputStream("".getBytes()), sipId + ".REMOVED"), sipPath);
+            }
+        } catch (ConnectionException e) {
+            throw new StorageConnectionException(e);
+        } catch (IOException e) {
             throw new SshException(e);
         }
     }
@@ -155,6 +214,7 @@ public class RemoteStorageProcessor implements StorageProcessor {
                     info.setChecksum(null);
                     info.setConsistent(false);
                 }
+
                 for (Integer version : xmlVersions.keySet()) {
                     Checksum dbChecksum = xmlVersions.get(version);
                     Checksum storageFileChecksum = getFileChecksum(sftp, xmlPath + S + toXmlId(sipId, version), dbChecksum.getType());
@@ -170,6 +230,11 @@ public class RemoteStorageProcessor implements StorageProcessor {
         return info;
     }
 
+    @Override
+    public StorageState getStorageState() {
+        throw new UnsupportedOperationException();
+    }
+
     private Checksum getFileChecksum(SFTPClient sftp, String pathToFile, ChecksumType checksumType) throws IOException {
         PipedInputStream in = new PipedInputStream();
         PipedOutputStream out = new PipedOutputStream(in);
@@ -183,27 +248,31 @@ public class RemoteStorageProcessor implements StorageProcessor {
         return computeChecksum(in, checksumType);
     }
 
-    private void storeFile(SFTPClient sftp, String filePath, String id, String S, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws IOException {
-        sftp.mkdirs(filePath);
-        sftp.put(new InputStreamSource(new ByteArrayInputStream("".getBytes()), id + ".LOCK"), filePath);
-        sftp.put(new InputStreamSource(stream, id), filePath);
-        PipedInputStream in = new PipedInputStream();
-        PipedOutputStream out = new PipedOutputStream(in);
-        new Thread(() -> {
-            try {
-                sftp.get(filePath + S + id, new OutputStreamSource(out));
-            } catch (IOException e) {
+    private void storeFile(SFTPClient sftp, String filePath, String id, String S, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws StorageException {
+        try {
+            sftp.mkdirs(filePath);
+            sftp.put(new InputStreamSource(new ByteArrayInputStream("".getBytes()), id + ".LOCK"), filePath);
+            sftp.put(new InputStreamSource(stream, id), filePath);
+            PipedInputStream in = new PipedInputStream();
+            PipedOutputStream out = new PipedOutputStream(in);
+            new Thread(() -> {
+                try {
+                    sftp.get(filePath + S + id, new OutputStreamSource(out));
+                } catch (IOException e) {
+                    rollback.set(true);
+                    throw new GeneralException(new IOStorageException());
+                }
+            }).start();
+            Checksum storageFileChecksum = computeChecksum(in, checksum.getType());
+            if (!checksum.equals(storageFileChecksum)) {
                 rollback.set(true);
-                throw new RuntimeException(new IOStorageException());
+                throw new FileCorruptedAfterStoreException();
             }
-        }).start();
-        Checksum storageFileChecksum = computeChecksum(in, checksum.getType());
-        if (!checksum.equals(storageFileChecksum)) {
-            rollback.set(true);
-            throw new FileCorruptedAfterStoreException();
+            sftp.put(new InputStreamSource(new ByteArrayInputStream(checksum.getHash().getBytes()), id + "." + checksum.getType()), filePath);
+            sftp.rm(filePath + S + id + ".LOCK");
+        } catch (IOException e) {
+            throw new IOStorageException();
         }
-        sftp.put(new InputStreamSource(new ByteArrayInputStream(checksum.getHash().getBytes()), id + "." + checksum.getType()), filePath);
-        sftp.rm(filePath + S + id + ".LOCK");
     }
 
     private void listenForRollbackToKillSession(SSHClient ssh, AtomicBoolean rollback) {
@@ -230,14 +299,14 @@ public class RemoteStorageProcessor implements StorageProcessor {
     }
 
     private String getSipPath(String fileName) {
-        return storageConfig.getSipLocation() + S + fileName.substring(0, 2) + S + fileName.substring(2, 4) + S + fileName.substring(4, 6);
+        return storageConfig.getLocation() + S + "sip" + S + fileName.substring(0, 2) + S + fileName.substring(2, 4) + S + fileName.substring(4, 6);
     }
 
     private String getXmlPath(String fileName) {
-        return storageConfig.getXmlLocation() + S + fileName.substring(0, 2) + S + fileName.substring(2, 4) + S + fileName.substring(4, 6);
+        return storageConfig.getLocation() + S + "xml" + S + fileName.substring(0, 2) + S + fileName.substring(2, 4) + S + fileName.substring(4, 6);
     }
 
-    public static class InputStreamSource extends InMemorySourceFile {
+    private static class InputStreamSource extends InMemorySourceFile {
 
         private String name;
         private InputStream inputStream;
@@ -247,17 +316,17 @@ public class RemoteStorageProcessor implements StorageProcessor {
             this.name = name;
         }
 
-        @Override
+
         public String getName() {
             return name;
         }
 
-        @Override
+
         public long getLength() {
             return 0;
         }
 
-        @Override
+
         public InputStream getInputStream() throws IOException {
             return inputStream;
         }
@@ -271,7 +340,7 @@ public class RemoteStorageProcessor implements StorageProcessor {
             this.outputStream = os;
         }
 
-        @Override
+
         public OutputStream getOutputStream() throws IOException {
             return outputStream;
         }

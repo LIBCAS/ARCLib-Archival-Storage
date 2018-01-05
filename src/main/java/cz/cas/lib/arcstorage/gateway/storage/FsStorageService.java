@@ -2,22 +2,35 @@ package cz.cas.lib.arcstorage.gateway.storage;
 
 import cz.cas.lib.arcstorage.domain.AipState;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
+import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.*;
+import cz.cas.lib.arcstorage.gateway.storage.exception.SshException;
+import cz.cas.lib.arcstorage.gateway.storage.exception.StorageConnectionException;
 import cz.cas.lib.arcstorage.gateway.storage.exception.StorageException;
+import cz.cas.lib.arcstorage.gateway.storage.fs.FsStorageState;
 import cz.cas.lib.arcstorage.gateway.storage.shared.LocalStorageProcessor;
 import cz.cas.lib.arcstorage.gateway.storage.shared.RemoteStorageProcessor;
-import cz.cas.lib.arcstorage.gateway.storage.shared.StorageProcessor;
 import cz.cas.lib.arcstorage.store.Transactional;
 import lombok.extern.log4j.Log4j;
+import net.schmizz.sshj.SSHClient;
+import net.schmizz.sshj.connection.ConnectionException;
+import net.schmizz.sshj.connection.channel.direct.Session;
+import net.schmizz.sshj.transport.verification.PromiscuousVerifier;
+import org.apache.commons.io.IOUtils;
 import org.springframework.boot.json.JsonParser;
 import org.springframework.boot.json.JsonParserFactory;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.Charset;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static cz.cas.lib.arcstorage.gateway.storage.shared.StorageUtils.keyFilePath;
 
 
 /**
@@ -41,12 +54,12 @@ public class FsStorageService implements StorageService {
 
     private StorageConfig storageConfig;
     private JsonParser jsonParser;
-    private StorageProcessor storageProcessor;
+    private StorageService storageProcessor;
 
     public FsStorageService(StorageConfig storageConfig) {
         this.storageConfig = storageConfig;
         jsonParser = JsonParserFactory.getJsonParser();
-        String separator = storageConfig.getSipLocation().startsWith("/") ? "/" : "\\";
+        String separator = storageConfig.getLocation().startsWith("/") ? "/" : "\\";
         if (isLocalhost())
             this.storageProcessor = new LocalStorageProcessor(storageConfig, separator);
         else
@@ -63,7 +76,7 @@ public class FsStorageService implements StorageService {
     }
 
     @Override
-    public void storeXml(String sipId, XmlFileRef xml, AtomicBoolean rollback) throws IOException {
+    public void storeXml(String sipId, XmlFileRef xml, AtomicBoolean rollback) throws StorageException {
         storageProcessor.storeXml(sipId, xml, rollback);
     }
 
@@ -78,18 +91,18 @@ public class FsStorageService implements StorageService {
     }
 
     @Override
-    public List<InputStream> getAip(String sipId, Integer... xmlVersions) throws IOException {
-        throw new UnsupportedOperationException();
+    public List<InputStream> getAip(String sipId, Integer... xmlVersions) throws StorageException {
+        return storageProcessor.getAip(sipId, xmlVersions);
     }
 
     @Override
-    public InputStream getXml(String sipId, int version) throws IOException {
-        throw new UnsupportedOperationException();
+    public InputStream getXml(String sipId, int version) throws StorageException {
+        return storageProcessor.getXml(sipId, version);
     }
 
     @Override
-    public void deleteSip(String sipId) throws IOException {
-        throw new UnsupportedOperationException();
+    public void deleteSip(String sipId) throws StorageException {
+        storageProcessor.deleteSip(sipId);
     }
 
     @Override
@@ -98,14 +111,37 @@ public class FsStorageService implements StorageService {
     }
 
     @Override
-    public void remove(String sipId) throws IOException {
-        throw new UnsupportedOperationException();
+    public void remove(String sipId) throws StorageException {
+        storageProcessor.remove(sipId);
     }
 
     @Override
-    public StorageState getStorageState() {
-        File anchor = new File(".");
-        return new StorageState(anchor.getTotalSpace(), anchor.getFreeSpace(), true, StorageType.FS);
+    public StorageState getStorageState() throws StorageException {
+        if (isLocalhost()) {
+            File anchor = new File(storageConfig.getLocation());
+            long capacity = anchor.getTotalSpace();
+            long free = anchor.getFreeSpace();
+            return new FsStorageState(storageConfig, new SpaceInfo(capacity, capacity - free, free));
+        }
+        String dfResult;
+        try (SSHClient ssh = new SSHClient()) {
+            ssh.addHostKeyVerifier(new PromiscuousVerifier());
+            ssh.connect(storageConfig.getHost(), storageConfig.getPort());
+            ssh.authPublickey("root", keyFilePath);
+            try (Session s = ssh.startSession()) {
+                dfResult = IOUtils.toString(s.exec("df " + storageConfig.getLocation()).getInputStream(), Charset.defaultCharset());
+            }
+        } catch (ConnectionException e) {
+            throw new StorageConnectionException(e);
+        } catch (IOException e) {
+            throw new SshException(e);
+        }
+        Matcher m = Pattern.compile(".+\\d+\\s+(\\d+)\\s+(\\d+)\\s+").matcher(dfResult);
+        if (!m.find())
+            throw new GeneralException("could not parse bytes from df command, cmd result: " + dfResult);
+        long used = Long.parseLong(m.group(1));
+        long free = Long.parseLong(m.group(2));
+        return new FsStorageState(storageConfig, new SpaceInfo(used + free, used, free));
     }
 
     private boolean isLocalhost() {
