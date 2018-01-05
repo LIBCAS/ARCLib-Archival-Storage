@@ -7,10 +7,11 @@ import cz.cas.lib.arcstorage.gateway.dto.Checksum;
 import cz.cas.lib.arcstorage.gateway.storage.FsStorageService;
 import cz.cas.lib.arcstorage.gateway.storage.StorageService;
 import lombok.extern.log4j.Log4j;
-import net.schmizz.sshj.xfer.InMemoryDestFile;
-import net.schmizz.sshj.xfer.InMemorySourceFile;
 
-import java.io.*;
+import java.io.BufferedInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.atomic.AtomicBoolean;

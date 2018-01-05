@@ -4,6 +4,7 @@ import cz.cas.lib.arcstorage.domain.AipSip;
 import cz.cas.lib.arcstorage.domain.AipState;
 import cz.cas.lib.arcstorage.domain.AipXml;
 import cz.cas.lib.arcstorage.domain.XmlState;
+import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.gateway.dto.*;
 import cz.cas.lib.arcstorage.gateway.exception.CantWriteException;
@@ -11,8 +12,8 @@ import cz.cas.lib.arcstorage.gateway.exception.DeletedException;
 import cz.cas.lib.arcstorage.gateway.exception.RollbackedException;
 import cz.cas.lib.arcstorage.gateway.exception.StillProcessingException;
 import cz.cas.lib.arcstorage.gateway.storage.StorageService;
-import cz.cas.lib.arcstorage.gateway.storage.shared.StorageUtils;
 import cz.cas.lib.arcstorage.gateway.storage.exception.StorageException;
+import cz.cas.lib.arcstorage.gateway.storage.shared.StorageUtils;
 import cz.cas.lib.arcstorage.store.StorageConfigStore;
 import lombok.extern.log4j.Log4j;
 import org.springframework.stereotype.Service;
@@ -46,7 +47,7 @@ public class ArchivalService {
      * @throws RollbackedException      if SIP is rollbacked or only one XML is requested and that one is rollbacked
      * @throws StillProcessingException if SIP or some of requested XML is still processing
      */
-    public AipRef get(String sipId, Optional<Boolean> all) throws RollbackedException, StillProcessingException, IOException, DeletedException {
+    public AipRef get(String sipId, Optional<Boolean> all) throws RollbackedException, StillProcessingException, DeletedException, StorageException {
         AipSip sipEntity = archivalDbService.getAip(sipId);
 
         if (sipEntity.getState() == AipState.DELETED)
@@ -68,7 +69,7 @@ public class ArchivalService {
         try {
             StorageService storageService = StorageUtils.createAdapter(storageConfigStore.getByPriority());
             refs = storageService.getAip(sipId, xmls.stream().map(AipXml::getVersion).collect(Collectors.toList()).toArray(new Integer[xmls.size()]));
-        } catch (IOException e) {
+        } catch (StorageException e) {
             log.error("Storage error has occurred during retrieval process of AIP: " + sipId);
             throw e;
         }
@@ -93,7 +94,7 @@ public class ArchivalService {
      * @throws RollbackedException
      * @throws StillProcessingException
      */
-    public XmlFileRef getXml(String sipId, Optional<Integer> version) throws RollbackedException, StillProcessingException, IOException {
+    public XmlFileRef getXml(String sipId, Optional<Integer> version) throws RollbackedException, StillProcessingException, StorageException {
         AipSip sipEntity = archivalDbService.getAip(sipId);
         AipXml requestedXml;
         if (version.isPresent()) {
@@ -113,7 +114,7 @@ public class ArchivalService {
         try {
             StorageService storageService = StorageUtils.createAdapter(storageConfigStore.getByPriority());
             xmlStream = storageService.getXml(sipId, requestedXml.getVersion());
-        } catch (IOException e) {
+        } catch (StorageException e) {
             log.error("Storage error has occurred during retrieval process of XML version: " + requestedXml.getVersion() + " of AIP: " + sipId);
             throw e;
         }
@@ -162,7 +163,7 @@ public class ArchivalService {
      * @throws RollbackedException
      * @throws StillProcessingException
      */
-    public void delete(String sipId) throws StillProcessingException, RollbackedException {
+    public void delete(String sipId) throws StillProcessingException, RollbackedException, StorageException {
         archivalDbService.registerSipDeletion(sipId);
         this.async.delete(sipId);
     }
@@ -176,7 +177,7 @@ public class ArchivalService {
      * @throws RollbackedException
      * @throws StillProcessingException
      */
-    public void remove(String sipId) throws StillProcessingException, DeletedException, RollbackedException {
+    public void remove(String sipId) throws StillProcessingException, DeletedException, RollbackedException, StorageException {
         archivalDbService.removeSip(sipId);
         async.remove(sipId);
     }
@@ -187,7 +188,7 @@ public class ArchivalService {
      * @param sipId
      * @throws IOException
      */
-    public List<AipStateInfo> getAipState(String sipId) throws StillProcessingException, IOException {
+    public List<AipStateInfo> getAipState(String sipId) throws StillProcessingException, StorageException {
         AipSip aip = archivalDbService.getAip(sipId);
         if (aip.getState() == AipState.PROCESSING)
             throw new StillProcessingException(aip);
@@ -207,7 +208,11 @@ public class ArchivalService {
     public List<StorageState> getStorageState() {
         List<StorageState> storageStates = new ArrayList<>();
         storageConfigStore.findAll().stream().forEach(c -> {
-            storageStates.add(StorageUtils.createAdapter(c).getStorageState());
+            try {
+                storageStates.add(StorageUtils.createAdapter(c).getStorageState());
+            } catch (StorageException e) {
+                throw new GeneralException(e);
+            }
         });
         return storageStates;
     }

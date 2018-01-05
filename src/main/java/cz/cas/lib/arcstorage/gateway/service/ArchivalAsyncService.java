@@ -7,8 +7,8 @@ import cz.cas.lib.arcstorage.gateway.dto.XmlFileRef;
 import cz.cas.lib.arcstorage.gateway.exception.CantReadException;
 import cz.cas.lib.arcstorage.gateway.exception.CantWriteException;
 import cz.cas.lib.arcstorage.gateway.storage.StorageService;
-import cz.cas.lib.arcstorage.gateway.storage.shared.StorageUtils;
 import cz.cas.lib.arcstorage.gateway.storage.exception.StorageException;
+import cz.cas.lib.arcstorage.gateway.storage.shared.StorageUtils;
 import cz.cas.lib.arcstorage.store.StorageConfigStore;
 import lombok.extern.log4j.Log4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,7 +19,6 @@ import javax.inject.Inject;
 import java.io.BufferedInputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -107,7 +106,7 @@ public class ArchivalAsyncService {
                     log.warn(strSA(a.getStorageConfig().getName(), aip.getSip().getId()) + "rollbacked");
                 } catch (StorageException e) {
                     log.error(strSA(a.getStorageConfig().getName(), aip.getSip().getId()) + "rollback process error: " + e);
-                    throw new UncheckedIOException(e);
+                    throw new GeneralException(e);
                 }
             }, executor);
             futures.add(c);
@@ -180,7 +179,7 @@ public class ArchivalAsyncService {
                     log.warn(strSX(a.getStorageConfig().getName(), xml.getId()) + "rollbacked");
                 } catch (StorageException e) {
                     log.error(strSX(a.getStorageConfig().getName(), xml.getId()) + "rollback process error");
-                    throw new UncheckedIOException(e);
+                    throw new GeneralException(e);
                 }
             }, executor);
             futures.add(c);
@@ -198,28 +197,28 @@ public class ArchivalAsyncService {
 
 
     @Async
-    public void delete(String sipId) {
+    public void delete(String sipId) throws StorageException {
         try {
             for (StorageService storageService : storageConfigStore.findAll().stream().map(StorageUtils::createAdapter).collect(Collectors.toList())) {
                 storageService.deleteSip(sipId);
             }
-        } catch (IOException e) {
+        } catch (StorageException e) {
             log.error("Storage error has occurred during deletion of AIP: " + sipId);
-            throw new UncheckedIOException(e);
+            throw e;
         }
         archivalDbService.finishSipDeletion(sipId);
         log.info("AIP: " + sipId + " has been successfully deleted.");
     }
 
     @Async
-    public void remove(String sipId) {
+    public void remove(String sipId) throws StorageException {
         try {
             for (StorageService storageService : storageConfigStore.findAll().stream().map(StorageUtils::createAdapter).collect(Collectors.toList())) {
                 storageService.remove(sipId);
             }
-        } catch (IOException e) {
+        } catch (StorageException e) {
             log.error("Storage error has occurred during removal of AIP: " + sipId + ". AIP is marked as removed in DB but may not be marked as removed on every storage.");
-            throw new UncheckedIOException(e);
+            throw e;
         }
         log.info("AIP: " + sipId + " has been successfully removed.");
     }

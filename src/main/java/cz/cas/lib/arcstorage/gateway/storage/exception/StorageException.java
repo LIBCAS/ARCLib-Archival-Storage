@@ -1,8 +1,6 @@
 package cz.cas.lib.arcstorage.gateway.storage.exception;
 
-import java.io.IOException;
-
-public abstract class StorageException extends IOException {
+public abstract class StorageException extends Exception {
     public StorageException() {
     }
 

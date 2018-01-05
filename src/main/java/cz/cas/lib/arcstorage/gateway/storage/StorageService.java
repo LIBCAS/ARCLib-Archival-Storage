@@ -3,6 +3,7 @@ package cz.cas.lib.arcstorage.gateway.storage;
 import cz.cas.lib.arcstorage.domain.AipState;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.gateway.dto.*;
+import cz.cas.lib.arcstorage.gateway.storage.exception.FileDoesNotExistException;
 import cz.cas.lib.arcstorage.gateway.storage.exception.StorageException;
 
 import java.io.IOException;
@@ -43,7 +44,7 @@ public interface StorageService {
      * @return list with opened file streams where first item is SIP stream and others are XML streams in the same order as was passed in {@code xmlVersions} parameter
      * @throws IOException
      */
-    List<InputStream> getAip(String sipId, Integer... xmlVersions) throws IOException;
+    List<InputStream> getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException, StorageException;
 
     /**
      * Stores XML files into storage.
@@ -51,7 +52,7 @@ public interface StorageService {
      * @return checksum computed from stored file
      * @throws IOException
      */
-    void storeXml(String sipId, XmlFileRef xmlFileRef, AtomicBoolean rollback) throws IOException;
+    void storeXml(String sipId, XmlFileRef xmlFileRef, AtomicBoolean rollback) throws StorageException;
 
     /**
      * Retrieves reference to AipXml file. Caller is responsible for closing retrieved stream.
@@ -61,7 +62,7 @@ public interface StorageService {
      * @return
      * @throws IOException
      */
-    InputStream getXml(String sipId, int version) throws IOException;
+    InputStream getXml(String sipId, int version) throws StorageException;
 
     /**
      * Deletes SIP file from storage. Must not fail if SIP is already deleted.
@@ -69,7 +70,7 @@ public interface StorageService {
      * @param id
      * @throws IOException
      */
-    void deleteSip(String id) throws IOException;
+    void deleteSip(String id) throws StorageException;
 
     /**
      * Logically removes SIP. Must not fail if SIP is already removed.
@@ -77,7 +78,7 @@ public interface StorageService {
      * @param id
      * @throws IOException
      */
-    void remove(String id) throws IOException;
+    void remove(String id) throws StorageException;
 
     void rollbackAip(String sipId) throws StorageException;
 
@@ -107,5 +108,5 @@ public interface StorageService {
      *
      * @return
      */
-    StorageState getStorageState();
+    StorageState getStorageState() throws StorageException;
 }
