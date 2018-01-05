@@ -57,10 +57,7 @@
             <column name="host" type="varchar(64)">
                 <constraints nullable="false"/>
             </column>
-            <column name="sip_location" type="varchar(255)">
-                <constraints nullable="false"/>
-            </column>
-            <column name="xml_location" type="varchar(255)">
+            <column name="location" type="varchar(255)">
                 <constraints nullable="false"/>
             </column>
             <column name="port" type="int">
@@ -73,9 +70,7 @@
                 <constraints nullable="false"/>
             </column>
             <column name="note" type="varchar(2000)"/>
-            <column name="config" type="varchar(2000)">
-                <constraints nullable="false"/>
-            </column>
+            <column name="config" type="varchar(2000)"/>
         </createTable>
 
         <addUniqueConstraint
