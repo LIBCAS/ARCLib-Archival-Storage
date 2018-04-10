@@ -1,4 +1,4 @@
-package cz.cas.lib.arcstorage.gateway.storage.fs;
+package cz.cas.lib.arcstorage.storage.fs;
 
 import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.gateway.dto.SpaceInfo;

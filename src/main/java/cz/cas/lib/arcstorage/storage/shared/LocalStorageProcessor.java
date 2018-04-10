@@ -1,14 +1,14 @@
-package cz.cas.lib.arcstorage.gateway.storage.shared;
+package cz.cas.lib.arcstorage.storage.shared;
 
 import cz.cas.lib.arcstorage.domain.AipState;
 import cz.cas.lib.arcstorage.domain.ChecksumType;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.gateway.dto.*;
-import cz.cas.lib.arcstorage.gateway.storage.StorageService;
-import cz.cas.lib.arcstorage.gateway.storage.exception.FileCorruptedAfterStoreException;
-import cz.cas.lib.arcstorage.gateway.storage.exception.FileDoesNotExistException;
-import cz.cas.lib.arcstorage.gateway.storage.exception.IOStorageException;
-import cz.cas.lib.arcstorage.gateway.storage.exception.StorageException;
+import cz.cas.lib.arcstorage.storage.StorageService;
+import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
+import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
+import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
+import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.*;
@@ -21,8 +21,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static cz.cas.lib.arcstorage.gateway.storage.shared.StorageUtils.computeChecksum;
-import static cz.cas.lib.arcstorage.gateway.storage.shared.StorageUtils.toXmlId;
+import static cz.cas.lib.arcstorage.storage.shared.StorageUtils.computeChecksum;
+import static cz.cas.lib.arcstorage.storage.shared.StorageUtils.toXmlId;
 import static cz.cas.lib.arcstorage.util.Utils.strSF;
 import static cz.cas.lib.arcstorage.util.Utils.strSX;
 

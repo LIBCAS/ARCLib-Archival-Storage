@@ -1,6 +1,6 @@
 package cz.cas.lib.arcstorage;
 
-import cz.cas.lib.arcstorage.gateway.storage.shared.StorageUtils;
+import cz.cas.lib.arcstorage.storage.shared.StorageUtils;
 import cz.cas.lib.arcstorage.store.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;

@@ -1,10 +1,10 @@
-package cz.cas.lib.arcstorage.gateway.storage;
+package cz.cas.lib.arcstorage.storage;
 
 import cz.cas.lib.arcstorage.domain.AipState;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.gateway.dto.*;
-import cz.cas.lib.arcstorage.gateway.storage.exception.FileDoesNotExistException;
-import cz.cas.lib.arcstorage.gateway.storage.exception.StorageException;
+import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
+import cz.cas.lib.arcstorage.storage.exception.StorageException;
 
 import java.io.IOException;
 import java.io.InputStream;

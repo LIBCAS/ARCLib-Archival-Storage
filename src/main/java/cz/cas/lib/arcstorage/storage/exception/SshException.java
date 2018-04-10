@@ -1,4 +1,4 @@
-package cz.cas.lib.arcstorage.gateway.storage.exception;
+package cz.cas.lib.arcstorage.storage.exception;
 
 public class SshException extends StorageException {
     public SshException() {

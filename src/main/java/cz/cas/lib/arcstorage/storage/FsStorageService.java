@@ -1,15 +1,15 @@
-package cz.cas.lib.arcstorage.gateway.storage;
+package cz.cas.lib.arcstorage.storage;
 
 import cz.cas.lib.arcstorage.domain.AipState;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.*;
-import cz.cas.lib.arcstorage.gateway.storage.exception.SshException;
-import cz.cas.lib.arcstorage.gateway.storage.exception.StorageConnectionException;
-import cz.cas.lib.arcstorage.gateway.storage.exception.StorageException;
-import cz.cas.lib.arcstorage.gateway.storage.fs.FsStorageState;
-import cz.cas.lib.arcstorage.gateway.storage.shared.LocalStorageProcessor;
-import cz.cas.lib.arcstorage.gateway.storage.shared.RemoteStorageProcessor;
+import cz.cas.lib.arcstorage.storage.exception.SshException;
+import cz.cas.lib.arcstorage.storage.exception.StorageConnectionException;
+import cz.cas.lib.arcstorage.storage.exception.StorageException;
+import cz.cas.lib.arcstorage.storage.fs.FsStorageState;
+import cz.cas.lib.arcstorage.storage.shared.LocalStorageProcessor;
+import cz.cas.lib.arcstorage.storage.shared.RemoteStorageProcessor;
 import cz.cas.lib.arcstorage.store.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import net.schmizz.sshj.SSHClient;
@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static cz.cas.lib.arcstorage.gateway.storage.shared.StorageUtils.keyFilePath;
+import static cz.cas.lib.arcstorage.storage.shared.StorageUtils.keyFilePath;
 
 
 /**

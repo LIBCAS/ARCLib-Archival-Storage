@@ -1,12 +1,12 @@
-package cz.cas.lib.arcstorage.gateway.storage.shared;
+package cz.cas.lib.arcstorage.storage.shared;
 
 import cz.cas.lib.arcstorage.domain.AipState;
 import cz.cas.lib.arcstorage.domain.ChecksumType;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.*;
-import cz.cas.lib.arcstorage.gateway.storage.StorageService;
-import cz.cas.lib.arcstorage.gateway.storage.exception.*;
+import cz.cas.lib.arcstorage.storage.StorageService;
+import cz.cas.lib.arcstorage.storage.exception.*;
 import net.schmizz.sshj.SSHClient;
 import net.schmizz.sshj.connection.ConnectionException;
 import net.schmizz.sshj.sftp.SFTPClient;
@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static cz.cas.lib.arcstorage.gateway.storage.shared.StorageUtils.*;
+import static cz.cas.lib.arcstorage.storage.shared.StorageUtils.*;
 
 public class RemoteStorageProcessor implements StorageService {
 

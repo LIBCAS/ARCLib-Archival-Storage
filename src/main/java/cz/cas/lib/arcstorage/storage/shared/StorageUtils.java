@@ -1,11 +1,11 @@
-package cz.cas.lib.arcstorage.gateway.storage.shared;
+package cz.cas.lib.arcstorage.storage.shared;
 
 import cz.cas.lib.arcstorage.domain.ChecksumType;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.Checksum;
-import cz.cas.lib.arcstorage.gateway.storage.FsStorageService;
-import cz.cas.lib.arcstorage.gateway.storage.StorageService;
+import cz.cas.lib.arcstorage.storage.FsStorageService;
+import cz.cas.lib.arcstorage.storage.StorageService;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.BufferedInputStream;
