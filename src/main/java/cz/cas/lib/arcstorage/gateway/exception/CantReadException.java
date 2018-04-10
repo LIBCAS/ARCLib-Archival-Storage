@@ -1,8 +1,8 @@
 package cz.cas.lib.arcstorage.gateway.exception;
 
-import lombok.extern.log4j.Log4j;
+import lombok.extern.slf4j.Slf4j;
 
-@Log4j
+@Slf4j
 public class CantReadException extends RuntimeException {
     public CantReadException(String filePath, Throwable cause) {
         super(filePath, cause);

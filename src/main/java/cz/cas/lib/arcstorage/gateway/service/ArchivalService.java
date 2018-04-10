@@ -15,7 +15,7 @@ import cz.cas.lib.arcstorage.gateway.storage.StorageService;
 import cz.cas.lib.arcstorage.gateway.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.gateway.storage.shared.StorageUtils;
 import cz.cas.lib.arcstorage.store.StorageConfigStore;
-import lombok.extern.log4j.Log4j;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import javax.inject.Inject;
@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
 import static cz.cas.lib.arcstorage.util.Utils.asList;
 
 @Service
-@Log4j
+@Slf4j
 public class ArchivalService {
 
     private ArchivalAsyncService async;

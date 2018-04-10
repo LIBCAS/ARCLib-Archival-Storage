@@ -14,7 +14,7 @@ import cz.cas.lib.arcstorage.gateway.exception.StillProcessingException;
 import cz.cas.lib.arcstorage.store.AipSipStore;
 import cz.cas.lib.arcstorage.store.AipXmlStore;
 import cz.cas.lib.arcstorage.store.Transactional;
-import lombok.extern.log4j.Log4j;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import javax.inject.Inject;
@@ -28,7 +28,7 @@ import static cz.cas.lib.arcstorage.util.Utils.notNull;
  */
 @Service
 @Transactional
-@Log4j
+@Slf4j
 public class ArchivalDbService {
 
     private AipSipStore aipSipStore;

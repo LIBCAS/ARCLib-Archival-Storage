@@ -9,7 +9,7 @@ import cz.cas.lib.arcstorage.gateway.storage.exception.FileCorruptedAfterStoreEx
 import cz.cas.lib.arcstorage.gateway.storage.exception.FileDoesNotExistException;
 import cz.cas.lib.arcstorage.gateway.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.gateway.storage.exception.StorageException;
-import lombok.extern.log4j.Log4j;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.*;
 import java.nio.file.FileAlreadyExistsException;
@@ -26,7 +26,7 @@ import static cz.cas.lib.arcstorage.gateway.storage.shared.StorageUtils.toXmlId;
 import static cz.cas.lib.arcstorage.util.Utils.strSF;
 import static cz.cas.lib.arcstorage.util.Utils.strSX;
 
-@Log4j
+@Slf4j
 public class LocalStorageProcessor implements StorageService {
 
     private StorageConfig storageConfig;

@@ -2,13 +2,13 @@ package cz.cas.lib.arcstorage.store;
 
 import cz.cas.lib.arcstorage.domain.*;
 import cz.cas.lib.arcstorage.exception.MissingObject;
-import lombok.extern.log4j.Log4j;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
 @Repository
-@Log4j
+@Slf4j
 public class AipXmlStore extends DomainStore<AipXml, QAipXml> {
     public AipXmlStore() {
         super(AipXml.class, QAipXml.class);

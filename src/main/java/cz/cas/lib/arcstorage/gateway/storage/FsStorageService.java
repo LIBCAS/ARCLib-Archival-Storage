@@ -11,7 +11,7 @@ import cz.cas.lib.arcstorage.gateway.storage.fs.FsStorageState;
 import cz.cas.lib.arcstorage.gateway.storage.shared.LocalStorageProcessor;
 import cz.cas.lib.arcstorage.gateway.storage.shared.RemoteStorageProcessor;
 import cz.cas.lib.arcstorage.store.Transactional;
-import lombok.extern.log4j.Log4j;
+import lombok.extern.slf4j.Slf4j;
 import net.schmizz.sshj.SSHClient;
 import net.schmizz.sshj.connection.ConnectionException;
 import net.schmizz.sshj.connection.channel.direct.Session;
@@ -49,7 +49,7 @@ import static cz.cas.lib.arcstorage.gateway.storage.shared.StorageUtils.keyFileP
  * <b>For testing purposes, this prototype implementation uses {@link Thread#sleep(long)} in create/delete methods to simulate time-consuming operations.</b>
  */
 @Transactional
-@Log4j
+@Slf4j
 public class FsStorageService implements StorageService {
 
     private StorageConfig storageConfig;

@@ -6,7 +6,7 @@ import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.Checksum;
 import cz.cas.lib.arcstorage.gateway.storage.FsStorageService;
 import cz.cas.lib.arcstorage.gateway.storage.StorageService;
-import lombok.extern.log4j.Log4j;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.BufferedInputStream;
 import java.io.FileNotFoundException;
@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static cz.cas.lib.arcstorage.util.Utils.bytesToHexString;
 import static cz.cas.lib.arcstorage.util.Utils.notNull;
 
-@Log4j
+@Slf4j
 public class StorageUtils {
 
     public static String keyFilePath;
