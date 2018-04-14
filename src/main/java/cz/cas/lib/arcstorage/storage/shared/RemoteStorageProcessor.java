@@ -65,8 +65,44 @@ public class RemoteStorageProcessor implements StorageService {
     }
 
     @Override
-    public List<InputStream> getAip(String sipId, Integer... xmlVersions) throws StorageException {
-        throw new UnsupportedOperationException();
+    public List<FileRef> getAip(String sipId, Integer... xmlVersions) throws StorageException {
+        SSHClient ssh = null;
+        List<FileRef> list = new ArrayList<>();
+        try {
+            ssh = new SSHClient();
+            ssh.addHostKeyVerifier(new PromiscuousVerifier());
+            ssh.connect(storageConfig.getHost(), storageConfig.getPort());
+            ssh.authPublickey("root", keyFilePath);
+            SFTPClient sftp = ssh.newSFTPClient();
+            list.add(new FileRef(getFile(sftp, getSipPath(sipId) + S + sipId), ssh));
+            String xmlPath = getXmlPath(sipId);
+            for (Integer xmlVersion : xmlVersions) {
+                list.add(new FileRef(getFile(sftp, xmlPath + S + toXmlId(sipId, xmlVersion)), ssh));
+            }
+            return list;
+        } catch (ConnectionException e) {
+            try {
+                ssh.close();
+            } catch (IOException ioEx) {
+                throw new SshException(ioEx);
+            }
+            throw new StorageConnectionException(e);
+        } catch (IOException e) {
+            try {
+                ssh.close();
+            } catch (IOException ioEx) {
+                throw new SshException(ioEx);
+            }
+            throw new SshException(e);
+        } catch (Exception e) {
+            try {
+                if (ssh != null)
+                    ssh.close();
+            } catch (IOException ioEx) {
+                throw new SshException(ioEx);
+            }
+            throw new GeneralException(e);
+        }
     }
 
     @Override
@@ -89,8 +125,39 @@ public class RemoteStorageProcessor implements StorageService {
     }
 
     @Override
-    public InputStream getXml(String sipId, int version) throws StorageException {
-        throw new UnsupportedOperationException();
+    public FileRef getXml(String sipId, int version) throws StorageException {
+        String xmlFilePath = getXmlPath(sipId) + S + toXmlId(sipId, version);
+        SSHClient ssh = null;
+        try {
+            ssh = new SSHClient();
+            ssh.addHostKeyVerifier(new PromiscuousVerifier());
+            ssh.connect(storageConfig.getHost(), storageConfig.getPort());
+            ssh.authPublickey("root", keyFilePath);
+            SFTPClient sftp = ssh.newSFTPClient();
+            return new FileRef(getFile(sftp, xmlFilePath), ssh);
+        } catch (ConnectionException e) {
+            try {
+                ssh.close();
+            } catch (IOException ioEx) {
+                throw new SshException(ioEx);
+            }
+            throw new StorageConnectionException(e);
+        } catch (IOException e) {
+            try {
+                ssh.close();
+            } catch (IOException ioEx) {
+                throw new SshException(ioEx);
+            }
+            throw new SshException(e);
+        } catch (Exception e) {
+            try {
+                if (ssh != null)
+                    ssh.close();
+            } catch (IOException ioEx) {
+                throw new SshException(ioEx);
+            }
+            throw new GeneralException(e);
+        }
     }
 
     @Override
