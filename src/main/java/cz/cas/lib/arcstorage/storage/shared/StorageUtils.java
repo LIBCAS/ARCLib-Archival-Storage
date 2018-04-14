@@ -6,6 +6,8 @@ import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.Checksum;
 import cz.cas.lib.arcstorage.storage.FsStorageService;
 import cz.cas.lib.arcstorage.storage.StorageService;
+import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
+import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.BufferedInputStream;
@@ -32,7 +34,13 @@ public class StorageUtils {
         return null;
     }
 
-    public static Checksum computeChecksum(InputStream fileStream, ChecksumType checksumType) {
+    /**
+     * @param fileStream   which is closed by this method
+     * @param checksumType
+     * @return
+     * @throws FileDoesNotExistException
+     */
+    public static Checksum computeChecksum(InputStream fileStream, ChecksumType checksumType) throws FileDoesNotExistException {
         MessageDigest complete = checksumComputationPrecheck(fileStream, checksumType);
         try (BufferedInputStream bis = new BufferedInputStream(fileStream)) {
             byte[] buffer = new byte[1024];
@@ -45,14 +53,26 @@ public class StorageUtils {
             } while (numRead != -1);
             return new Checksum(checksumType, bytesToHexString(complete.digest()));
         } catch (FileNotFoundException e) {
-            return null;
+            throw new FileDoesNotExistException();
         } catch (IOException e) {
             log.error("unable to compute hash", e);
             throw new GeneralException("unable to compute hash", e);
         }
     }
 
-    public static Checksum computeChecksum(InputStream fileStream, ChecksumType checksumType, AtomicBoolean rollback) {
+    /**
+     * Computes checksum.
+     * If rollback is set to true by another thread, immediately stops computation and returns null.
+     * If checksum cant be computed, throws exception and sets rollback to true.
+     *
+     * @param fileStream   which is closed by this method
+     * @param checksumType
+     * @param rollback
+     * @return
+     * @throws FileDoesNotExistException
+     * @throws IOStorageException
+     */
+    public static Checksum computeChecksum(InputStream fileStream, ChecksumType checksumType, AtomicBoolean rollback) throws FileDoesNotExistException, IOStorageException {
         MessageDigest complete = checksumComputationPrecheck(fileStream, checksumType);
         try (BufferedInputStream bis = new BufferedInputStream(fileStream)) {
             byte[] buffer = new byte[1024];
@@ -67,9 +87,13 @@ public class StorageUtils {
             } while (numRead != -1);
             return new Checksum(checksumType, bytesToHexString(complete.digest()));
         } catch (FileNotFoundException e) {
-            return null;
+            rollback.set(true);
+            throw new FileDoesNotExistException(e);
         } catch (IOException e) {
-            log.error("unable to compute hash", e);
+            rollback.set(true);
+            throw new IOStorageException("unable to compute hash", e);
+        } catch (Exception e) {
+            rollback.set(true);
             throw new GeneralException("unable to compute hash", e);
         }
     }

@@ -3,13 +3,15 @@ package cz.cas.lib.arcstorage.gateway.service;
 
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.AipRef;
-import cz.cas.lib.arcstorage.gateway.dto.XmlFileRef;
+import cz.cas.lib.arcstorage.gateway.dto.FileRef;
+import cz.cas.lib.arcstorage.gateway.dto.XmlRef;
 import cz.cas.lib.arcstorage.gateway.exception.CantReadException;
 import cz.cas.lib.arcstorage.gateway.exception.CantWriteException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.storage.shared.StorageUtils;
 import cz.cas.lib.arcstorage.store.StorageConfigStore;
+import cz.cas.lib.arcstorage.store.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
@@ -43,17 +45,18 @@ public class ArchivalAsyncService {
     private Path tmpFolder;
 
     @Async
+    @Transactional
     public void store(AipRef aip) {
         String op = "AIP storage ";
         Path tmpXmlPath = tmpFolder.resolve(aip.getXml().getId());
         Path tmpSipPath = tmpFolder.resolve(aip.getSip().getId());
         try {
-            Files.copy(aip.getXml().getStream(), tmpXmlPath, StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(aip.getXml().getInputStream(), tmpXmlPath, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             throw new CantWriteException(tmpXmlPath.toString(), e);
         }
         try {
-            Files.copy(aip.getSip().getStream(), tmpSipPath, StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(aip.getSip().getInputStream(), tmpSipPath, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             throw new CantWriteException(tmpSipPath.toString(), e);
         }
@@ -64,10 +67,11 @@ public class ArchivalAsyncService {
             CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                         try (BufferedInputStream sipStream = new BufferedInputStream(new FileInputStream(tmpSipPath.toFile()));
                              BufferedInputStream xmlStream = new BufferedInputStream(new FileInputStream(tmpXmlPath.toFile()))) {
-                            a.storeAip(new AipRef(aip, sipStream, xmlStream), rollback);
+                            a.storeAip(new AipRef(aip, new FileRef(sipStream), new FileRef(xmlStream)), rollback);
                             log.info(strSA(a.getStorageConfig().getName(), aip.getSip().getId()) + op + "success");
                         } catch (StorageException e) {
                             log.warn(strSA(a.getStorageConfig().getName(), aip.getSip().getId()) + op + "error: " + e);
+                            throw new GeneralException(e);
                         } catch (IOException e) {
                             throw new CantReadException(tmpSipPath.toString() + " or " + tmpXmlPath.toString(), e);
                         }
@@ -123,11 +127,11 @@ public class ArchivalAsyncService {
     }
 
     @Async
-    public void updateXml(String sipId, XmlFileRef xml) {
+    public void updateXml(String sipId, XmlRef xml) {
         String op = "AIP storage ";
         Path tmpXmlPath = tmpFolder.resolve(xml.getId());
         try {
-            Files.copy(xml.getStream(), tmpXmlPath, StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(xml.getInputStream(), tmpXmlPath, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             throw new CantWriteException(tmpXmlPath.toString(), e);
         }
@@ -137,10 +141,11 @@ public class ArchivalAsyncService {
         for (StorageService a : adapters) {
             CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                         try (BufferedInputStream xmlStream = new BufferedInputStream(new FileInputStream(tmpXmlPath.toFile()))) {
-                            a.storeXml(sipId, new XmlFileRef(xml, xmlStream), rollback);
+                            a.storeXml(sipId, new XmlRef(xml, new FileRef(xmlStream)), rollback);
                             log.info(strSX(a.getStorageConfig().getName(), xml.getId()) + op + "success");
                         } catch (StorageException e) {
                             log.warn(strSX(a.getStorageConfig().getName(), xml.getId()) + op + "error");
+                            throw new GeneralException(e);
                         } catch (IOException e) {
                             throw new CantReadException(tmpXmlPath.toString(), e);
                         }

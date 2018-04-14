@@ -1,36 +1,57 @@
 package cz.cas.lib.arcstorage.gateway.dto;
 
-import lombok.AllArgsConstructor;
+import cz.cas.lib.arcstorage.exception.GeneralException;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
-/**
- * Transfer class for file data
- */
-@Setter
 @Getter
-@AllArgsConstructor
+@Setter
 public class FileRef {
-    private String id;
-    private InputStream stream;
-    private Checksum checksum;
+    /**
+     * shuld be closed once the object usage ends
+     */
+    private InputStream inputStream;
+    /**
+     * use {@link #closeConnections()} method to close these after transfer
+     */
+    private List<Closeable> channels = new ArrayList<>();
 
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-
-        FileRef fileRef = (FileRef) o;
-
-        return getId().equals(fileRef.getId());
+    public FileRef(InputStream inputStream, Closeable... channels) {
+        this(inputStream, Arrays.asList(channels));
     }
 
-    @Override
-    public int hashCode() {
-        return getId().hashCode();
+    public FileRef(InputStream inputStream, List<Closeable> channels) {
+        this.inputStream = inputStream;
+        if (channels != null)
+            this.channels = channels;
+    }
+
+    /**
+     * Closes channels which have to be closed once the object usage ends.
+     * <p>
+     * If the file was pulled from remote storage together with other files, all will likely have the same list of channels.
+     * In that case it is enough to close channels of one of them.
+     * </p>
+     */
+    public void closeConnections() {
+        if(channels.isEmpty())
+            return;
+        //developer usually calls this right after data are read but it should wait a while because used technology can
+        // use some internal after-transfer messaging which would be broken by immediate connection closing
+        try {
+            Thread.sleep(1000);
+            for (Closeable closeable : channels) {
+                closeable.close();
+            }
+        } catch (IOException | InterruptedException e) {
+            throw new GeneralException("can't close file channels", e);
+        }
     }
 }
-
-

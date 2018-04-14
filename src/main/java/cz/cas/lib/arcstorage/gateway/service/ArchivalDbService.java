@@ -16,6 +16,7 @@ import cz.cas.lib.arcstorage.store.AipXmlStore;
 import cz.cas.lib.arcstorage.store.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 
 import javax.inject.Inject;
 import java.util.List;
@@ -42,6 +43,7 @@ public class ArchivalDbService {
      * @param xmlChecksum
      * @return generated ID of XML record
      */
+    @org.springframework.transaction.annotation.Transactional(propagation = Propagation.REQUIRES_NEW)
     public String registerAipCreation(String sipId, Checksum sipChecksum, Checksum xmlChecksum) {
         notNull(sipId, () -> new BadArgument(sipId));
         AipSip sip = aipSipStore.find(sipId);

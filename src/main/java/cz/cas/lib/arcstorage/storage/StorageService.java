@@ -7,7 +7,6 @@ import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -30,6 +29,13 @@ public interface StorageService {
 
     /**
      * Stores Aip files into storage.
+     * <p>
+     * If rollback is set to true by another thread, this method instance must stop computation as soon as possible.
+     * In this case, throwing exception is optional and is better to avoid, so that the log does not contain exceptions from all threads even if just the first one which set rollback to true is known to be the error one.
+     * </p>
+     * <p>
+     * If file can't be stored, checksum can't be computed or does not match, this method instance must set rollback to true and throw exception, so that other threads can follow the routine described above.
+     * </p>
      *
      * @return Object containing MD5 checksums computed from stored files.
      * @throws IOException
@@ -41,10 +47,10 @@ public interface StorageService {
      *
      * @param sipId
      * @param xmlVersions specifies which XML versions should be retrieved, typically all or the latest only
-     * @return list with opened file streams where first item is SIP stream and others are XML streams in the same order as was passed in {@code xmlVersions} parameter
+     * @return list with opened file streams where first item is SIP inputStream and others are XML streams in the same order as was passed in {@code xmlVersions} parameter
      * @throws IOException
      */
-    List<InputStream> getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException, StorageException;
+    List<FileRef> getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException, StorageException;
 
     /**
      * Stores XML files into storage.
@@ -52,17 +58,17 @@ public interface StorageService {
      * @return checksum computed from stored file
      * @throws IOException
      */
-    void storeXml(String sipId, XmlFileRef xmlFileRef, AtomicBoolean rollback) throws StorageException;
+    void storeXml(String sipId, XmlRef xmlFileRef, AtomicBoolean rollback) throws StorageException;
 
     /**
-     * Retrieves reference to AipXml file. Caller is responsible for closing retrieved stream.
+     * Retrieves reference to AipXml file. Caller is responsible for closing retrieved inputStream.
      *
      * @param sipId
      * @param version
      * @return
      * @throws IOException
      */
-    InputStream getXml(String sipId, int version) throws StorageException;
+    FileRef getXml(String sipId, int version) throws StorageException;
 
     /**
      * Deletes SIP file from storage. Must not fail if SIP is already deleted.

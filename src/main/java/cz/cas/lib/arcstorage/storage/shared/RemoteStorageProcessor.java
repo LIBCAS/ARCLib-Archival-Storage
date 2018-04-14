@@ -16,6 +16,7 @@ import net.schmizz.sshj.xfer.InMemorySourceFile;
 import org.apache.log4j.Logger;
 
 import java.io.*;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -48,8 +49,8 @@ public class RemoteStorageProcessor implements StorageService {
             listenForRollbackToKillSession(ssh, rollback);
             ssh.authPublickey("root", keyFilePath);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
-                storeFile(sftp, xmlFilePath, toXmlId(aip.getSip().getId(), 1), S, aip.getXml().getStream(), aip.getXml().getChecksum(), rollback);
-                storeFile(sftp, sipFilePath, aip.getSip().getId(), S, aip.getSip().getStream(), aip.getSip().getChecksum(), rollback);
+                storeFile(sftp, xmlFilePath, toXmlId(aip.getSip().getId(), 1), S, aip.getXml().getInputStream(), aip.getXml().getChecksum(), rollback);
+                storeFile(sftp, sipFilePath, aip.getSip().getId(), S, aip.getSip().getInputStream(), aip.getSip().getChecksum(), rollback);
             }
         } catch (ConnectionException e) {
             rollback.set(true);
@@ -57,6 +58,9 @@ public class RemoteStorageProcessor implements StorageService {
         } catch (IOException e) {
             rollback.set(true);
             throw new SshException(e);
+        } catch (Exception e) {
+            rollback.set(true);
+            throw new GeneralException(e);
         }
     }
 
@@ -66,14 +70,14 @@ public class RemoteStorageProcessor implements StorageService {
     }
 
     @Override
-    public void storeXml(String sipId, XmlFileRef xml, AtomicBoolean rollback) throws StorageException {
+    public void storeXml(String sipId, XmlRef xml, AtomicBoolean rollback) throws StorageException {
         try (SSHClient ssh = new SSHClient()) {
             ssh.addHostKeyVerifier(new PromiscuousVerifier());
             ssh.connect(storageConfig.getHost(), storageConfig.getPort());
             listenForRollbackToKillSession(ssh, rollback);
             ssh.authPublickey("root", keyFilePath);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
-                storeFile(sftp, getXmlPath(sipId), toXmlId(sipId, xml.getVersion()), S, xml.getStream(), xml.getChecksum(), rollback);
+                storeFile(sftp, getXmlPath(sipId), toXmlId(sipId, xml.getVersion()), S, xml.getInputStream(), xml.getChecksum(), rollback);
             }
         } catch (ConnectionException e) {
             rollback.set(true);
@@ -117,7 +121,6 @@ public class RemoteStorageProcessor implements StorageService {
     @Override
     public void remove(String sipId) throws StorageException {
         String sipPath = getSipPath(sipId);
-        String sipFilePath = sipPath + S + sipId;
         try (SSHClient ssh = new SSHClient()) {
             ssh.addHostKeyVerifier(new PromiscuousVerifier());
             ssh.connect(storageConfig.getHost(), storageConfig.getPort());
@@ -207,7 +210,7 @@ public class RemoteStorageProcessor implements StorageService {
             ssh.authPublickey("root", keyFilePath);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
                 if (aipState == AipState.ARCHIVED || aipState == AipState.REMOVED) {
-                    Checksum storageFileChecksum = getFileChecksum(sftp, sipPath + S + sipId, sipChecksum.getType());
+                    Checksum storageFileChecksum = computeChecksum(getFile(sftp, sipPath + S + sipId), sipChecksum.getType());
                     info.setChecksum(storageFileChecksum);
                     info.setConsistent(sipChecksum.equals(storageFileChecksum));
                 } else {
@@ -217,7 +220,7 @@ public class RemoteStorageProcessor implements StorageService {
 
                 for (Integer version : xmlVersions.keySet()) {
                     Checksum dbChecksum = xmlVersions.get(version);
-                    Checksum storageFileChecksum = getFileChecksum(sftp, xmlPath + S + toXmlId(sipId, version), dbChecksum.getType());
+                    Checksum storageFileChecksum = computeChecksum(getFile(sftp, xmlPath + S + toXmlId(sipId, version)), dbChecksum.getType());
                     info.setChecksum(storageFileChecksum);
                     info.setConsistent(dbChecksum.equals(storageFileChecksum));
                 }
@@ -235,17 +238,28 @@ public class RemoteStorageProcessor implements StorageService {
         throw new UnsupportedOperationException();
     }
 
-    private Checksum getFileChecksum(SFTPClient sftp, String pathToFile, ChecksumType checksumType) throws IOException {
+    private InputStream getFile(SFTPClient sftp, String pathToFile) throws IOException, IOStorageException {
         PipedInputStream in = new PipedInputStream();
-        PipedOutputStream out = new PipedOutputStream(in);
+        AtomicBoolean wait = new AtomicBoolean(true);
         new Thread(() -> {
-            try {
+            try (PipedOutputStream out = new PipedOutputStream(in)) {
                 sftp.get(pathToFile, new OutputStreamSource(out));
             } catch (IOException e) {
                 throw new RuntimeException(new IOStorageException());
+            } catch (Exception e) {
+                throw e;
+            } finally {
+                wait.set(false);
             }
         }).start();
-        return computeChecksum(in, checksumType);
+        while (wait.get()) {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                throw new GeneralException(e);
+            }
+        }
+        return in;
     }
 
     private void storeFile(SFTPClient sftp, String filePath, String id, String S, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws StorageException {
@@ -260,7 +274,10 @@ public class RemoteStorageProcessor implements StorageService {
                     sftp.get(filePath + S + id, new OutputStreamSource(out));
                 } catch (IOException e) {
                     rollback.set(true);
-                    throw new GeneralException(new IOStorageException());
+                    throw new GeneralException(new IOStorageException(e));
+                } catch (Exception e) {
+                    rollback.set(true);
+                    throw new GeneralException(e);
                 }
             }).start();
             Checksum storageFileChecksum = computeChecksum(in, checksum.getType());
@@ -271,10 +288,18 @@ public class RemoteStorageProcessor implements StorageService {
             sftp.put(new InputStreamSource(new ByteArrayInputStream(checksum.getHash().getBytes()), id + "." + checksum.getType()), filePath);
             sftp.rm(filePath + S + id + ".LOCK");
         } catch (IOException e) {
+            rollback.set(true);
             throw new IOStorageException();
         }
     }
 
+    /**
+     * Called by store methods. Checks for rollback flag each second and if rollback is set to true,
+     * kills ssh connection so that method using that connection will immediately stop with ssh connection exception.
+     *
+     * @param ssh
+     * @param rollback
+     */
     private void listenForRollbackToKillSession(SSHClient ssh, AtomicBoolean rollback) {
         new Thread(() -> {
             try {
@@ -323,7 +348,7 @@ public class RemoteStorageProcessor implements StorageService {
 
 
         public long getLength() {
-            return 0;
+            return -1;
         }
 
 

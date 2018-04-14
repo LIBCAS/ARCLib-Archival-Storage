@@ -4,7 +4,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -13,28 +12,28 @@ import java.util.List;
 public class AipRef {
     @Setter
     @Getter
-    private FileRef sip;
+    private ArchiveFileRef sip;
 
-    private List<XmlFileRef> xmls = new ArrayList<>();
+    private List<XmlRef> xmls = new ArrayList<>();
 
-    public AipRef(AipRef aipRef, InputStream sipIs, InputStream xmlIs) {
-        sip = new FileRef(aipRef.getSip().getId(), sipIs, aipRef.getSip().getChecksum());
-        xmls.add(new XmlFileRef(aipRef.getXml().getId(), xmlIs, aipRef.getXml().getChecksum(), aipRef.getXml().getVersion()));
+    public AipRef(AipRef aipRef, FileRef sipIs, FileRef xmlIs) {
+        sip = new ArchiveFileRef(aipRef.getSip().getId(), sipIs, aipRef.getSip().getChecksum());
+        xmls.add(new XmlRef(aipRef.getXml().getId(), xmlIs, aipRef.getXml().getChecksum(), aipRef.getXml().getVersion()));
     }
 
-    public List<XmlFileRef> getXmls() {
+    public List<XmlRef> getXmls() {
         return Collections.unmodifiableList(xmls);
     }
 
-    public XmlFileRef getXml(int index) {
+    public XmlRef getXml(int index) {
         return xmls.get(index);
     }
 
-    public XmlFileRef getXml() {
+    public XmlRef getXml() {
         return xmls.get(0);
     }
 
-    public void addXml(XmlFileRef xml) {
+    public void addXml(XmlRef xml) {
         xmls.add(xml);
     }
 }

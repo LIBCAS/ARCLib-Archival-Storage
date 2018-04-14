@@ -3,6 +3,7 @@ package cz.cas.lib.arcstorage.storage.shared;
 import cz.cas.lib.arcstorage.domain.AipState;
 import cz.cas.lib.arcstorage.domain.ChecksumType;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
+import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.*;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
@@ -46,26 +47,26 @@ public class LocalStorageProcessor implements StorageService {
     public void storeAip(AipRef aip, AtomicBoolean rollback) throws StorageException {
         Path sipFilePath = getSipPath(aip.getSip().getId());
         Path xmlFilePath = getXmlPath(aip.getSip().getId());
-        storeFile(xmlFilePath, toXmlId(aip.getSip().getId(), 1), aip.getXml().getStream(), aip.getXml().getChecksum(), rollback);
-        storeFile(sipFilePath, aip.getSip().getId(), aip.getSip().getStream(), aip.getSip().getChecksum(), rollback);
+        storeFile(xmlFilePath, toXmlId(aip.getSip().getId(), 1), aip.getXml().getInputStream(), aip.getXml().getChecksum(), rollback);
+        storeFile(sipFilePath, aip.getSip().getId(), aip.getSip().getInputStream(), aip.getSip().getChecksum(), rollback);
     }
 
     @Override
-    public List<InputStream> getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException {
-        List<InputStream> refs = new ArrayList<>();
+    public List<FileRef> getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException {
+        List<FileRef> refs = new ArrayList<>();
         String fileToOpen = sipId;
         try {
-            refs.add(new FileInputStream(getSipPath(sipId).resolve(sipId).toFile()));
+            refs.add(new FileRef(new FileInputStream(getSipPath(sipId).resolve(sipId).toFile())));
             for (int version : xmlVersions) {
                 fileToOpen = toXmlId(sipId, version);
-                refs.add(new FileInputStream(getXmlPath(sipId).resolve(fileToOpen).toFile()));
+                refs.add(new FileRef(new FileInputStream(getXmlPath(sipId).resolve(fileToOpen).toFile())));
             }
         } catch (FileNotFoundException e) {
-            for (InputStream stream : refs) {
+            for (FileRef ref : refs) {
                 try {
-                    stream.close();
+                    ref.getInputStream().close();
                 } catch (IOException ex) {
-                    log.error("could not close stream: " + ex.getMessage());
+                    log.error("could not close inputStream: " + ex.getMessage());
                 }
             }
             throw new FileDoesNotExistException(strSF(storageConfig.getName(), fileToOpen));
@@ -74,15 +75,15 @@ public class LocalStorageProcessor implements StorageService {
     }
 
     @Override
-    public void storeXml(String sipId, XmlFileRef xml, AtomicBoolean rollback) throws StorageException {
-        storeFile(getXmlPath(sipId), toXmlId(sipId, xml.getVersion()), xml.getStream(), xml.getChecksum(), rollback);
+    public void storeXml(String sipId, XmlRef xml, AtomicBoolean rollback) throws StorageException {
+        storeFile(getXmlPath(sipId), toXmlId(sipId, xml.getVersion()), xml.getInputStream(), xml.getChecksum(), rollback);
     }
 
     @Override
-    public InputStream getXml(String sipId, int version) throws FileDoesNotExistException {
+    public FileRef getXml(String sipId, int version) throws FileDoesNotExistException {
         String xmlId = toXmlId(sipId, version);
         try {
-            return new FileInputStream(getSipPath(sipId).resolve(sipId).toFile());
+            return new FileRef(new FileInputStream(getSipPath(sipId).resolve(sipId).toFile()));
         } catch (FileNotFoundException e) {
             throw new FileDoesNotExistException(strSX(storageConfig.getName(), xmlId));
         }
@@ -198,23 +199,22 @@ public class LocalStorageProcessor implements StorageService {
             Files.createDirectories(filePath);
             Files.createFile(filePath.resolve(id + ".LOCK"));
             try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(filePath.resolve(id).toFile()))) {
-                BufferedInputStream bis = new BufferedInputStream(stream);
                 byte[] buffer = new byte[1024];
-                int read;
-                do {
+                int read = stream.read(buffer);
+                while (read > 0) {
                     if (rollback.get())
                         return;
-                    read = bis.read(buffer);
-                    bos.write(buffer);
-                } while (read > 0);
+                    bos.write(buffer, 0, read);
+                    read = stream.read(buffer);
+                }
             }
-            Checksum storageXmlChecksum;
+            Checksum storageChecksum;
             try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(filePath.resolve(id).toFile()))) {
-                storageXmlChecksum = computeChecksum(bis, checksum.getType(), rollback);
+                storageChecksum = computeChecksum(bis, checksum.getType(), rollback);
             }
-            if (storageXmlChecksum == null)
+            if (storageChecksum == null)
                 return;
-            if (!checksum.equals(storageXmlChecksum)) {
+            if (!checksum.equals(storageChecksum)) {
                 rollback.set(true);
                 throw new FileCorruptedAfterStoreException();
             }
@@ -226,6 +226,9 @@ public class LocalStorageProcessor implements StorageService {
         } catch (IOException e) {
             rollback.set(true);
             throw new IOStorageException(e);
+        } catch (Exception e) {
+            rollback.set(true);
+            throw new GeneralException(e);
         }
     }
 

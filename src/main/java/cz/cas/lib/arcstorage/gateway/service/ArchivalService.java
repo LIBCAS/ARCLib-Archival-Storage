@@ -1,9 +1,6 @@
 package cz.cas.lib.arcstorage.gateway.service;
 
-import cz.cas.lib.arcstorage.domain.AipSip;
-import cz.cas.lib.arcstorage.domain.AipState;
-import cz.cas.lib.arcstorage.domain.AipXml;
-import cz.cas.lib.arcstorage.domain.XmlState;
+import cz.cas.lib.arcstorage.domain.*;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.gateway.dto.*;
@@ -15,6 +12,7 @@ import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.storage.shared.StorageUtils;
 import cz.cas.lib.arcstorage.store.StorageConfigStore;
+import cz.cas.lib.arcstorage.store.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -41,7 +39,7 @@ public class ArchivalService {
      *
      * @param sipId
      * @param all   if true reference to SIP and all XMLs is returned otherwise reference to SIP and latest XML is retrieved
-     * @return reference of AIP which contains id and stream of SIP and XML/XMLs, if there are more XML to return those
+     * @return reference of AIP which contains id and inputStream of SIP and XML/XMLs, if there are more XML to return those
      * which are rollbacked are skipped
      * @throws DeletedException         if SIP is deleted
      * @throws RollbackedException      if SIP is rollbacked or only one XML is requested and that one is rollbacked
@@ -65,20 +63,23 @@ public class ArchivalService {
             throw new RollbackedException(xmls.get(0));
 
         xmls = xmls.stream().filter(xml -> xml.getState() != XmlState.ROLLBACKED).collect(Collectors.toList());
-        List<InputStream> refs;
+        List<FileRef> refs;
         try {
-            StorageService storageService = StorageUtils.createAdapter(storageConfigStore.getByPriority());
+            log.debug("randomly choosing one of storages with highest priority");
+            StorageConfig storageToBeUsed = storageConfigStore.getByPriority();
+            StorageService storageService = StorageUtils.createAdapter(storageToBeUsed);
+            log.info("Storage: " + storageToBeUsed.getName() + " chose to retrieve AIP: " + sipId);
             refs = storageService.getAip(sipId, xmls.stream().map(AipXml::getVersion).collect(Collectors.toList()).toArray(new Integer[xmls.size()]));
         } catch (StorageException e) {
             log.error("Storage error has occurred during retrieval process of AIP: " + sipId);
             throw e;
         }
         AipRef aip = new AipRef();
-        aip.setSip(new FileRef(sipEntity.getId(), refs.get(0), sipEntity.getChecksum()));
+        aip.setSip(new ArchiveFileRef(sipEntity.getId(), refs.get(0), sipEntity.getChecksum()));
         AipXml xml;
         for (int i = 1; i < refs.size(); i++) {
             xml = xmls.get(i - 1);
-            aip.addXml(new XmlFileRef(xml.getId(), refs.get(i), xml.getChecksum(), xml.getVersion()));
+            aip.addXml(new XmlRef(xml.getId(), refs.get(i), xml.getChecksum(), xml.getVersion()));
         }
         log.info("AIP: " + sipId + " has been successfully retrieved.");
         return aip;
@@ -94,7 +95,7 @@ public class ArchivalService {
      * @throws RollbackedException
      * @throws StillProcessingException
      */
-    public XmlFileRef getXml(String sipId, Optional<Integer> version) throws RollbackedException, StillProcessingException, StorageException {
+    public XmlRef getXml(String sipId, Optional<Integer> version) throws RollbackedException, StillProcessingException, StorageException {
         AipSip sipEntity = archivalDbService.getAip(sipId);
         AipXml requestedXml;
         if (version.isPresent()) {
@@ -110,16 +111,16 @@ public class ArchivalService {
             throw new RollbackedException(requestedXml);
         if (requestedXml.getState() == XmlState.PROCESSING)
             throw new StillProcessingException(requestedXml);
-        InputStream xmlStream;
+        FileRef xmlFileRef;
         try {
             StorageService storageService = StorageUtils.createAdapter(storageConfigStore.getByPriority());
-            xmlStream = storageService.getXml(sipId, requestedXml.getVersion());
+            xmlFileRef = storageService.getXml(sipId, requestedXml.getVersion());
         } catch (StorageException e) {
             log.error("Storage error has occurred during retrieval process of XML version: " + requestedXml.getVersion() + " of AIP: " + sipId);
             throw e;
         }
         log.info("XML version: " + requestedXml.getVersion() + " of AIP: " + sipId + " has been successfully retrieved.");
-        return new XmlFileRef(requestedXml.getId(), xmlStream, requestedXml.getChecksum(), requestedXml.getVersion());
+        return new XmlRef(requestedXml.getId(), xmlFileRef, requestedXml.getChecksum(), requestedXml.getVersion());
     }
 
 
@@ -135,9 +136,11 @@ public class ArchivalService {
      * @return SIP ID of created AIP
      * @throws IOException
      */
+    @Transactional
     public void store(AipRef aip) throws CantWriteException {
         String xmlId = archivalDbService.registerAipCreation(aip.getSip().getId(), aip.getSip().getChecksum(), aip.getXml().getChecksum());
         aip.getXml().setId(xmlId);
+
         async.store(aip);
     }
 
@@ -152,7 +155,7 @@ public class ArchivalService {
      */
     public void updateXml(String sipId, InputStream xml, Checksum checksum) {
         AipXml xmlEntity = archivalDbService.registerXmlUpdate(sipId, checksum);
-        async.updateXml(sipId, new XmlFileRef(xmlEntity.getId(), xml, checksum, xmlEntity.getVersion()));
+        async.updateXml(sipId, new XmlRef(xmlEntity.getId(), new FileRef(xml), checksum, xmlEntity.getVersion()));
     }
 
     /**

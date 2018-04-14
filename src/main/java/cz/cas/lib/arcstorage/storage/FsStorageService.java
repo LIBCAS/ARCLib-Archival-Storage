@@ -22,7 +22,6 @@ import org.springframework.boot.json.JsonParserFactory;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.util.List;
 import java.util.Map;
@@ -76,7 +75,7 @@ public class FsStorageService implements StorageService {
     }
 
     @Override
-    public void storeXml(String sipId, XmlFileRef xml, AtomicBoolean rollback) throws StorageException {
+    public void storeXml(String sipId, XmlRef xml, AtomicBoolean rollback) throws StorageException {
         storageProcessor.storeXml(sipId, xml, rollback);
     }
 
@@ -91,12 +90,12 @@ public class FsStorageService implements StorageService {
     }
 
     @Override
-    public List<InputStream> getAip(String sipId, Integer... xmlVersions) throws StorageException {
+    public List<FileRef> getAip(String sipId, Integer... xmlVersions) throws StorageException {
         return storageProcessor.getAip(sipId, xmlVersions);
     }
 
     @Override
-    public InputStream getXml(String sipId, int version) throws StorageException {
+    public FileRef getXml(String sipId, int version) throws StorageException {
         return storageProcessor.getXml(sipId, version);
     }
 
