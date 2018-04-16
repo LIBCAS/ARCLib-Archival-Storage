@@ -221,8 +221,8 @@ public class ArchivalService {
     }
 
     /**
-     * Deletes files which are in PROCESSING state from storage and database.
-     *
+     * Rollback files which are in PROCESSING state.
+     * This will be used only after system crash.
      * @throws IOException
      */
     public void clearUnfinished() throws StorageException {

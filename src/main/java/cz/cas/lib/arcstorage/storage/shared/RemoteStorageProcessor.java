@@ -47,7 +47,7 @@ public class RemoteStorageProcessor implements StorageService {
             ssh.addHostKeyVerifier(new PromiscuousVerifier());
             ssh.connect(storageConfig.getHost(), storageConfig.getPort());
             listenForRollbackToKillSession(ssh, rollback);
-            ssh.authPublickey("root", keyFilePath);
+            ssh.authPublickey("arcstorage", keyFilePath);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
                 storeFile(sftp, xmlFilePath, toXmlId(aip.getSip().getId(), 1), S, aip.getXml().getInputStream(), aip.getXml().getChecksum(), rollback);
                 storeFile(sftp, sipFilePath, aip.getSip().getId(), S, aip.getSip().getInputStream(), aip.getSip().getChecksum(), rollback);
@@ -72,7 +72,7 @@ public class RemoteStorageProcessor implements StorageService {
             ssh = new SSHClient();
             ssh.addHostKeyVerifier(new PromiscuousVerifier());
             ssh.connect(storageConfig.getHost(), storageConfig.getPort());
-            ssh.authPublickey("root", keyFilePath);
+            ssh.authPublickey("arcstorage", keyFilePath);
             SFTPClient sftp = ssh.newSFTPClient();
             list.add(new FileRef(getFile(sftp, getSipPath(sipId) + S + sipId), ssh));
             String xmlPath = getXmlPath(sipId);
@@ -111,7 +111,7 @@ public class RemoteStorageProcessor implements StorageService {
             ssh.addHostKeyVerifier(new PromiscuousVerifier());
             ssh.connect(storageConfig.getHost(), storageConfig.getPort());
             listenForRollbackToKillSession(ssh, rollback);
-            ssh.authPublickey("root", keyFilePath);
+            ssh.authPublickey("arcstorage", keyFilePath);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
                 storeFile(sftp, getXmlPath(sipId), toXmlId(sipId, xml.getVersion()), S, xml.getInputStream(), xml.getChecksum(), rollback);
             }
@@ -132,7 +132,7 @@ public class RemoteStorageProcessor implements StorageService {
             ssh = new SSHClient();
             ssh.addHostKeyVerifier(new PromiscuousVerifier());
             ssh.connect(storageConfig.getHost(), storageConfig.getPort());
-            ssh.authPublickey("root", keyFilePath);
+            ssh.authPublickey("arcstorage", keyFilePath);
             SFTPClient sftp = ssh.newSFTPClient();
             return new FileRef(getFile(sftp, xmlFilePath), ssh);
         } catch (ConnectionException e) {
@@ -167,7 +167,7 @@ public class RemoteStorageProcessor implements StorageService {
         try (SSHClient ssh = new SSHClient()) {
             ssh.addHostKeyVerifier(new PromiscuousVerifier());
             ssh.connect(storageConfig.getHost(), storageConfig.getPort());
-            ssh.authPublickey("root", keyFilePath);
+            ssh.authPublickey("arcstorage", keyFilePath);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
                 sftp.put(new InputStreamSource(new ByteArrayInputStream("".getBytes()), sipId + ".LOCK"), sipPath);
                 deleteIfExistsSftp(sftp, sipFilePath);
@@ -191,7 +191,7 @@ public class RemoteStorageProcessor implements StorageService {
         try (SSHClient ssh = new SSHClient()) {
             ssh.addHostKeyVerifier(new PromiscuousVerifier());
             ssh.connect(storageConfig.getHost(), storageConfig.getPort());
-            ssh.authPublickey("root", keyFilePath);
+            ssh.authPublickey("arcstorage", keyFilePath);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
                 sftp.put(new InputStreamSource(new ByteArrayInputStream("".getBytes()), sipId + ".REMOVED"), sipPath);
             }
@@ -212,7 +212,7 @@ public class RemoteStorageProcessor implements StorageService {
         try (SSHClient ssh = new SSHClient()) {
             ssh.addHostKeyVerifier(new PromiscuousVerifier());
             ssh.connect(storageConfig.getHost(), storageConfig.getPort());
-            ssh.authPublickey("root", keyFilePath);
+            ssh.authPublickey("arcstorage", keyFilePath);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
                 sftp.mkdirs(sipPath);
                 sftp.put(new InputStreamSource(new ByteArrayInputStream("".getBytes()), sipId + ".LOCK"), sipPath);
@@ -248,7 +248,7 @@ public class RemoteStorageProcessor implements StorageService {
         try (SSHClient ssh = new SSHClient()) {
             ssh.addHostKeyVerifier(new PromiscuousVerifier());
             ssh.connect(storageConfig.getHost(), storageConfig.getPort());
-            ssh.authPublickey("root", keyFilePath);
+            ssh.authPublickey("arcstorage", keyFilePath);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
                 sftp.mkdirs(xmlPath);
                 sftp.put(new InputStreamSource(new ByteArrayInputStream("".getBytes()), xmlId + ".LOCK"), xmlPath);
@@ -274,7 +274,7 @@ public class RemoteStorageProcessor implements StorageService {
         try (SSHClient ssh = new SSHClient()) {
             ssh.addHostKeyVerifier(new PromiscuousVerifier());
             ssh.connect(storageConfig.getHost(), storageConfig.getPort());
-            ssh.authPublickey("root", keyFilePath);
+            ssh.authPublickey("arcstorage", keyFilePath);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
                 if (aipState == AipState.ARCHIVED || aipState == AipState.REMOVED) {
                     Checksum storageFileChecksum = computeChecksum(getFile(sftp, sipPath + S + sipId), sipChecksum.getType());
