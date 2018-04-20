@@ -1,39 +1,34 @@
-package cz.cas.lib.arcstorage.storage;
+package cz.cas.lib.arcstorage.storage.fs;
 
-import cz.cas.lib.arcstorage.domain.AipState;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.exception.GeneralException;
-import cz.cas.lib.arcstorage.gateway.dto.*;
+import cz.cas.lib.arcstorage.gateway.dto.SpaceInfo;
+import cz.cas.lib.arcstorage.gateway.dto.StorageState;
+import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.SshException;
 import cz.cas.lib.arcstorage.storage.exception.StorageConnectionException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
-import cz.cas.lib.arcstorage.storage.fs.FsStorageState;
-import cz.cas.lib.arcstorage.storage.shared.LocalStorageProcessor;
-import cz.cas.lib.arcstorage.storage.shared.RemoteStorageProcessor;
 import cz.cas.lib.arcstorage.store.Transactional;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.schmizz.sshj.SSHClient;
 import net.schmizz.sshj.connection.ConnectionException;
 import net.schmizz.sshj.connection.channel.direct.Session;
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier;
 import org.apache.commons.io.IOUtils;
-import org.springframework.boot.json.JsonParser;
-import org.springframework.boot.json.JsonParserFactory;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static cz.cas.lib.arcstorage.storage.shared.StorageUtils.keyFilePath;
+import static cz.cas.lib.arcstorage.storage.StorageUtils.isLocalhost;
+import static cz.cas.lib.arcstorage.storage.StorageUtils.keyFilePath;
 
 
 /**
- * File System implementation of {@link StorageService}. Files are stored to filesystem into <i>sip</i> and <i>xml</i> folders in <i>working directory</i>.
+ * Zettabyte File System implementation of {@link StorageService}. Files are stored to filesystem into <i>sip</i> and <i>xml</i> folders in <i>working directory</i>.
  * <p>Data are distributed into three level folder structure based on their uuid. E.g. sip file with id <i>38a4a26f-67fd-4e4c-8af3-1fd0f26465f6</i> will be stored into sip/38/a4/a2 folder</p>
  * <p>
  * Store files in that way that later it is possible to retrieve:
@@ -45,78 +40,34 @@ import static cz.cas.lib.arcstorage.storage.shared.StorageUtils.keyFilePath;
  * SIP ID is its file name, when SIP is DELETED its files are no longer stored, when its REMOVED new empty file with SIP ID and <i>.REMOVED</i> sufffix is created</li>
  * <li>for XML its version and ID of SIP: XML file name follows <i>'SIPID'_xml_'XMLVERSION'</i> pattern</li>
  * </ul>
- * <b>For testing purposes, this prototype implementation uses {@link Thread#sleep(long)} in create/delete methods to simulate time-consuming operations.</b>
  */
 @Transactional
 @Slf4j
-public class FsStorageService implements StorageService {
+public class ZfsStorageService implements FsAdapter {
 
+    @Getter
     private StorageConfig storageConfig;
-    private JsonParser jsonParser;
-    private StorageService storageProcessor;
+    @Getter
+    private StorageService fsProcessor;
 
-    public FsStorageService(StorageConfig storageConfig) {
+    public ZfsStorageService(StorageConfig storageConfig) {
         this.storageConfig = storageConfig;
-        jsonParser = JsonParserFactory.getJsonParser();
         String separator = storageConfig.getLocation().startsWith("/") ? "/" : "\\";
-        if (isLocalhost())
-            this.storageProcessor = new LocalStorageProcessor(storageConfig, separator);
+        if (isLocalhost(storageConfig))
+            this.fsProcessor = new LocalFsProcessor(storageConfig, separator);
         else
-            this.storageProcessor = new RemoteStorageProcessor(storageConfig, separator);
+            this.fsProcessor = new RemoteFsProcessor(storageConfig, separator);
     }
 
-    public StorageConfig getStorageConfig() {
-        return storageConfig;
-    }
-
-    @Override
-    public void storeAip(AipRef aip, AtomicBoolean rollback) throws StorageException {
-        storageProcessor.storeAip(aip, rollback);
-    }
-
-    @Override
-    public void storeXml(String sipId, XmlRef xml, AtomicBoolean rollback) throws StorageException {
-        storageProcessor.storeXml(sipId, xml, rollback);
-    }
-
-    @Override
-    public void rollbackAip(String sipId) throws StorageException {
-        storageProcessor.rollbackAip(sipId);
-    }
-
-    @Override
-    public void rollbackXml(String sipId, int version) throws StorageException {
-        storageProcessor.rollbackXml(sipId, version);
-    }
-
-    @Override
-    public List<FileRef> getAip(String sipId, Integer... xmlVersions) throws StorageException {
-        return storageProcessor.getAip(sipId, xmlVersions);
-    }
-
-    @Override
-    public FileRef getXml(String sipId, int version) throws StorageException {
-        return storageProcessor.getXml(sipId, version);
-    }
-
-    @Override
-    public void deleteSip(String sipId) throws StorageException {
-        storageProcessor.deleteSip(sipId);
-    }
-
-    @Override
-    public AipStateInfo getAipInfo(String sipId, Checksum sipChecksum, AipState aipState, Map<Integer, Checksum> xmlVersions) throws StorageException {
-        return storageProcessor.getAipInfo(sipId, sipChecksum, aipState, xmlVersions);
-    }
-
-    @Override
-    public void remove(String sipId) throws StorageException {
-        storageProcessor.remove(sipId);
-    }
-
+    /**
+     * may be different for zfs/fs one day so that is why this is not implemented in adapter
+     *
+     * @return
+     * @throws StorageException
+     */
     @Override
     public StorageState getStorageState() throws StorageException {
-        if (isLocalhost()) {
+        if (isLocalhost(storageConfig)) {
             File anchor = new File(storageConfig.getLocation());
             long capacity = anchor.getTotalSpace();
             long free = anchor.getFreeSpace();
@@ -141,9 +92,5 @@ public class FsStorageService implements StorageService {
         long used = Long.parseLong(m.group(1));
         long free = Long.parseLong(m.group(2));
         return new FsStorageState(storageConfig, new SpaceInfo(used + free, used, free));
-    }
-
-    private boolean isLocalhost() {
-        return storageConfig.getHost().equals("localhost") || storageConfig.getHost().equals("127.0.0.1");
     }
 }

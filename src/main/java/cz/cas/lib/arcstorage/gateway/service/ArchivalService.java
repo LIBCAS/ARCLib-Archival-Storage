@@ -10,7 +10,7 @@ import cz.cas.lib.arcstorage.gateway.exception.RollbackedException;
 import cz.cas.lib.arcstorage.gateway.exception.StillProcessingException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
-import cz.cas.lib.arcstorage.storage.shared.StorageUtils;
+import cz.cas.lib.arcstorage.storage.StorageUtils;
 import cz.cas.lib.arcstorage.store.StorageConfigStore;
 import cz.cas.lib.arcstorage.store.Transactional;
 import lombok.extern.slf4j.Slf4j;

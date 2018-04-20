@@ -6,7 +6,6 @@ import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.*;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
-import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
 import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 
@@ -18,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static cz.cas.lib.arcstorage.storage.shared.StorageUtils.checksumComputationPrecheck;
+import static cz.cas.lib.arcstorage.storage.StorageUtils.checksumComputationPrecheck;
 import static cz.cas.lib.arcstorage.util.Utils.bytesToHexString;
 
 /**

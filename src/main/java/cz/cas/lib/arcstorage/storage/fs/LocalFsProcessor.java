@@ -1,4 +1,4 @@
-package cz.cas.lib.arcstorage.storage.shared;
+package cz.cas.lib.arcstorage.storage.fs;
 
 import cz.cas.lib.arcstorage.domain.AipState;
 import cz.cas.lib.arcstorage.domain.ChecksumType;
@@ -10,6 +10,8 @@ import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
 import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
 import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
+import cz.cas.lib.arcstorage.storage.StorageUtils;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.*;
@@ -26,19 +28,15 @@ import static cz.cas.lib.arcstorage.util.Utils.strSF;
 import static cz.cas.lib.arcstorage.util.Utils.strSX;
 
 @Slf4j
-public class LocalStorageProcessor implements StorageService {
+public class LocalFsProcessor implements StorageService {
 
+    @Getter
     private StorageConfig storageConfig;
     private String S;
 
-    public LocalStorageProcessor(StorageConfig storageConfig, String separator) {
+    public LocalFsProcessor(StorageConfig storageConfig, String separator) {
         this.storageConfig = storageConfig;
         this.S = separator;
-    }
-
-    @Override
-    public StorageConfig getStorageConfig() {
-        throw new UnsupportedOperationException();
     }
 
     @Override

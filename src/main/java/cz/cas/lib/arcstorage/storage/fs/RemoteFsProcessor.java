@@ -1,4 +1,4 @@
-package cz.cas.lib.arcstorage.storage.shared;
+package cz.cas.lib.arcstorage.storage.fs;
 
 import cz.cas.lib.arcstorage.domain.AipState;
 import cz.cas.lib.arcstorage.domain.ChecksumType;
@@ -6,7 +6,10 @@ import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.*;
 import cz.cas.lib.arcstorage.storage.StorageService;
+import cz.cas.lib.arcstorage.storage.StorageUtils;
 import cz.cas.lib.arcstorage.storage.exception.*;
+import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import net.schmizz.sshj.SSHClient;
 import net.schmizz.sshj.connection.ConnectionException;
 import net.schmizz.sshj.sftp.SFTPClient;
@@ -21,22 +24,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static cz.cas.lib.arcstorage.storage.shared.StorageUtils.keyFilePath;
+import static cz.cas.lib.arcstorage.storage.StorageUtils.keyFilePath;
 
-public class RemoteStorageProcessor implements StorageService {
+@Slf4j
+public class RemoteFsProcessor implements StorageService {
 
+    @Getter
     private StorageConfig storageConfig;
     private String S;
 
-    public RemoteStorageProcessor(StorageConfig storageConfig, String separator) {
+    public RemoteFsProcessor(StorageConfig storageConfig, String separator) {
         this.storageConfig = storageConfig;
         this.S = separator;
-    }
-
-
-    @Override
-    public StorageConfig getStorageConfig() {
-        throw new UnsupportedOperationException();
     }
 
     @Override
@@ -403,7 +402,7 @@ public class RemoteStorageProcessor implements StorageService {
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             } catch (InterruptedException e) {
-                Logger.getLogger(RemoteStorageProcessor.class).error("Fatal error: parallel process interrupted");
+                Logger.getLogger(RemoteFsProcessor.class).error("Fatal error: parallel process interrupted");
             }
         }).start();
     }

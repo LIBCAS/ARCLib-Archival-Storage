@@ -12,7 +12,7 @@ import cz.cas.lib.arcstorage.gateway.dto.Checksum;
 import cz.cas.lib.arcstorage.gateway.dto.StorageType;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
 import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
-import cz.cas.lib.arcstorage.storage.shared.StorageUtils;
+import cz.cas.lib.arcstorage.storage.StorageUtils;
 import org.junit.BeforeClass;
 import org.junit.Test;
 

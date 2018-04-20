@@ -1,4 +1,4 @@
-package cz.cas.lib.arcstorage.storage.shared;
+package cz.cas.lib.arcstorage.storage;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -7,10 +7,10 @@ import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.exception.ConfigParserException;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.Checksum;
-import cz.cas.lib.arcstorage.storage.FsStorageService;
-import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.ceph.CephAdapterType;
 import cz.cas.lib.arcstorage.storage.ceph.CephS3StorageService;
+import cz.cas.lib.arcstorage.storage.fs.FsStorageService;
+import cz.cas.lib.arcstorage.storage.fs.ZfsStorageService;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.BufferedInputStream;
@@ -30,6 +30,8 @@ public class StorageUtils {
         switch (storageConfig.getStorageType()) {
             case FS:
                 return new FsStorageService(storageConfig);
+            case ZFS:
+                return new ZfsStorageService(storageConfig);
             case CEPH:
                 JsonNode root;
                 try {
@@ -95,5 +97,9 @@ public class StorageUtils {
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public static boolean isLocalhost(StorageConfig config) {
+        return config.getHost().equals("localhost") || config.getHost().equals("127.0.0.1");
     }
 }
