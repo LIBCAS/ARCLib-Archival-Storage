@@ -22,8 +22,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static cz.cas.lib.arcstorage.storage.shared.StorageUtils.computeChecksum;
-import static cz.cas.lib.arcstorage.storage.shared.StorageUtils.toXmlId;
 import static cz.cas.lib.arcstorage.util.Utils.strSF;
 import static cz.cas.lib.arcstorage.util.Utils.strSX;
 
@@ -194,35 +192,44 @@ public class LocalStorageProcessor implements StorageService {
         throw new UnsupportedOperationException();
     }
 
-    private void storeFile(Path filePath, String id, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws StorageException {
-        try {
+    /**
+     * Stores file and then reads it and verifies its fixity.
+     * <p>
+     * If rollback is set to true by another thread, this method returns ASAP (without throwing exception), leaving the file uncompleted but closing stream.  Uncompleted files are to be cleaned during rollback.
+     * </p>
+     * <p>
+     * In case of any exception, rollback flag is set to true.
+     * </p>
+     *
+     * @param filePath path to new file
+     * @param id       id of new file
+     * @param stream   new file stream
+     * @param checksum checksum of the file
+     * @param rollback rollback flag to be periodically checked
+     * @throws FileCorruptedAfterStoreException if fixity does not match after store
+     * @throws IOStorageException               in case of any {@link IOException}
+     * @throws GeneralException                 in case of any unexpected error
+     */
+    private void storeFile(Path filePath, String id, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws FileCorruptedAfterStoreException, IOStorageException {
+        try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(filePath.resolve(id).toFile()))) {
             Files.createDirectories(filePath);
             Files.createFile(filePath.resolve(id + ".LOCK"));
-            try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(filePath.resolve(id).toFile()))) {
-                byte[] buffer = new byte[1024];
-                int read = stream.read(buffer);
-                while (read > 0) {
-                    if (rollback.get())
-                        return;
-                    bos.write(buffer, 0, read);
-                    read = stream.read(buffer);
-                }
+
+            byte[] buffer = new byte[8192];
+            int read = stream.read(buffer);
+            while (read > 0) {
+                if (rollback.get())
+                    return;
+                bos.write(buffer, 0, read);
+                read = stream.read(buffer);
             }
-            Checksum storageChecksum;
-            try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(filePath.resolve(id).toFile()))) {
-                storageChecksum = computeChecksum(bis, checksum.getType(), rollback);
-            }
-            if (storageChecksum == null)
+
+            boolean rollbackInterruption = !verifyChecksum(new FileInputStream(filePath.resolve(id).toFile()), checksum, rollback);
+            if (rollbackInterruption)
                 return;
-            if (!checksum.equals(storageChecksum)) {
-                rollback.set(true);
-                throw new FileCorruptedAfterStoreException();
-            }
+
             Files.copy(new ByteArrayInputStream(checksum.getHash().getBytes()), filePath.resolve(id + "." + checksum.getType()));
             Files.delete(filePath.resolve(id + ".LOCK"));
-        } catch (FileNotFoundException e) {
-            rollback.set(true);
-            throw new FileDoesNotExistException(e);
         } catch (IOException e) {
             rollback.set(true);
             throw new IOStorageException(e);

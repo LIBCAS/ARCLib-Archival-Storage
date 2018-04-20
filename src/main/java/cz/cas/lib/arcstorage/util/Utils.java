@@ -1,8 +1,10 @@
 package cz.cas.lib.arcstorage.util;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.io.ByteSource;
 import com.google.common.io.Resources;
 import cz.cas.lib.arcstorage.domain.DomainObject;
+import cz.cas.lib.arcstorage.exception.ConfigParserException;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import org.springframework.aop.framework.Advised;
 import org.springframework.aop.support.AopUtils;
@@ -331,5 +333,17 @@ public class Utils {
             builder.append(String.format("%02x", b));
         }
         return builder.toString();
+    }
+
+    public static <T extends Enum<T>> T parseEnumFromConfig(JsonNode root, String jsonPtrExpr, Class<T> enumerationClass) throws ConfigParserException {
+        JsonNode node = root.at(jsonPtrExpr);
+        if (!node.isMissingNode()) {
+            String value = node.textValue();
+            for (Enum enumeration : enumerationClass.getEnumConstants()) {
+                if (enumeration.toString().equals(value.toUpperCase()))
+                    return enumeration.valueOf(enumerationClass, value.toUpperCase());
+            }
+        }
+        throw new ConfigParserException(jsonPtrExpr, node.toString(), enumerationClass);
     }
 }

@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static cz.cas.lib.arcstorage.storage.shared.StorageUtils.*;
+import static cz.cas.lib.arcstorage.storage.shared.StorageUtils.keyFilePath;
 
 public class RemoteStorageProcessor implements StorageService {
 
@@ -277,7 +277,7 @@ public class RemoteStorageProcessor implements StorageService {
             ssh.authPublickey("arcstorage", keyFilePath);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
                 if (aipState == AipState.ARCHIVED || aipState == AipState.REMOVED) {
-                    Checksum storageFileChecksum = computeChecksum(getFile(sftp, sipPath + S + sipId), sipChecksum.getType());
+                    Checksum storageFileChecksum = StorageUtils.computeChecksum(getFile(sftp, sipPath + S + sipId), sipChecksum.getType());
                     info.setChecksum(storageFileChecksum);
                     info.setConsistent(sipChecksum.equals(storageFileChecksum));
                 } else {
@@ -287,7 +287,7 @@ public class RemoteStorageProcessor implements StorageService {
 
                 for (Integer version : xmlVersions.keySet()) {
                     Checksum dbChecksum = xmlVersions.get(version);
-                    Checksum storageFileChecksum = computeChecksum(getFile(sftp, xmlPath + S + toXmlId(sipId, version)), dbChecksum.getType());
+                    Checksum storageFileChecksum = StorageUtils.computeChecksum(getFile(sftp, xmlPath + S + toXmlId(sipId, version)), dbChecksum.getType());
                     info.setChecksum(storageFileChecksum);
                     info.setConsistent(dbChecksum.equals(storageFileChecksum));
                 }
@@ -329,7 +329,26 @@ public class RemoteStorageProcessor implements StorageService {
         return in;
     }
 
-    private void storeFile(SFTPClient sftp, String filePath, String id, String S, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws StorageException {
+    /**
+     * Stores file and then reads it and verifies its fixity.
+     * <p>
+     * If rollback is set to true by another thread, this method returns ASAP (it may throw exception), leaving the file uncompleted but closing stream. Uncompleted files are to be cleaned during rollback.
+     * </p>
+     * <p>
+     * In case of any exception, rollback flag is set to true.
+     * </p>
+     *
+     * @param filePath path to new file
+     * @param id       id of new file
+     * @param S        platform separator i.e. / or \
+     * @param stream   new file stream
+     * @param checksum checksum of the file
+     * @param rollback rollback flag to be periodically checked
+     * @throws FileCorruptedAfterStoreException if fixity does not match after store
+     * @throws IOStorageException               in case of {@link IOException}
+     * @throws GeneralException                 in case of any unexpected error
+     */
+    private void storeFile(SFTPClient sftp, String filePath, String id, String S, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws FileCorruptedAfterStoreException, IOStorageException {
         try {
             sftp.mkdirs(filePath);
             sftp.put(new InputStreamSource(new ByteArrayInputStream("".getBytes()), id + ".LOCK"), filePath);
@@ -347,16 +366,17 @@ public class RemoteStorageProcessor implements StorageService {
                     throw new GeneralException(e);
                 }
             }).start();
-            Checksum storageFileChecksum = computeChecksum(in, checksum.getType());
-            if (!checksum.equals(storageFileChecksum)) {
-                rollback.set(true);
-                throw new FileCorruptedAfterStoreException();
-            }
+            boolean rollbackInterruption = !verifyChecksum(in, checksum, rollback);
+            if (rollbackInterruption)
+                return;
             sftp.put(new InputStreamSource(new ByteArrayInputStream(checksum.getHash().getBytes()), id + "." + checksum.getType()), filePath);
             sftp.rm(filePath + S + id + ".LOCK");
         } catch (IOException e) {
             rollback.set(true);
-            throw new IOStorageException();
+            throw new IOStorageException(e);
+        } catch (Exception e) {
+            rollback.set(true);
+            throw new GeneralException(e);
         }
     }
 
@@ -367,6 +387,9 @@ public class RemoteStorageProcessor implements StorageService {
      * @param ssh
      * @param rollback
      */
+    //todo: it will be better to write data using buffer & periodic rollback flag instead because:
+    // a) using this approach, the exception is thrown twice: once by the method setting rollback and second time by this one so its not clear from the log which storage has failed
+    // b) its better to solve bussiness error other way than using force
     private void listenForRollbackToKillSession(SSHClient ssh, AtomicBoolean rollback) {
         new Thread(() -> {
             try {

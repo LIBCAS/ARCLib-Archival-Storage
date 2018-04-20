@@ -22,6 +22,9 @@ public class StorageConfig extends DomainObject {
     String host;
     int port;
     int priority;
+    /**
+     * place to store data, folder path for FS, ZFS, bucket name for CEPH S3
+     */
     String location;
     @Enumerated(EnumType.STRING)
     StorageType storageType;

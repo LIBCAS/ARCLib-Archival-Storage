@@ -1,15 +1,25 @@
 package cz.cas.lib.arcstorage.storage;
 
 import cz.cas.lib.arcstorage.domain.AipState;
+import cz.cas.lib.arcstorage.domain.ChecksumType;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
+import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.*;
+import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
 import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
+import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 
+import java.io.BufferedInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.security.MessageDigest;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import static cz.cas.lib.arcstorage.storage.shared.StorageUtils.checksumComputationPrecheck;
+import static cz.cas.lib.arcstorage.util.Utils.bytesToHexString;
 
 /**
  * Implementation <b>must</b> store files in that way that later it is possible to retrieve:
@@ -50,7 +60,7 @@ public interface StorageService {
      * @return list with opened file streams where first item is SIP inputStream and others are XML streams in the same order as was passed in {@code xmlVersions} parameter
      * @throws IOException
      */
-    List<FileRef> getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException, StorageException;
+    List<FileRef> getAip(String sipId, Integer... xmlVersions) throws StorageException;
 
     /**
      * Stores XML files into storage.
@@ -115,4 +125,69 @@ public interface StorageService {
      * @return
      */
     StorageState getStorageState() throws StorageException;
+
+    /**
+     * Verifies checksum. IMPORTANT: returns true if checksum matches but throws exception when it does not. False is returned when the computation is interrupted by rollback flag.
+     * <p>
+     * If there is an error during computation or checksums do not match, rollback flag is set to true.
+     * </p>
+     *
+     * @param fileStream
+     * @param expectedChecksum
+     * @param rollback
+     * @return
+     * @throws FileCorruptedAfterStoreException if checksums does not match
+     * @throws IOStorageException               in case of any {@link IOException}
+     * @throws GeneralException                 in case of any unexpected error
+     */
+    default boolean verifyChecksum(InputStream fileStream, Checksum expectedChecksum, AtomicBoolean rollback) throws FileCorruptedAfterStoreException, IOStorageException {
+        try {
+            Checksum checksum = null;
+            checksum = computeChecksumRollbackAware(fileStream, expectedChecksum.getType(), rollback);
+            if (checksum == null)
+                return false;
+            if (!checksum.getHash().equalsIgnoreCase(expectedChecksum.getHash())) {
+                rollback.set(true);
+                throw new FileCorruptedAfterStoreException(checksum, expectedChecksum);
+            }
+            return true;
+        } catch (IOException e) {
+            rollback.set(true);
+            throw new IOStorageException("error occured while computing checksum", e);
+        } catch (Exception e) {
+            rollback.set(true);
+            throw new GeneralException(e);
+        }
+    }
+
+    /**
+     * Computes checksum using buffer.
+     *
+     * @param fileStream   stream
+     * @param checksumType checksum type
+     * @param rollback     rollback flag
+     * @return checksum of the stream or null, if rollback flag was set to true by another thread
+     * @throws IOException
+     */
+    default Checksum computeChecksumRollbackAware(InputStream fileStream, ChecksumType checksumType, AtomicBoolean rollback) throws IOException {
+        MessageDigest complete = checksumComputationPrecheck(fileStream, checksumType);
+        try (BufferedInputStream bis = new BufferedInputStream(fileStream)) {
+            byte[] buffer = new byte[8192];
+            int numRead;
+            do {
+                if (rollback.get())
+                    return null;
+                numRead = bis.read(buffer);
+                if (numRead > 0) {
+                    complete.update(buffer, 0, numRead);
+                }
+            } while (numRead != -1);
+            return new Checksum(checksumType, bytesToHexString(complete.digest()));
+        }
+    }
+
+    default String toXmlId(String sipId, int version) {
+        return sipId + "_xml_" + version;
+    }
+
 }
