@@ -32,4 +32,12 @@ public class Checksum {
         result = 31 * result + getHash().hashCode();
         return result;
     }
+
+    @Override
+    public String toString() {
+        return "Checksum{" +
+                "type=" + type +
+                ", hash='" + hash + '\'' +
+                '}';
+    }
 }

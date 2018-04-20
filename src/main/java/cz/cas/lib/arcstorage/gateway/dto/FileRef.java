@@ -41,7 +41,7 @@ public class FileRef {
      * </p>
      */
     public void closeConnections() {
-        if(channels.isEmpty())
+        if (channels.isEmpty())
             return;
         //developer usually calls this right after data are read but it should wait a while because used technology can
         // use some internal after-transfer messaging which would be broken by immediate connection closing

@@ -223,6 +223,7 @@ public class ArchivalService {
     /**
      * Rollback files which are in PROCESSING state.
      * This will be used only after system crash.
+     *
      * @throws IOException
      */
     public void clearUnfinished() throws StorageException {
