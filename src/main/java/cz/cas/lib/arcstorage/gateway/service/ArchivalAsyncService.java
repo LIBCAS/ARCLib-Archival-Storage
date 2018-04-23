@@ -8,8 +8,8 @@ import cz.cas.lib.arcstorage.gateway.dto.XmlRef;
 import cz.cas.lib.arcstorage.gateway.exception.CantReadException;
 import cz.cas.lib.arcstorage.gateway.exception.CantWriteException;
 import cz.cas.lib.arcstorage.storage.StorageService;
-import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.storage.StorageUtils;
+import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.store.StorageConfigStore;
 import cz.cas.lib.arcstorage.store.Transactional;
 import lombok.extern.slf4j.Slf4j;
@@ -120,8 +120,12 @@ public class ArchivalAsyncService {
             archivalDbService.rollbackSip(aip.getSip().getId(), aip.getXml().getId());
             log.info(strA(aip.getSip().getId()) + "rollback successful on all storages.");
         } catch (InterruptedException e) {
+            archivalDbService.registerSipAndXmlRollback(aip.getSip().getId(), aip.getXml().getId());
+
             log.error("Main thread has been interrupted during rollback.");
         } catch (ExecutionException e) {
+            archivalDbService.registerSipAndXmlRollback(aip.getSip().getId(), aip.getXml().getId());
+
             log.error(strA(aip.getSip().getId()) + "rollback failed on some storages: " + e);
         }
     }

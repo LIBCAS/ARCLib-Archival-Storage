@@ -128,6 +128,30 @@ public class ArchivalDbService {
     }
 
     /**
+     * Registers that the creation process of AIP SIP and AIP XML failed and requires rollback.
+     *
+     * @param sipId
+     */
+    public void registerSipAndXmlRollback(String sipId, String xmlId) {
+        AipSip sip = aipSipStore.find(sipId);
+        notNull(sip, () -> {
+            log.warn("Could not find AIP: " + sipId);
+            return new MissingObject(AipSip.class, sipId);
+        });
+        sip.setState(AipState.FAILED);
+        aipSipStore.save(sip);
+
+        AipXml xml = aipXmlStore.find(xmlId);
+        notNull(xml, () -> {
+            log.warn("Could not find XML: " + xmlId);
+            return new MissingObject(AipXml.class, xmlId);
+        });
+        xml.setState(XmlState.FAILED);
+        aipXmlStore.save(xml);
+    }
+
+
+    /**
      * Logically removes SIP i.e. sets its state to {@link AipState#REMOVED} in the database.
      *
      * @param sipId

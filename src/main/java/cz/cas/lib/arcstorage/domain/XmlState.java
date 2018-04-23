@@ -6,5 +6,6 @@ import lombok.Getter;
 public enum XmlState {
     ARCHIVED,
     PROCESSING,
-    ROLLBACKED
+    ROLLBACKED,
+    FAILED
 }

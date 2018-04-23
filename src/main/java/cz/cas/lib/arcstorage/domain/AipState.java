@@ -8,5 +8,6 @@ public enum AipState {
     ARCHIVED,
     DELETED,
     REMOVED,
-    ROLLBACKED
+    ROLLBACKED,
+    FAILED
 }

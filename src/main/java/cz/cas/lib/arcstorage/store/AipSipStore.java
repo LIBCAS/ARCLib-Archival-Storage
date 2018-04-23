@@ -18,11 +18,11 @@ public class AipSipStore extends DomainStore<AipSip, QAipSip> {
      */
     public List<AipSip> findUnfinishedSips() {
         QAipSip sip = qObject();
-        return (List<AipSip>) query().where(sip.state.eq(AipState.PROCESSING)).fetch();
+        return (List<AipSip>) query().where(sip.state.in(AipState.PROCESSING, AipState.FAILED)).fetch();
     }
 
     public void rollbackUnfinishedSipsRecords() {
         QAipSip sip = qObject();
-        queryFactory.update(sip).where(sip.state.eq(AipState.PROCESSING)).set(sip.state, AipState.ROLLBACKED).execute();
+        queryFactory.update(sip).where(sip.state.in(AipState.PROCESSING, AipState.FAILED)).set(sip.state, AipState.ROLLBACKED).execute();
     }
 }

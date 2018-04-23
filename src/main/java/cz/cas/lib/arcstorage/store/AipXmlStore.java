@@ -29,11 +29,11 @@ public class AipXmlStore extends DomainStore<AipXml, QAipXml> {
      */
     public List<AipXml> findUnfinishedXmls() {
         QAipXml xml = qObject();
-        return (List<AipXml>) query().where(xml.state.eq(XmlState.PROCESSING)).where(xml.sip.state.eq(AipState.PROCESSING).not()).fetch();
+        return (List<AipXml>) query().where(xml.state.in(XmlState.PROCESSING, XmlState.FAILED)).where(xml.sip.state.eq(AipState.PROCESSING).not()).fetch();
     }
 
     public void rollbackUnfinishedXmlsRecords() {
         QAipXml xml = qObject();
-        queryFactory.update(xml).where(xml.state.eq(XmlState.PROCESSING)).set(xml.state, XmlState.ROLLBACKED).execute();
+        queryFactory.update(xml).where(xml.state.in(XmlState.PROCESSING, XmlState.FAILED)).set(xml.state, XmlState.ROLLBACKED).execute();
     }
 }
