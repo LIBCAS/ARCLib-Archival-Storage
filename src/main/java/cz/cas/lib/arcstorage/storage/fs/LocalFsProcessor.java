@@ -209,6 +209,8 @@ public class LocalFsProcessor implements StorageService {
      * @throws GeneralException                 in case of any unexpected error
      */
     private void storeFile(Path filePath, String id, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws FileCorruptedAfterStoreException, IOStorageException {
+        if (rollback.get())
+            return;
         try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(filePath.resolve(id).toFile()))) {
             Files.createDirectories(filePath);
             Files.createFile(filePath.resolve(id + ".LOCK"));

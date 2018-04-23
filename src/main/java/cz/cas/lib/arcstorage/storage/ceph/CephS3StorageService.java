@@ -66,7 +66,7 @@ public class CephS3StorageService implements StorageService {
     }
 
     /**
-     * Retrieves reference to a file. Never call shutdown, inputstreams must remain accessible.
+     * Retrieves reference to a file.
      *
      * @param sipId
      * @param xmlVersions specifies which XML versions should be retrieved, typically all or the latest only
@@ -184,7 +184,9 @@ public class CephS3StorageService implements StorageService {
      * @throws GeneralException                 in case of any unexpected error
      */
 
-    protected void storeFile(AmazonS3 s3, String id, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws FileCorruptedAfterStoreException, IOStorageException {
+    void storeFile(AmazonS3 s3, String id, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws FileCorruptedAfterStoreException, IOStorageException {
+        if(rollback.get())
+            return;
         InitiateMultipartUploadResult initRes = null;
         try (BufferedInputStream bis = new BufferedInputStream(stream)) {
             InitiateMultipartUploadRequest initReq = new InitiateMultipartUploadRequest(storageConfig.getLocation(), id, new ObjectMetadata());

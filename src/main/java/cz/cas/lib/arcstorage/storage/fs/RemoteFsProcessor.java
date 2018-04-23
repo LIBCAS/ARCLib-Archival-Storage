@@ -348,6 +348,8 @@ public class RemoteFsProcessor implements StorageService {
      */
     private void storeFile(SFTPClient sftp, String filePath, String id, String S, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws FileCorruptedAfterStoreException, IOStorageException {
         try {
+            if (rollback.get())
+                return;
             sftp.mkdirs(filePath);
             sftp.put(new InputStreamSource(new ByteArrayInputStream("".getBytes()), id + ".LOCK"), filePath);
             sftp.put(new InputStreamSource(stream, id), filePath);
