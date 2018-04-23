@@ -159,7 +159,7 @@ public class ArchivalService {
     }
 
     /**
-     * Physically removes SIP from database. XMLs and data in transaction database are not removed.
+     * Physically removes SIP from storage. XMLs and data in transaction database are not removed.
      *
      * @param sipId
      * @throws IOException

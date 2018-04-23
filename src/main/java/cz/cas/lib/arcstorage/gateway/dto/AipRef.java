@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -15,6 +16,11 @@ public class AipRef {
     private ArchiveFileRef sip;
 
     private List<XmlRef> xmls = new ArrayList<>();
+
+    public AipRef(String sipId, InputStream sipStream, Checksum sipChecksum, InputStream aipXmlStream, Checksum xmlChecksum) {
+        sip = new ArchiveFileRef(sipId, new FileRef(sipStream), sipChecksum);
+        xmls.add(new XmlRef(new FileRef(aipXmlStream), xmlChecksum, 1));
+    }
 
     public AipRef(AipRef aipRef, FileRef sipIs, FileRef xmlIs) {
         sip = new ArchiveFileRef(aipRef.getSip().getId(), sipIs, aipRef.getSip().getChecksum());

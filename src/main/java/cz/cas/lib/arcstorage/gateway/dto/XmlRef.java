@@ -8,6 +8,11 @@ import lombok.Setter;
 public class XmlRef extends ArchiveFileRef {
     private int version;
 
+    public XmlRef(FileRef fileRef, Checksum checksum, int version) {
+        super(null, fileRef, checksum);
+        this.version = version;
+    }
+
     public XmlRef(String id, FileRef fileRef, Checksum checksum, int version) {
         super(id, fileRef, checksum);
         this.version = version;

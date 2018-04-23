@@ -4,8 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.io.ByteSource;
 import com.google.common.io.Resources;
 import cz.cas.lib.arcstorage.domain.DomainObject;
+import cz.cas.lib.arcstorage.exception.BadArgument;
 import cz.cas.lib.arcstorage.exception.ConfigParserException;
 import cz.cas.lib.arcstorage.exception.MissingObject;
+import cz.cas.lib.arcstorage.gateway.dto.Checksum;
 import org.springframework.aop.framework.Advised;
 import org.springframework.aop.support.AopUtils;
 
@@ -346,4 +348,42 @@ public class Utils {
         }
         throw new ConfigParserException(jsonPtrExpr, node.toString(), enumerationClass);
     }
+
+    @FunctionalInterface
+    public interface Checked {
+        void checked() throws Exception;
+    }
+
+    public static <T extends RuntimeException> void checked(Checked method, Supplier<T> supplier) {
+        try {
+            method.checked();
+        } catch (Exception ex) {
+            throw supplier.get();
+        }
+    }
+
+    /**
+     * Checks that the checksum has the appropriate format
+     *
+     * @param checksum
+     */
+    public static void checkChecksum(Checksum checksum) {
+        String hash = checksum.getHash();
+        switch (checksum.getType()) {
+            case MD5:
+                if (!hash.matches("\\p{XDigit}{32}")) {
+                    throw new BadArgument("Invalid format of MD5 checksum: " + hash);
+                }
+                break;
+            case SHA_512:
+                if (!hash.matches("\\p{Alnum}{128}")) {
+                    throw new BadArgument("Invalid format of SHA_512 checksum: " + hash);
+                }
+        }
+    }
+
+    public static void checkUUID(String id) {
+        checked(() -> UUID.fromString(id), () -> new BadArgument(id));
+    }
+
 }
