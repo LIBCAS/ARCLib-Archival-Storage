@@ -120,11 +120,11 @@ public class ArchivalAsyncService {
             archivalDbService.rollbackSip(aip.getSip().getId(), aip.getXml().getId());
             log.info(strA(aip.getSip().getId()) + "rollback successful on all storages.");
         } catch (InterruptedException e) {
-            archivalDbService.registerSipAndXmlRollback(aip.getSip().getId(), aip.getXml().getId());
+            archivalDbService.setSipFailed(aip.getSip().getId(), aip.getXml().getId());
 
             log.error("Main thread has been interrupted during rollback.");
         } catch (ExecutionException e) {
-            archivalDbService.registerSipAndXmlRollback(aip.getSip().getId(), aip.getXml().getId());
+            archivalDbService.setSipFailed(aip.getSip().getId(), aip.getXml().getId());
 
             log.error(strA(aip.getSip().getId()) + "rollback failed on some storages: " + e);
         }
@@ -198,8 +198,10 @@ public class ArchivalAsyncService {
             archivalDbService.rollbackXml(xml.getId());
             log.info(strX(xml.getId()) + "rollback successful on all storages.");
         } catch (InterruptedException e) {
+            archivalDbService.setXmlFailed(xml.getId());
             log.error("Main thread has been interrupted during rollback.");
         } catch (ExecutionException e) {
+            archivalDbService.setXmlFailed(xml.getId());
             log.error(strX(xml.getId()) + "rollback failed on some storages.");
         }
     }

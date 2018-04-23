@@ -14,7 +14,7 @@ public class AipSipStore extends DomainStore<AipSip, QAipSip> {
     }
 
     /**
-     * @return all SIPs in processing state
+     * @return all SIPs in processing || failed state
      */
     public List<AipSip> findUnfinishedSips() {
         QAipSip sip = qObject();

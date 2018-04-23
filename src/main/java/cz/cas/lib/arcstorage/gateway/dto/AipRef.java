@@ -29,6 +29,11 @@ public class AipRef {
         return xmls.get(index);
     }
 
+    /**
+     * Used when the aip has only one XML i.e. it is just under process related to creation.
+     *
+     * @return
+     */
     public XmlRef getXml() {
         return xmls.get(0);
     }
