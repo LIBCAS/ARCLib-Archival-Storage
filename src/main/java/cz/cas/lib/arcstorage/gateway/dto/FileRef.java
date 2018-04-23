@@ -19,7 +19,7 @@ public class FileRef {
      */
     private InputStream inputStream;
     /**
-     * use {@link #closeConnections()} method to close these after transfer
+     * use {@link #freeSources()} method to close these after transfer
      */
     private List<Closeable> channels = new ArrayList<>();
 
@@ -34,13 +34,9 @@ public class FileRef {
     }
 
     /**
-     * Closes channels which have to be closed once the object usage ends.
-     * <p>
-     * If the file was pulled from remote storage together with other files, all will likely have the same list of channels.
-     * In that case it is enough to close channels of one of them.
-     * </p>
+     * Closes inputstream and all channels (connections) which have to be closed once the object usage ends.
      */
-    public void closeConnections() {
+    public void freeSources() {
         if (channels.isEmpty())
             return;
         //developer usually calls this right after data are read but it should wait a while because used technology can
@@ -48,6 +44,7 @@ public class FileRef {
         try {
             Thread.sleep(1000);
             for (Closeable closeable : channels) {
+                inputStream.close();
                 closeable.close();
             }
         } catch (IOException | InterruptedException e) {

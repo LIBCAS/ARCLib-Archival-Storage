@@ -52,12 +52,12 @@ public class AipApi {
             zipOut.putNextEntry(new ZipEntry(aip.getSip().getId()));
             IOUtils.copyLarge(new BufferedInputStream(aip.getSip().getInputStream()), zipOut);
             zipOut.closeEntry();
-            IOUtils.closeQuietly(aip.getSip().getInputStream());
+            aip.getSip().freeSources();
             for (XmlRef xml : aip.getXmls()) {
                 zipOut.putNextEntry(new ZipEntry(String.format("%s_xml_%d", sipId, xml.getVersion())));
                 IOUtils.copyLarge(new BufferedInputStream(xml.getInputStream()), zipOut);
                 zipOut.closeEntry();
-                IOUtils.closeQuietly(xml.getInputStream());
+                xml.freeSources();
             }
         }
     }
@@ -78,7 +78,7 @@ public class AipApi {
         response.setStatus(200);
         response.addHeader("Content-Disposition", "attachment; filename=" + sipId + "_xml_" + xml.getVersion());
         IOUtils.copyLarge(xml.getInputStream(), response.getOutputStream());
-        IOUtils.closeQuietly(xml.getInputStream());
+        xml.freeSources();
     }
 
     /**
