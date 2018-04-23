@@ -287,8 +287,7 @@ public class RemoteFsProcessor implements StorageService {
                 for (Integer version : xmlVersions.keySet()) {
                     Checksum dbChecksum = xmlVersions.get(version);
                     Checksum storageFileChecksum = StorageUtils.computeChecksum(getFile(sftp, xmlPath + S + toXmlId(sipId, version)), dbChecksum.getType());
-                    info.setChecksum(storageFileChecksum);
-                    info.setConsistent(dbChecksum.equals(storageFileChecksum));
+                    info.addXmlInfo(new XmlStateInfo(version, dbChecksum.equals(storageFileChecksum), storageFileChecksum));
                 }
             }
         } catch (ConnectionException e) {

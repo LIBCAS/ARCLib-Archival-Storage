@@ -30,8 +30,8 @@ public interface FsAdapter extends StorageService {
     }
 
     @Override
-    default void storeXml(String sipId, XmlRef xmlFileRef, AtomicBoolean rollback) throws StorageException {
-        getFsProcessor().storeXml(sipId, xmlFileRef, rollback);
+    default void storeXml(String sipId, XmlRef xmlRef, AtomicBoolean rollback) throws StorageException {
+        getFsProcessor().storeXml(sipId, xmlRef, rollback);
     }
 
     @Override

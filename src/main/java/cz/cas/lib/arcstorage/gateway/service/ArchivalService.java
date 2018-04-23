@@ -111,16 +111,16 @@ public class ArchivalService {
             throw new RollbackedException(requestedXml);
         if (requestedXml.getState() == XmlState.PROCESSING)
             throw new StillProcessingException(requestedXml);
-        FileRef xmlFileRef;
+        FileRef xmlRef;
         try {
             StorageService storageService = StorageUtils.createAdapter(storageConfigStore.getByPriority());
-            xmlFileRef = storageService.getXml(sipId, requestedXml.getVersion());
+            xmlRef = storageService.getXml(sipId, requestedXml.getVersion());
         } catch (StorageException e) {
             log.error("Storage error has occurred during retrieval process of XML version: " + requestedXml.getVersion() + " of AIP: " + sipId);
             throw e;
         }
         log.info("XML version: " + requestedXml.getVersion() + " of AIP: " + sipId + " has been successfully retrieved.");
-        return new XmlRef(requestedXml.getId(), xmlFileRef, requestedXml.getChecksum(), requestedXml.getVersion());
+        return new XmlRef(requestedXml.getId(), xmlRef, requestedXml.getChecksum(), requestedXml.getVersion());
     }
 
 

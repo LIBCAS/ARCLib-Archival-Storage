@@ -15,8 +15,8 @@ import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.*;
 import cz.cas.lib.arcstorage.storage.StorageService;
+import cz.cas.lib.arcstorage.storage.StorageUtils;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
-import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
 import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import org.apache.commons.io.input.NullInputStream;
@@ -65,49 +65,103 @@ public class CephS3StorageService implements StorageService {
         storeFile(s3, toXmlId(sip.getId(), xml.getVersion()), xml.getInputStream(), xml.getChecksum(), rollback);
     }
 
+    /**
+     * Retrieves reference to a file. Never call shutdown, inputstreams must remain accessible.
+     *
+     * @param sipId
+     * @param xmlVersions specifies which XML versions should be retrieved, typically all or the latest only
+     * @return
+     * @throws StorageException
+     */
     @Override
-    public List<FileRef> getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException, StorageException {
-        return null;
+    public List<FileRef> getAip(String sipId, Integer... xmlVersions) throws StorageException {
+        AmazonS3 s3 = connect();
+        List<FileRef> list = new ArrayList<>();
+        list.add(new FileRef(s3.getObject(storageConfig.getLocation(), sipId).getObjectContent()));
+        for (Integer xmlVersion : xmlVersions) {
+            list.add(new FileRef(s3.getObject(storageConfig.getLocation(), toXmlId(sipId, xmlVersion)).getObjectContent()));
+        }
+        return list;
     }
 
     @Override
-    public void storeXml(String sipId, XmlRef xmlFileRef, AtomicBoolean rollback) throws StorageException {
-
+    public void storeXml(String sipId, XmlRef xmlRef, AtomicBoolean rollback) throws StorageException {
+        AmazonS3 s3 = connect();
+        storeFile(s3, toXmlId(sipId, xmlRef.getVersion()), xmlRef.getInputStream(), xmlRef.getChecksum(), rollback);
     }
 
     @Override
     public FileRef getXml(String sipId, int version) throws StorageException {
-        return null;
+        AmazonS3 s3 = connect();
+        return new FileRef(s3.getObject(storageConfig.getLocation(), toXmlId(sipId, version)).getObjectContent());
     }
 
     @Override
-    public void deleteSip(String id) throws StorageException {
-
+    public void deleteSip(String sipId) throws StorageException {
+        AmazonS3 s3 = connect();
+        s3.deleteObject(storageConfig.getLocation(), sipId);
+        s3.deleteObject(storageConfig.getLocation(), toMetadataObjectId(sipId));
     }
 
     @Override
-    public void remove(String id) throws StorageException {
-
+    public void remove(String sipId) throws StorageException {
+        AmazonS3 s3 = connect();
+        S3Object object = s3.getObject(storageConfig.getLocation(), toMetadataObjectId(sipId));
+        object.getObjectMetadata().addUserMetadata(STATE_KEY, AipState.REMOVED.toString());
+        s3.putObject(storageConfig.getLocation(), toMetadataObjectId(sipId), new NullInputStream(0), object.getObjectMetadata());
     }
 
     @Override
     public void rollbackAip(String sipId) throws StorageException {
+        AmazonS3 s3 = connect();
+        s3.deleteObject(storageConfig.getLocation(), sipId);
+        S3Object sipObject = s3.getObject(storageConfig.getLocation(), toMetadataObjectId(sipId));
+        sipObject.getObjectMetadata().addUserMetadata(STATE_KEY, AipState.ROLLBACKED.toString());
+        s3.putObject(storageConfig.getLocation(), toMetadataObjectId(sipId), new NullInputStream(0), sipObject.getObjectMetadata());
 
+        String xmlId = toXmlId(sipId, 1);
+        s3.deleteObject(storageConfig.getLocation(), xmlId);
+        S3Object xmlObject = s3.getObject(storageConfig.getLocation(), toMetadataObjectId(xmlId));
+        xmlObject.getObjectMetadata().addUserMetadata(STATE_KEY, AipState.ROLLBACKED.toString());
+        s3.putObject(storageConfig.getLocation(), toMetadataObjectId(xmlId), new NullInputStream(0), xmlObject.getObjectMetadata());
     }
 
     @Override
     public void rollbackXml(String sipId, int version) throws StorageException {
-
+        AmazonS3 s3 = connect();
+        String xmlId = toXmlId(sipId, version);
+        s3.deleteObject(storageConfig.getLocation(), xmlId);
+        S3Object object = s3.getObject(storageConfig.getLocation(), toMetadataObjectId(xmlId));
+        object.getObjectMetadata().addUserMetadata(STATE_KEY, AipState.ROLLBACKED.toString());
+        s3.putObject(storageConfig.getLocation(), toMetadataObjectId(xmlId), new NullInputStream(0), object.getObjectMetadata());
     }
 
     @Override
     public AipStateInfo getAipInfo(String sipId, Checksum sipChecksum, AipState aipState, Map<Integer, Checksum> xmlVersions) throws StorageException {
-        return null;
+        AmazonS3 s3 = connect();
+        AipStateInfo info = new AipStateInfo(storageConfig.getName(), storageConfig.getStorageType(), aipState);
+        if (aipState == AipState.ARCHIVED || aipState == AipState.REMOVED) {
+            S3Object sipObject = s3.getObject(storageConfig.getLocation(), sipId);
+            Checksum storageFileChecksum = StorageUtils.computeChecksum(sipObject.getObjectContent(), sipChecksum.getType());
+            info.setChecksum(storageFileChecksum);
+            info.setConsistent(sipChecksum.equals(storageFileChecksum));
+        } else {
+            info.setChecksum(null);
+            info.setConsistent(false);
+        }
+
+        for (Integer version : xmlVersions.keySet()) {
+            S3Object xmlObject = s3.getObject(storageConfig.getLocation(), toXmlId(sipId, version));
+            Checksum dbChecksum = xmlVersions.get(version);
+            Checksum storageFileChecksum = StorageUtils.computeChecksum(xmlObject.getObjectContent(), dbChecksum.getType());
+            info.addXmlInfo(new XmlStateInfo(version, dbChecksum.equals(storageFileChecksum), storageFileChecksum));
+        }
+        return info;
     }
 
     @Override
     public StorageState getStorageState() throws StorageException {
-        return null;
+        return new StorageState(storageConfig);
     }
 
     /**
@@ -123,7 +177,7 @@ public class CephS3StorageService implements StorageService {
      * @param s3       connection
      * @param id       id of new file
      * @param stream   new file stream
-     * @param checksum checksum of the file, this is only added to metadata and not used for fixity comparison
+     * @param checksum checksum of the file, this is only added to metadata and not used for fixity comparison, fixity is compared per each chunk during upload
      * @param rollback rollback flag to be periodically checked
      * @throws FileCorruptedAfterStoreException if fixity does not match after store
      * @throws IOStorageException               in case of any {@link IOException}

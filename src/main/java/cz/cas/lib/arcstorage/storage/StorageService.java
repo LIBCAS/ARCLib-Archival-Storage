@@ -67,7 +67,7 @@ public interface StorageService {
      * @return checksum computed from stored file
      * @throws IOException
      */
-    void storeXml(String sipId, XmlRef xmlFileRef, AtomicBoolean rollback) throws StorageException;
+    void storeXml(String sipId, XmlRef xmlRef, AtomicBoolean rollback) throws StorageException;
 
     /**
      * Retrieves reference to AipXml file. Caller is responsible for closing retrieved inputStream.
