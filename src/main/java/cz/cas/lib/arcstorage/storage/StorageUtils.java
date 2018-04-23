@@ -89,7 +89,7 @@ public class StorageUtils {
             switch (checksumType) {
                 case MD5:
                     return MessageDigest.getInstance("MD5");
-                case SHA_512:
+                case SHA512:
                     return MessageDigest.getInstance("SHA-512");
                 default:
                     throw new GeneralException("unsupported checksum type: " + checksumType);

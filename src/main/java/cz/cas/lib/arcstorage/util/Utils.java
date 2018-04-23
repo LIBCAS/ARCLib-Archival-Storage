@@ -375,9 +375,9 @@ public class Utils {
                     throw new BadArgument("Invalid format of MD5 checksum: " + hash);
                 }
                 break;
-            case SHA_512:
+            case SHA512:
                 if (!hash.matches("\\p{Alnum}{128}")) {
-                    throw new BadArgument("Invalid format of SHA_512 checksum: " + hash);
+                    throw new BadArgument("Invalid format of SHA512 checksum: " + hash);
                 }
         }
     }
