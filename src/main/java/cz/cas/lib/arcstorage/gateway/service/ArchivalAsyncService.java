@@ -67,7 +67,7 @@ public class ArchivalAsyncService {
             CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                         try (BufferedInputStream sipStream = new BufferedInputStream(new FileInputStream(tmpSipPath.toFile()));
                              BufferedInputStream xmlStream = new BufferedInputStream(new FileInputStream(tmpXmlPath.toFile()))) {
-                            a.storeAip(new AipRef(aip, new FileRef(sipStream), new FileRef(xmlStream)), rollback);
+                            a.storeAip(new AipRef(aip, sipStream, xmlStream), rollback);
                             log.info(strSA(a.getStorageConfig().getName(), aip.getSip().getId()) + op + "success");
                         } catch (StorageException e) {
                             log.warn(strSA(a.getStorageConfig().getName(), aip.getSip().getId()) + op + "error: " + e);

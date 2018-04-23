@@ -22,9 +22,16 @@ public class AipRef {
         xmls.add(new XmlRef(new FileRef(aipXmlStream), xmlChecksum, 1));
     }
 
-    public AipRef(AipRef aipRef, FileRef sipIs, FileRef xmlIs) {
-        sip = new ArchiveFileRef(aipRef.getSip().getId(), sipIs, aipRef.getSip().getChecksum());
-        xmls.add(new XmlRef(aipRef.getXml().getId(), xmlIs, aipRef.getXml().getChecksum(), aipRef.getXml().getVersion()));
+    /**
+     * Copies existing AIP ref and assigns new inputstreams to it. Used when reading the same AIP multiple times.
+     *
+     * @param aipRef
+     * @param sipIs
+     * @param xmlIs
+     */
+    public AipRef(AipRef aipRef, InputStream sipIs, InputStream xmlIs) {
+        sip = new ArchiveFileRef(aipRef.getSip().getId(), new FileRef(sipIs), aipRef.getSip().getChecksum());
+        xmls.add(new XmlRef(aipRef.getXml().getId(), new FileRef(xmlIs), aipRef.getXml().getChecksum(), aipRef.getXml().getVersion()));
     }
 
     public List<XmlRef> getXmls() {
