@@ -46,6 +46,9 @@ public class ArchivalDbService {
     @org.springframework.transaction.annotation.Transactional(propagation = Propagation.REQUIRES_NEW)
     public String registerAipCreation(String sipId, Checksum sipChecksum, Checksum xmlChecksum) {
         notNull(sipId, () -> new BadArgument(sipId));
+        notNull(sipChecksum, () -> new BadArgument(sipChecksum));
+        notNull(xmlChecksum, () -> new BadArgument(xmlChecksum));
+
         AipSip sip = aipSipStore.find(sipId);
         if (sip != null)
             throw new ConflictObject(sip);
@@ -78,6 +81,8 @@ public class ArchivalDbService {
      */
     public AipXml registerXmlUpdate(String sipId, Checksum xmlChecksum) {
         notNull(sipId, () -> new BadArgument(sipId));
+        notNull(xmlChecksum, () -> new BadArgument(xmlChecksum));
+
         int xmlVersion = aipXmlStore.getNextXmlVersionNumber(sipId);
         AipXml newVersion = new AipXml(xmlChecksum, new AipSip(sipId), xmlVersion, XmlState.PROCESSING);
         aipXmlStore.save(newVersion);
