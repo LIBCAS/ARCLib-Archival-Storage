@@ -10,7 +10,6 @@ import cz.cas.lib.arcstorage.gateway.exception.RollbackedException;
 import cz.cas.lib.arcstorage.gateway.exception.StillProcessingException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
-import cz.cas.lib.arcstorage.storage.StorageUtils;
 import cz.cas.lib.arcstorage.store.StorageConfigStore;
 import cz.cas.lib.arcstorage.store.Transactional;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +32,7 @@ public class ArchivalService {
     private ArchivalAsyncService async;
     private ArchivalDbService archivalDbService;
     private StorageConfigStore storageConfigStore;
+    private StorageProvider storageProvider;
 
     /**
      * Retrieves reference to AIP.
@@ -67,7 +67,7 @@ public class ArchivalService {
         try {
             log.debug("randomly choosing one of storages with highest priority");
             StorageConfig storageToBeUsed = storageConfigStore.getByPriority();
-            StorageService storageService = StorageUtils.createAdapter(storageToBeUsed);
+            StorageService storageService = storageProvider.createAdapter(storageToBeUsed);
             log.info("Storage: " + storageToBeUsed.getName() + " chose to retrieve AIP: " + sipId);
             refs = storageService.getAip(sipId, xmls.stream().map(AipXml::getVersion).collect(Collectors.toList()).toArray(new Integer[xmls.size()]));
         } catch (StorageException e) {
@@ -113,7 +113,7 @@ public class ArchivalService {
             throw new StillProcessingException(requestedXml);
         FileRef xmlRef;
         try {
-            StorageService storageService = StorageUtils.createAdapter(storageConfigStore.getByPriority());
+            StorageService storageService = storageProvider.createAdapter(storageConfigStore.getByPriority());
             xmlRef = storageService.getXml(sipId, requestedXml.getVersion());
         } catch (StorageException e) {
             log.error("Storage error has occurred during retrieval process of XML version: " + requestedXml.getVersion() + " of AIP: " + sipId);
@@ -196,7 +196,7 @@ public class ArchivalService {
         if (aip.getState() == AipState.PROCESSING)
             throw new StillProcessingException(aip);
         List<AipStateInfo> aipStateInfos = new ArrayList<>();
-        for (StorageService storageService : storageConfigStore.findAll().stream().map(StorageUtils::createAdapter).collect(Collectors.toList())) {
+        for (StorageService storageService : storageConfigStore.findAll().stream().map(storageProvider::createAdapter).collect(Collectors.toList())) {
             aipStateInfos.add(storageService.getAipInfo(sipId, aip.getChecksum(), aip.getState(), aip.getXmls().stream().collect(Collectors.toMap(xml -> xml.getVersion(), xml -> xml.getChecksum()))));
         }
         log.info(String.format("Info about AIP: %s has been successfully retrieved.", sipId));
@@ -212,7 +212,7 @@ public class ArchivalService {
         List<StorageState> storageStates = new ArrayList<>();
         storageConfigStore.findAll().stream().forEach(c -> {
             try {
-                storageStates.add(StorageUtils.createAdapter(c).getStorageState());
+                storageStates.add(storageProvider.createAdapter(c).getStorageState());
             } catch (StorageException e) {
                 throw new GeneralException(e);
             }
@@ -231,7 +231,7 @@ public class ArchivalService {
         List<AipSip> unfinishedSips = new ArrayList<>();
         List<AipXml> unfinishedXmls = new ArrayList<>();
         archivalDbService.fillUnfinishedFilesLists(unfinishedSips, unfinishedXmls);
-        for (StorageService storageService : storageConfigStore.findAll().stream().map(c -> StorageUtils.createAdapter(c)).collect(Collectors.toList())) {
+        for (StorageService storageService : storageConfigStore.findAll().stream().map(c -> storageProvider.createAdapter(c)).collect(Collectors.toList())) {
             for (AipSip sip : unfinishedSips) {
                 if (sip.getXmls().size() > 1)
                     log.warn("Found more than one XML of SIP package with id " + sip.getId() + " which was in PROCESSING state. SIP and its first XML will be rollbacked.");
@@ -258,5 +258,10 @@ public class ArchivalService {
     @Inject
     public void setStorageConfigStore(StorageConfigStore storageConfigStore) {
         this.storageConfigStore = storageConfigStore;
+    }
+
+    @Inject
+    public void setStorageProvider(StorageProvider storageProvider) {
+        this.storageProvider = storageProvider;
     }
 }

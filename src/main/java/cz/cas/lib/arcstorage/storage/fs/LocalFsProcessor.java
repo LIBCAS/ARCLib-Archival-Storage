@@ -6,11 +6,11 @@ import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.*;
 import cz.cas.lib.arcstorage.storage.StorageService;
+import cz.cas.lib.arcstorage.storage.StorageUtils;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
 import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
 import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
-import cz.cas.lib.arcstorage.storage.StorageUtils;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 

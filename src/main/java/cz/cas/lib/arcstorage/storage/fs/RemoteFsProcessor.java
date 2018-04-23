@@ -24,18 +24,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static cz.cas.lib.arcstorage.storage.StorageUtils.keyFilePath;
-
 @Slf4j
 public class RemoteFsProcessor implements StorageService {
 
     @Getter
     private StorageConfig storageConfig;
     private String S;
+    private String keyFilePath;
 
-    public RemoteFsProcessor(StorageConfig storageConfig, String separator) {
+    public RemoteFsProcessor(StorageConfig storageConfig, String separator, String keyFilePath) {
         this.storageConfig = storageConfig;
         this.S = separator;
+        this.keyFilePath = keyFilePath;
     }
 
     @Override

@@ -8,7 +8,6 @@ import cz.cas.lib.arcstorage.gateway.dto.XmlRef;
 import cz.cas.lib.arcstorage.gateway.exception.CantReadException;
 import cz.cas.lib.arcstorage.gateway.exception.CantWriteException;
 import cz.cas.lib.arcstorage.storage.StorageService;
-import cz.cas.lib.arcstorage.storage.StorageUtils;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.store.StorageConfigStore;
 import cz.cas.lib.arcstorage.store.Transactional;
@@ -43,6 +42,7 @@ public class ArchivalAsyncService {
     private StorageConfigStore storageConfigStore;
     private ExecutorService executor;
     private Path tmpFolder;
+    private StorageProvider storageProvider;
 
     @Async
     @Transactional
@@ -62,7 +62,7 @@ public class ArchivalAsyncService {
         }
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         AtomicBoolean rollback = new AtomicBoolean(false);
-        List<StorageService> adapters = storageConfigStore.findAll().stream().map(StorageUtils::createAdapter).collect(Collectors.toList());
+        List<StorageService> adapters = storageConfigStore.findAll().stream().map(storageProvider::createAdapter).collect(Collectors.toList());
         for (StorageService a : adapters) {
             CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                         try (BufferedInputStream sipStream = new BufferedInputStream(new FileInputStream(tmpSipPath.toFile()));
@@ -141,7 +141,7 @@ public class ArchivalAsyncService {
         }
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         AtomicBoolean rollback = new AtomicBoolean(false);
-        List<StorageService> adapters = storageConfigStore.findAll().stream().map(StorageUtils::createAdapter).collect(Collectors.toList());
+        List<StorageService> adapters = storageConfigStore.findAll().stream().map(storageProvider::createAdapter).collect(Collectors.toList());
         for (StorageService a : adapters) {
             CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                         try (BufferedInputStream xmlStream = new BufferedInputStream(new FileInputStream(tmpXmlPath.toFile()))) {
@@ -210,7 +210,7 @@ public class ArchivalAsyncService {
     @Async
     public void delete(String sipId) throws StorageException {
         try {
-            for (StorageService storageService : storageConfigStore.findAll().stream().map(StorageUtils::createAdapter).collect(Collectors.toList())) {
+            for (StorageService storageService : storageConfigStore.findAll().stream().map(storageProvider::createAdapter).collect(Collectors.toList())) {
                 storageService.deleteSip(sipId);
             }
         } catch (StorageException e) {
@@ -224,7 +224,7 @@ public class ArchivalAsyncService {
     @Async
     public void remove(String sipId) throws StorageException {
         try {
-            for (StorageService storageService : storageConfigStore.findAll().stream().map(StorageUtils::createAdapter).collect(Collectors.toList())) {
+            for (StorageService storageService : storageConfigStore.findAll().stream().map(storageProvider::createAdapter).collect(Collectors.toList())) {
                 storageService.remove(sipId);
             }
         } catch (StorageException e) {
@@ -252,5 +252,10 @@ public class ArchivalAsyncService {
     @Inject
     public void setExecutor(ExecutorService executor) {
         this.executor = executor;
+    }
+
+    @Inject
+    public void setStorageProvider(StorageProvider storageProvider) {
+        this.storageProvider = storageProvider;
     }
 }

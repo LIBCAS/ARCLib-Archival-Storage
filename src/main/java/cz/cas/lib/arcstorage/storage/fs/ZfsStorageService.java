@@ -24,7 +24,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.isLocalhost;
-import static cz.cas.lib.arcstorage.storage.StorageUtils.keyFilePath;
 
 
 /**
@@ -49,14 +48,16 @@ public class ZfsStorageService implements FsAdapter {
     private StorageConfig storageConfig;
     @Getter
     private StorageService fsProcessor;
+    private String keyFilePath;
 
-    public ZfsStorageService(StorageConfig storageConfig) {
+    public ZfsStorageService(StorageConfig storageConfig, String keyFilePath) {
+        this.keyFilePath = keyFilePath;
         this.storageConfig = storageConfig;
         String separator = storageConfig.getLocation().startsWith("/") ? "/" : "\\";
         if (isLocalhost(storageConfig))
             this.fsProcessor = new LocalFsProcessor(storageConfig, separator);
         else
-            this.fsProcessor = new RemoteFsProcessor(storageConfig, separator);
+            this.fsProcessor = new RemoteFsProcessor(storageConfig, separator, keyFilePath);
     }
 
     /**
