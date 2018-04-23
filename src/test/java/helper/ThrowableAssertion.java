@@ -30,6 +30,11 @@ public class ThrowableAssertion {
         return this;
     }
 
+    public ThrowableAssertion messageContains(String string) {
+        Assert.assertThat(caught.getMessage(), Matchers.containsString(string));
+        return this;
+    }
+
     public ThrowableAssertion hasNoCause() {
         Assert.assertThat(caught.getCause(), Matchers.nullValue());
         return this;
