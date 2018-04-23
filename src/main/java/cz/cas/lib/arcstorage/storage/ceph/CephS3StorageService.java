@@ -35,9 +35,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class CephS3StorageService implements StorageService {
 
     //keys must not contain dash or camelcase
-    protected static final String STATE_KEY = "state";
-    protected static final String CREATED_KEY = "created";
-    protected static final String UPLOAD_ID = "upload-id";
+    static final String STATE_KEY = "state";
+    static final String CREATED_KEY = "created";
+    static final String UPLOAD_ID = "upload-id";
 
     private StorageConfig storageConfig;
     private String userAccessKey;
@@ -184,7 +184,7 @@ public class CephS3StorageService implements StorageService {
      * @throws GeneralException                 in case of any unexpected error
      */
 
-    public void storeFile(AmazonS3 s3, String id, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws FileCorruptedAfterStoreException, IOStorageException {
+    protected void storeFile(AmazonS3 s3, String id, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws FileCorruptedAfterStoreException, IOStorageException {
         InitiateMultipartUploadResult initRes = null;
         try (BufferedInputStream bis = new BufferedInputStream(stream)) {
             InitiateMultipartUploadRequest initReq = new InitiateMultipartUploadRequest(storageConfig.getLocation(), id, new ObjectMetadata());
@@ -249,7 +249,7 @@ public class CephS3StorageService implements StorageService {
         }
     }
 
-    public AmazonS3 connect() {
+    AmazonS3 connect() {
         AWSCredentials credentials = new BasicAWSCredentials(userAccessKey, userSecretKey);
         AWSStaticCredentialsProvider provider = new AWSStaticCredentialsProvider(credentials);
         ClientConfiguration clientConfig = new ClientConfiguration();
@@ -265,7 +265,7 @@ public class CephS3StorageService implements StorageService {
         return conn;
     }
 
-    protected String toMetadataObjectId(String objId) {
+    String toMetadataObjectId(String objId) {
         return objId + ".meta";
     }
 }

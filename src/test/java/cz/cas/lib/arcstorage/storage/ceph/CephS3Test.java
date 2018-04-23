@@ -8,13 +8,14 @@ import cz.cas.lib.arcstorage.domain.AipState;
 import cz.cas.lib.arcstorage.domain.ChecksumType;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.exception.GeneralException;
-import cz.cas.lib.arcstorage.gateway.dto.Checksum;
-import cz.cas.lib.arcstorage.gateway.dto.StorageType;
+import cz.cas.lib.arcstorage.gateway.dto.*;
+import cz.cas.lib.arcstorage.storage.StorageUtils;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
 import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
-import cz.cas.lib.arcstorage.storage.StorageUtils;
 import org.junit.BeforeClass;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TestName;
 
 import java.io.*;
 import java.util.Map;
@@ -28,6 +29,13 @@ public class CephS3Test {
 
     private CephS3StorageService service = new CephS3StorageService(config, "BLZBGL9ZDD23WD0GL8V8", "pPYbINKQxEBLdxhzbycUI00UmTD4uaHjDel1IPui", null);
     private static StorageConfig config = new StorageConfig();
+    private static final String SIP_CONTENT = "blah";
+    private static final Checksum SIP_CHECKSUM = new Checksum(ChecksumType.MD5, "6F1ED002AB5595859014EBF0951522D9");
+    private static final String XML_CONTENT = "blik";
+    private static final Checksum XML_CHECKSUM = new Checksum(ChecksumType.SHA_512, "7EE090163B74E20DFEA30A7DD3CA969F75B1CCD713844F6B6ECD08F101AD04711C0D931BF372C32284BBF656CAC459AFC217C1F290808D0EB35AFFD569FF899C");
+
+    @Rule
+    public TestName testName = new TestName();
 
     @BeforeClass
     public static void beforeClass() {
@@ -46,7 +54,7 @@ public class CephS3Test {
     @Test
     public void storeLargeFileSuccessTest() throws IOStorageException, IOException, FileCorruptedAfterStoreException {
 
-        String fileId = "storeLargeFileSuccessTest";
+        String fileId = testName.getMethodName();
         Checksum checksum = new Checksum(ChecksumType.MD5, "A95E65A3DE9704CB0C5B5C68AE41AE6F");
         AmazonS3 s3 = service.connect();
 
@@ -77,20 +85,19 @@ public class CephS3Test {
     @Test
     public void storeSmallFileSuccessTest() throws IOStorageException, IOException, FileCorruptedAfterStoreException {
 
-        String fileId = "storeSmallFileSuccessTest";
-        Checksum checksum = new Checksum(ChecksumType.MD5, "6F1ED002AB5595859014EBF0951522D9");
+        String fileId = testName.getMethodName();
         AmazonS3 s3 = service.connect();
 
-        service.storeFile(s3, fileId, new ByteArrayInputStream("blah".getBytes()), checksum, new AtomicBoolean(false));
+        service.storeFile(s3, fileId, new ByteArrayInputStream(SIP_CONTENT.getBytes()), SIP_CHECKSUM, new AtomicBoolean(false));
 
         S3Object object = s3.getObject(service.getStorageConfig().getLocation(), fileId);
         Checksum checksumOfStoredFile = StorageUtils.computeChecksum(object.getObjectContent(), ChecksumType.MD5);
-        assertThat(checksum, is(checksumOfStoredFile));
+        assertThat(SIP_CHECKSUM, is(checksumOfStoredFile));
 
         ObjectMetadata objectMetadata = s3.getObjectMetadata(service.getStorageConfig().getLocation(), service.toMetadataObjectId(fileId));
         Map<String, String> userMetadata = objectMetadata.getUserMetadata();
         assertThat(userMetadata.get(CephS3StorageService.STATE_KEY), is(AipState.ARCHIVED.toString()));
-        assertThat(userMetadata.get(checksum.getType().toString()), is(checksum.getHash()));
+        assertThat(userMetadata.get(SIP_CHECKSUM.getType().toString()), is(SIP_CHECKSUM.getHash()));
         assertThat(userMetadata.get(CephS3StorageService.CREATED_KEY), not(isEmptyOrNullString()));
         assertThat(userMetadata.get(service.UPLOAD_ID), not(isEmptyOrNullString()));
     }
@@ -101,8 +108,7 @@ public class CephS3Test {
     @Test
     public void storeFileRollbackAware() throws IOStorageException, IOException, FileCorruptedAfterStoreException {
 
-        String fileId = "storeFileRollbackFlagTest";
-        Checksum checksum = new Checksum(ChecksumType.MD5, "A95E65A3DE9704CB0C5B5C68AE41AE6F");
+        String fileId = testName.getMethodName();
         AmazonS3 s3 = service.connect();
 
         File file = new File("src/test/resources/8MiB+file");
@@ -118,7 +124,7 @@ public class CephS3Test {
         }).start();
 
         try (BufferedInputStream bos = new BufferedInputStream(new FileInputStream(file))) {
-            service.storeFile(s3, fileId, bos, checksum, rollback);
+            service.storeFile(s3, fileId, bos, SIP_CHECKSUM, rollback);
         }
 
         ObjectMetadata objectMetadata = s3.getObjectMetadata(service.getStorageConfig().getLocation(), service.toMetadataObjectId(fileId));
@@ -133,20 +139,20 @@ public class CephS3Test {
     @Test
     public void storeFileSettingRollback() throws IOStorageException, IOException, FileCorruptedAfterStoreException {
 
-        String fileId = "storeFileSettingRollbackTest";
+        String fileId = testName.getMethodName();
 
         CephS3StorageService service = new TestStorageService(config, "BLZBGL9ZDD23WD0GL8V8", "pPYbINKQxEBLdxhzbycUI00UmTD4uaHjDel1IPui", null);
         AmazonS3 s3 = service.connect();
 
         AtomicBoolean rollback = new AtomicBoolean(false);
 
-        assertThrown(() -> service.storeFile(s3, fileId, new ByteArrayInputStream("blah".getBytes()), new Checksum(ChecksumType.MD5, "thisIsOnlyAddedToMetadata"), rollback))
+        assertThrown(() -> service.storeFile(s3, fileId, new ByteArrayInputStream(SIP_CONTENT.getBytes()), SIP_CHECKSUM, rollback))
                 .isInstanceOf(FileCorruptedAfterStoreException.class);
         assertThat(rollback.get(), is(true));
 
         rollback.set(false);
 
-        assertThrown(() -> service.storeFile(s3, fileId, new ByteArrayInputStream("blah".getBytes()), null, rollback))
+        assertThrown(() -> service.storeFile(s3, fileId, new ByteArrayInputStream(SIP_CONTENT.getBytes()), null, rollback))
                 .isInstanceOf(GeneralException.class);
         assertThat(rollback.get(), is(true));
     }
