@@ -44,8 +44,10 @@ public class ArchivalService {
      * @throws DeletedException         if SIP is deleted
      * @throws RollbackedException      if SIP is rollbacked or only one XML is requested and that one is rollbacked
      * @throws StillProcessingException if SIP or some of requested XML is still processing
+     * @throws StorageException         if error has occurred during retrieval process of AIP
      */
-    public AipRef get(String sipId, Optional<Boolean> all) throws RollbackedException, StillProcessingException, DeletedException, StorageException {
+    public AipRef get(String sipId, Optional<Boolean> all) throws RollbackedException, StillProcessingException,
+            DeletedException, StorageException {
         AipSip sipEntity = archivalDbService.getAip(sipId);
 
         if (sipEntity.getState() == AipState.DELETED)

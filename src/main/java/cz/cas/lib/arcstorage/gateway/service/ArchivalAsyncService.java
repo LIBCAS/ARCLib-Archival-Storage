@@ -206,7 +206,6 @@ public class ArchivalAsyncService {
         }
     }
 
-
     @Async
     public void delete(String sipId) throws StorageException {
         try {

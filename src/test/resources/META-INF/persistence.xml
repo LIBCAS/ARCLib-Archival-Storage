@@ -9,6 +9,7 @@
         <class>cz.cas.lib.arcstorage.domain.AipSip</class>
         <class>cz.cas.lib.arcstorage.domain.AipState</class>
         <class>cz.cas.lib.arcstorage.domain.AipXml</class>
+        <class>cz.cas.lib.arcstorage.domain.StorageConfig</class>
         <exclude-unlisted-classes>false</exclude-unlisted-classes>
 
         <properties>
