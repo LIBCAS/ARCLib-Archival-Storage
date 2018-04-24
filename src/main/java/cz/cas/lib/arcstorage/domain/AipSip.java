@@ -30,8 +30,7 @@ public class AipSip extends ArchivalObject {
         return super.getId();
     }
 
-    @OneToMany(mappedBy = "sip", fetch = FetchType.EAGER, cascade = CascadeType.REMOVE)
-    @OnDelete(action = OnDeleteAction.CASCADE)
+    @OneToMany(mappedBy = "sip", fetch = FetchType.EAGER)
     private List<AipXml> xmls = new ArrayList<>();
 
     @Setter
