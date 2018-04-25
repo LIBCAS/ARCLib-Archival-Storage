@@ -196,6 +196,7 @@ public class LocalFsProcessor implements StorageService {
         try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(folder.resolve(id).toFile()))) {
             Files.createDirectories(folder);
             setState(folder, id, AipState.PROCESSING);
+            Files.copy(new ByteArrayInputStream(checksum.getHash().getBytes()), folder.resolve(id + "." + checksum.getType()));
 
             byte[] buffer = new byte[8192];
             int read = stream.read(buffer);
@@ -210,7 +211,6 @@ public class LocalFsProcessor implements StorageService {
             if (rollbackInterruption)
                 return;
 
-            Files.copy(new ByteArrayInputStream(checksum.getHash().getBytes()), folder.resolve(id + "." + checksum.getType()));
             transitProcessingState(folder, id, AipState.ARCHIVED);
         } catch (IOException e) {
             rollback.set(true);

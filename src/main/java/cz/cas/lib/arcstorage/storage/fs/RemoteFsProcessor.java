@@ -327,6 +327,7 @@ public class RemoteFsProcessor implements StorageService {
                 return;
             sftp.mkdirs(folder);
             setState(sftp, folder, id, AipState.PROCESSING);
+            sftp.put(new InputStreamSource(new ByteArrayInputStream(checksum.getHash().getBytes()), id + "." + checksum.getType()), folder);
             sftp.put(new InputStreamSource(stream, id), folder);
             PipedInputStream in = new PipedInputStream();
             PipedOutputStream out = new PipedOutputStream(in);
@@ -344,7 +345,6 @@ public class RemoteFsProcessor implements StorageService {
             boolean rollbackInterruption = !verifyChecksum(in, checksum, rollback);
             if (rollbackInterruption)
                 return;
-            sftp.put(new InputStreamSource(new ByteArrayInputStream(checksum.getHash().getBytes()), id + "." + checksum.getType()), folder);
             transitProcessingState(sftp, folder, id, AipState.ARCHIVED);
         } catch (IOException e) {
             rollback.set(true);
