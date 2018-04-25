@@ -41,6 +41,11 @@ public class LocalFsProcessor implements StorageService {
     }
 
     @Override
+    public boolean testConnection() {
+        return false;
+    }
+
+    @Override
     public void storeAip(AipRef aip, AtomicBoolean rollback) throws StorageException {
         Path sipFolder = getSipFolderPath(aip.getSip().getId());
         Path xmlFolder = getXmlFolderPath(aip.getSip().getId());

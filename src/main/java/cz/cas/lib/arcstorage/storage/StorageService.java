@@ -7,6 +7,7 @@ import cz.cas.lib.arcstorage.domain.XmlState;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.*;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
+import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
 import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 
@@ -64,7 +65,7 @@ public interface StorageService {
      * @throws StorageException
      * @throws cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException
      */
-    List<FileRef> getAip(String sipId, Integer... xmlVersions) throws StorageException;
+    List<FileRef> getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException, StorageException;
 
     /**
      * Stores XML files into storage.
@@ -93,7 +94,7 @@ public interface StorageService {
      * @throws StorageException
      * @throws cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException
      */
-    FileRef getXml(String sipId, int version) throws StorageException;
+    FileRef getXml(String sipId, int version) throws FileDoesNotExistException, StorageException;
 
     /**
      * Deletes SIP file from storage. Must not fail if SIP package is already physically deleted.
@@ -164,6 +165,13 @@ public interface StorageService {
      * @return
      */
     StorageState getStorageState() throws StorageException;
+
+    /**
+     * Tests if storage is reachable.
+     *
+     * @return true if storage is reachable, false otherwise
+     */
+    boolean testConnection();
 
     /**
      * Verifies storageChecksum. IMPORTANT: returns true if storageChecksum matches but throws exception when it does not. False is returned when the computation is interrupted by rollback flag.

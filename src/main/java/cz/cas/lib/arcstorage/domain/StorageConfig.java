@@ -33,4 +33,5 @@ public class StorageConfig extends DomainObject {
      * config in JSON format
      */
     String config;
+    boolean reachable;
 }

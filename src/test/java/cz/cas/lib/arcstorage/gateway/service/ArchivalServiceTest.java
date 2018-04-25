@@ -249,9 +249,9 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void getAipInfo() throws  StillProcessingException, StorageException {
+    public void getAipInfo() throws StillProcessingException, StorageException {
         when(storageService.getAipInfo(anyObject(), anyObject(), anyObject(), anyObject())).thenReturn(
-                new AipStateInfo("", StorageType.CEPH, AipState.ARCHIVED));
+                new AipStateInfo("", StorageType.CEPH, AipState.ARCHIVED, anyObject()));
 
         sip.setState(AipState.ARCHIVED);
         aipSipStore.save(sip);

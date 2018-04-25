@@ -4,11 +4,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.exception.ConfigParserException;
+import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.ceph.CephAdapterType;
 import cz.cas.lib.arcstorage.storage.ceph.CephS3StorageService;
 import cz.cas.lib.arcstorage.storage.fs.FsStorageService;
 import cz.cas.lib.arcstorage.storage.fs.ZfsStorageService;
+import cz.cas.lib.arcstorage.store.StorageConfigStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -21,13 +23,17 @@ import static cz.cas.lib.arcstorage.util.Utils.parseEnumFromConfig;
 public class StorageProvider {
 
     private String keyFilePath;
+    private StorageConfigStore storageConfigStore;
 
     public StorageService createAdapter(StorageConfig storageConfig) throws ConfigParserException {
+        StorageService service;
         switch (storageConfig.getStorageType()) {
             case FS:
-                return new FsStorageService(storageConfig, keyFilePath);
+                service = new FsStorageService(storageConfig, keyFilePath);
+                break;
             case ZFS:
-                return new ZfsStorageService(storageConfig, keyFilePath);
+                service = new ZfsStorageService(storageConfig, keyFilePath);
+                break;
             case CEPH:
                 JsonNode root;
                 try {
@@ -43,19 +49,32 @@ public class StorageProvider {
                         String region = root.at("/region").textValue();
                         if (userKey == null || userSecret == null)
                             throw new ConfigParserException("userKey or userSecret string missing in storage config");
-                        return new CephS3StorageService(storageConfig, userKey, userSecret, region);
+                        service = new CephS3StorageService(storageConfig, userKey, userSecret, region);
+                        break;
                     case SWIFT:
                         throw new UnsupportedOperationException();
                     case LIBRADOS:
                         throw new UnsupportedOperationException();
+                    default:
+                        throw new GeneralException("unknown storage type: " + storageConfig.getStorageType());
                 }
                 break;
+            default:
+                throw new GeneralException("unknown storage type: " + storageConfig.getStorageType());
         }
-        return null;
+        boolean reachable = service.testConnection();
+        storageConfig.setReachable(reachable);
+        storageConfigStore.save(storageConfig);
+        return service;
     }
 
     @Inject
     public void setKeyFilePath(@Value("${arcstorage.auth-key}") String keyFilePath) {
         this.keyFilePath = keyFilePath;
+    }
+
+    @Inject
+    public void setStorageConfigStore(StorageConfigStore storageConfigStore) {
+        this.storageConfigStore = storageConfigStore;
     }
 }

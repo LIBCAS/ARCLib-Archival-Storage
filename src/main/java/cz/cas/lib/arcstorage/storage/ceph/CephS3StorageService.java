@@ -20,6 +20,7 @@ import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
 import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
 import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.input.NullInputStream;
 
 import java.io.BufferedInputStream;
@@ -33,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+@Slf4j
 public class CephS3StorageService implements StorageService {
 
     //keys must not contain dash or camelcase
@@ -74,7 +76,7 @@ public class CephS3StorageService implements StorageService {
      * @throws StorageException
      */
     @Override
-    public List<FileRef> getAip(String sipId, Integer... xmlVersions) throws StorageException {
+    public List<FileRef> getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException {
         AmazonS3 s3 = connect();
         List<FileRef> list = new ArrayList<>();
         checkFileExists(s3, sipId);
@@ -94,7 +96,7 @@ public class CephS3StorageService implements StorageService {
     }
 
     @Override
-    public FileRef getXml(String sipId, int version) throws StorageException {
+    public FileRef getXml(String sipId, int version) throws FileDoesNotExistException {
         AmazonS3 s3 = connect();
         String xmlId = toXmlId(sipId, version);
         checkFileExists(s3, xmlId);
@@ -138,7 +140,7 @@ public class CephS3StorageService implements StorageService {
     }
 
     @Override
-    public AipStateInfo getAipInfo(String sipId, Checksum sipChecksum, AipState aipState, Map<Integer, Checksum> xmlVersions) throws StorageException {
+    public AipStateInfo getAipInfo(String sipId, Checksum sipChecksum, AipState aipState, Map<Integer, Checksum> xmlVersions) throws FileDoesNotExistException {
         AmazonS3 s3 = connect();
         AipStateInfo info = new AipStateInfo(storageConfig.getName(), storageConfig.getStorageType(), aipState, sipChecksum);
         if (aipState == AipState.ARCHIVED || aipState == AipState.REMOVED) {
@@ -168,6 +170,18 @@ public class CephS3StorageService implements StorageService {
         return new StorageState(storageConfig);
     }
 
+    @Override
+    public boolean testConnection() {
+        try {
+            AmazonS3 s3 = connect();
+            s3.getBucketLocation(storageConfig.getLocation());
+        } catch (Exception e) {
+            log.error(storageConfig.getName() + " unable to connect: " + e.getClass() + " " + e.getMessage());
+            return false;
+        }
+        return true;
+    }
+
     /**
      * Stores file and then reads it and verifies its fixity.
      * <p>
@@ -191,10 +205,9 @@ public class CephS3StorageService implements StorageService {
     void storeFile(AmazonS3 s3, String id, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws FileCorruptedAfterStoreException, IOStorageException {
         if (rollback.get())
             return;
-        InitiateMultipartUploadResult initRes = null;
         try (BufferedInputStream bis = new BufferedInputStream(stream)) {
             InitiateMultipartUploadRequest initReq = new InitiateMultipartUploadRequest(storageConfig.getLocation(), id, new ObjectMetadata());
-            initRes = s3.initiateMultipartUpload(initReq);
+            InitiateMultipartUploadResult initRes = s3.initiateMultipartUpload(initReq);
 
             ObjectMetadata objectMetadata = new ObjectMetadata();
             objectMetadata.addUserMetadata(checksum.getType().toString(), checksum.getHash());

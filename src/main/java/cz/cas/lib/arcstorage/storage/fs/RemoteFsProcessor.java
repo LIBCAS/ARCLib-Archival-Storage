@@ -42,6 +42,11 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
+    public boolean testConnection() {
+        return false;
+    }
+
+    @Override
     public void storeAip(AipRef aip, AtomicBoolean rollback) throws StorageException {
         String sipFolder = getSipFolderPath(aip.getSip().getId());
         String xmlFolder = getXmlFolderPath(aip.getSip().getId());
@@ -67,7 +72,7 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public List<FileRef> getAip(String sipId, Integer... xmlVersions) throws StorageException {
+    public List<FileRef> getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException, StorageException {
         SSHClient ssh = null;
         List<FileRef> list = new ArrayList<>();
         try {
@@ -127,7 +132,7 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public FileRef getXml(String sipId, int version) throws StorageException {
+    public FileRef getXml(String sipId, int version) throws FileDoesNotExistException, StorageException {
         String xmlFilePath = getXmlFolderPath(sipId) + S + toXmlId(sipId, version);
         SSHClient ssh = null;
         try {

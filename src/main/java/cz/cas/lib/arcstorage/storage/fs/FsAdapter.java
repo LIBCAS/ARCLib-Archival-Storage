@@ -20,6 +20,11 @@ public interface FsAdapter extends StorageService {
     StorageState getStorageState() throws StorageException;
 
     @Override
+    default boolean testConnection() {
+        return getFsProcessor().testConnection();
+    }
+
+    @Override
     default void storeAip(AipRef aipRef, AtomicBoolean rollback) throws StorageException {
         getFsProcessor().storeAip(aipRef, rollback);
     }
