@@ -33,16 +33,22 @@ public class LocalFsProcessor implements StorageService {
 
     @Getter
     private StorageConfig storageConfig;
-    private String S;
 
-    public LocalFsProcessor(StorageConfig storageConfig, String separator) {
+    public LocalFsProcessor(StorageConfig storageConfig) {
         this.storageConfig = storageConfig;
-        this.S = separator;
     }
 
     @Override
     public boolean testConnection() {
-        return false;
+        try {
+            Path path = Paths.get(storageConfig.getLocation());
+            if (Files.isWritable(path) && Files.isReadable(path))
+                return true;
+            return false;
+        } catch (Exception e) {
+            log.error(storageConfig.getName() + " unable to connect: " + e.getClass() + " " + e.getMessage());
+            return false;
+        }
     }
 
     @Override
@@ -245,11 +251,11 @@ public class LocalFsProcessor implements StorageService {
     }
 
     private Path getSipFolderPath(String fileName) {
-        return Paths.get(storageConfig.getLocation() + S + "sip" + S + fileName.substring(0, 2) + S + fileName.substring(2, 4) + S + fileName.substring(4, 6));
+        return Paths.get(storageConfig.getLocation()).resolve("sip").resolve(fileName.substring(0, 2)).resolve(fileName.substring(2, 4)).resolve(fileName.substring(4, 6));
     }
 
     private Path getXmlFolderPath(String fileName) {
-        return Paths.get(storageConfig.getLocation() + S + "xml" + S + fileName.substring(0, 2) + S + fileName.substring(2, 4) + S + fileName.substring(4, 6));
+        return Paths.get(storageConfig.getLocation()).resolve("xml").resolve(fileName.substring(0, 2)).resolve(fileName.substring(2, 4)).resolve(fileName.substring(4, 6));
     }
 
     private void setState(Path folder, String fileId, AipState state) throws IOException {

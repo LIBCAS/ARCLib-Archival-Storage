@@ -55,7 +55,7 @@ public class ZfsStorageService implements FsAdapter {
         this.storageConfig = storageConfig;
         String separator = storageConfig.getLocation().startsWith("/") ? "/" : "\\";
         if (isLocalhost(storageConfig))
-            this.fsProcessor = new LocalFsProcessor(storageConfig, separator);
+            this.fsProcessor = new LocalFsProcessor(storageConfig);
         else
             this.fsProcessor = new RemoteFsProcessor(storageConfig, separator, keyFilePath);
     }

@@ -15,16 +15,14 @@ import net.schmizz.sshj.common.SSHException;
 import net.schmizz.sshj.connection.ConnectionException;
 import net.schmizz.sshj.sftp.SFTPClient;
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier;
+import net.schmizz.sshj.xfer.FilePermission;
 import net.schmizz.sshj.xfer.InMemoryDestFile;
 import net.schmizz.sshj.xfer.InMemorySourceFile;
 import org.apache.commons.io.IOUtils;
 import org.apache.log4j.Logger;
 
 import java.io.*;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
@@ -43,7 +41,19 @@ public class RemoteFsProcessor implements StorageService {
 
     @Override
     public boolean testConnection() {
-        return false;
+        try (SSHClient ssh = new SSHClient()) {
+            ssh.addHostKeyVerifier(new PromiscuousVerifier());
+            ssh.connect(storageConfig.getHost(), storageConfig.getPort());
+            ssh.authPublickey("arcstorage", keyFilePath);
+            try (SFTPClient sftp = ssh.newSFTPClient()) {
+                Set<net.schmizz.sshj.xfer.FilePermission> perms = sftp.perms(storageConfig.getLocation());
+                return (perms.contains(FilePermission.GRP_R) || perms.contains(FilePermission.USR_R)) &&
+                        perms.contains(FilePermission.GRP_W) || perms.contains(FilePermission.USR_W);
+            }
+        } catch (Exception e) {
+            log.error(storageConfig.getName() + " unable to connect: " + e.getClass() + " " + e.getMessage());
+            return false;
+        }
     }
 
     @Override
