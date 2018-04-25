@@ -1,4 +1,4 @@
-package cz.cas.lib.arcstorage.gateway.exception;
+package cz.cas.lib.arcstorage.gateway.exception.state;
 
 import cz.cas.lib.arcstorage.domain.AipSip;
 import cz.cas.lib.arcstorage.domain.AipXml;

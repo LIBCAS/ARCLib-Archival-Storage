@@ -1,9 +1,10 @@
 package cz.cas.lib.arcstorage.api;
 
 import cz.cas.lib.arcstorage.gateway.dto.*;
-import cz.cas.lib.arcstorage.gateway.exception.DeletedException;
-import cz.cas.lib.arcstorage.gateway.exception.RollbackedException;
-import cz.cas.lib.arcstorage.gateway.exception.StillProcessingException;
+import cz.cas.lib.arcstorage.gateway.exception.state.DeletedStateException;
+import cz.cas.lib.arcstorage.gateway.exception.state.FailedStateException;
+import cz.cas.lib.arcstorage.gateway.exception.state.RollbackStateException;
+import cz.cas.lib.arcstorage.gateway.exception.state.StillProcessingStateException;
 import cz.cas.lib.arcstorage.gateway.service.ArchivalService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import org.apache.commons.io.IOUtils;
@@ -40,7 +41,7 @@ public class AipApi {
     @RequestMapping(value = "/{sipId}", method = RequestMethod.GET)
     public void get(@PathVariable("sipId") String sipId,
                     @RequestParam(value = "all") Optional<Boolean> all, HttpServletResponse response)
-            throws IOException, RollbackedException, DeletedException, StorageException, StillProcessingException {
+            throws IOException, RollbackStateException, DeletedStateException, StorageException, StillProcessingStateException, FailedStateException {
         checkUUID(sipId);
 
         AipRef aip = archivalService.get(sipId, all);
@@ -70,8 +71,8 @@ public class AipApi {
      */
     @RequestMapping(value = "/xml/{sipId}", method = RequestMethod.GET)
     public void getXml(@PathVariable("sipId") String sipId, @RequestParam(value = "v")
-            Optional<Integer> version, HttpServletResponse response) throws StorageException, StillProcessingException,
-            RollbackedException, IOException {
+            Optional<Integer> version, HttpServletResponse response) throws StorageException, StillProcessingStateException,
+            RollbackStateException, IOException, FailedStateException {
         checkUUID(sipId);
         XmlRef xml = archivalService.getXml(sipId, version);
         response.setContentType("application/xml");
@@ -121,8 +122,8 @@ public class AipApi {
      * This endpoint handles AIP versioning when AIP XML is versioned.
      * </p>
      *
-     * @param sipId  Id of SIP to which XML belongs
-     * @param xml    ARCLib XML
+     * @param sipId    Id of SIP to which XML belongs
+     * @param xml      ARCLib XML
      * @param checksum XML checksum
      */
     @RequestMapping(value = "/{sipId}/update", method = RequestMethod.POST)
@@ -140,13 +141,13 @@ public class AipApi {
      *
      * @param sipId
      * @throws IOException
-     * @throws DeletedException
-     * @throws RollbackedException
-     * @throws StillProcessingException
+     * @throws DeletedStateException
+     * @throws RollbackStateException
+     * @throws StillProcessingStateException
      */
     @RequestMapping(value = "/{sipId}", method = RequestMethod.DELETE)
-    public void remove(@PathVariable("sipId") String sipId) throws DeletedException, StillProcessingException,
-            RollbackedException, StorageException {
+    public void remove(@PathVariable("sipId") String sipId) throws DeletedStateException, StillProcessingStateException,
+            RollbackStateException, StorageException, FailedStateException {
         checkUUID(sipId);
         archivalService.remove(sipId);
     }
@@ -158,12 +159,12 @@ public class AipApi {
      *
      * @param sipId
      * @throws IOException
-     * @throws RollbackedException
-     * @throws StillProcessingException
+     * @throws RollbackStateException
+     * @throws StillProcessingStateException
      */
     @RequestMapping(value = "/{sipId}/hard", method = RequestMethod.DELETE)
-    public void delete(@PathVariable("sipId") String sipId) throws StillProcessingException, RollbackedException,
-            StorageException {
+    public void delete(@PathVariable("sipId") String sipId) throws StillProcessingStateException, RollbackStateException,
+            StorageException, FailedStateException {
         checkUUID(sipId);
         archivalService.delete(sipId);
     }
@@ -172,11 +173,11 @@ public class AipApi {
      * Retrieves information about AIP containing state, id, XMLs ...
      *
      * @param sipId
-     * @throws StillProcessingException
+     * @throws StillProcessingStateException
      * @throws StorageException
      */
     @RequestMapping(value = "/{uuid}/state", method = RequestMethod.GET)
-    public List<AipStateInfo> getAipState(@PathVariable("uuid") String sipId) throws StillProcessingException,
+    public List<AipStateInfo> getAipState(@PathVariable("uuid") String sipId) throws StillProcessingStateException,
             StorageException {
         checkUUID(sipId);
         return archivalService.getAipState(sipId);

@@ -4,10 +4,11 @@ import cz.cas.lib.arcstorage.domain.*;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.gateway.dto.*;
-import cz.cas.lib.arcstorage.gateway.exception.CantWriteException;
-import cz.cas.lib.arcstorage.gateway.exception.DeletedException;
-import cz.cas.lib.arcstorage.gateway.exception.RollbackedException;
-import cz.cas.lib.arcstorage.gateway.exception.StillProcessingException;
+import cz.cas.lib.arcstorage.gateway.exception.*;
+import cz.cas.lib.arcstorage.gateway.exception.state.DeletedStateException;
+import cz.cas.lib.arcstorage.gateway.exception.state.FailedStateException;
+import cz.cas.lib.arcstorage.gateway.exception.state.RollbackStateException;
+import cz.cas.lib.arcstorage.gateway.exception.state.StillProcessingStateException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.store.StorageConfigStore;
@@ -41,28 +42,32 @@ public class ArchivalService {
      * @param all   if true reference to SIP and all XMLs is returned otherwise reference to SIP and latest XML is retrieved
      * @return reference of AIP which contains id and inputStream of SIP and XML/XMLs, if there are more XML to return those
      * which are rollbacked are skipped
-     * @throws DeletedException         if SIP is deleted
-     * @throws RollbackedException      if SIP is rollbacked or only one XML is requested and that one is rollbacked
-     * @throws StillProcessingException if SIP or some of requested XML is still processing
+     * @throws DeletedStateException         if SIP is deleted
+     * @throws RollbackStateException      if SIP is rollbacked or only one XML is requested and that one is rollbacked
+     * @throws StillProcessingStateException if SIP or some of requested XML is still processing
      * @throws StorageException         if error has occurred during retrieval process of AIP
      */
-    public AipRef get(String sipId, Optional<Boolean> all) throws RollbackedException, StillProcessingException,
-            DeletedException, StorageException {
+    public AipRef get(String sipId, Optional<Boolean> all) throws RollbackStateException, StillProcessingStateException,
+            DeletedStateException, StorageException, FailedStateException {
         AipSip sipEntity = archivalDbService.getAip(sipId);
 
-        if (sipEntity.getState() == AipState.DELETED)
-            throw new DeletedException(sipEntity);
-        if (sipEntity.getState() == AipState.ROLLBACKED)
-            throw new RollbackedException(sipEntity);
-        if (sipEntity.getState() == AipState.PROCESSING)
-            throw new StillProcessingException(sipEntity);
+        switch (sipEntity.getState()) {
+            case PROCESSING:
+                throw new StillProcessingStateException(sipEntity);
+            case FAILED:
+                throw new FailedStateException(sipEntity);
+            case DELETED:
+                throw new DeletedStateException(sipEntity);
+            case ROLLBACKED:
+                throw new RollbackStateException(sipEntity);
+        }
 
         List<AipXml> xmls = all.isPresent() && all.get() ? sipEntity.getXmls() : asList(sipEntity.getLatestXml());
         Optional<AipXml> unfinishedXml = xmls.stream().filter(xml -> xml.getState() == XmlState.PROCESSING).findFirst();
         if (unfinishedXml.isPresent())
-            throw new StillProcessingException(unfinishedXml.get());
+            throw new StillProcessingStateException(unfinishedXml.get());
         if (xmls.size() == 1 && xmls.get(0).getState() == XmlState.ROLLBACKED)
-            throw new RollbackedException(xmls.get(0));
+            throw new RollbackStateException(xmls.get(0));
 
         xmls = xmls.stream().filter(xml -> xml.getState() != XmlState.ROLLBACKED).collect(Collectors.toList());
         List<FileRef> refs;
@@ -93,11 +98,11 @@ public class ArchivalService {
      * @param sipId
      * @param version specifies version of XML to return, by default the latest XML is returned
      * @return reference to AIP XML
-     * @throws DeletedException
-     * @throws RollbackedException
-     * @throws StillProcessingException
+     * @throws DeletedStateException
+     * @throws RollbackStateException
+     * @throws StillProcessingStateException
      */
-    public XmlRef getXml(String sipId, Optional<Integer> version) throws RollbackedException, StillProcessingException, StorageException {
+    public XmlRef getXml(String sipId, Optional<Integer> version) throws RollbackStateException, StillProcessingStateException, StorageException, FailedStateException {
         AipSip sipEntity = archivalDbService.getAip(sipId);
         AipXml requestedXml;
         if (version.isPresent()) {
@@ -109,10 +114,15 @@ public class ArchivalService {
             requestedXml = xmlOpt.get();
         } else
             requestedXml = sipEntity.getLatestXml();
-        if (requestedXml.getState() == XmlState.ROLLBACKED)
-            throw new RollbackedException(requestedXml);
-        if (requestedXml.getState() == XmlState.PROCESSING)
-            throw new StillProcessingException(requestedXml);
+        switch (requestedXml.getState()) {
+            case ROLLBACKED:
+                throw new RollbackStateException(requestedXml);
+            case FAILED:
+                throw new FailedStateException(requestedXml);
+            case PROCESSING:
+                throw new StillProcessingStateException(requestedXml);
+        }
+
         FileRef xmlRef;
         try {
             StorageService storageService = storageProvider.createAdapter(storageConfigStore.getByPriority());
@@ -165,10 +175,10 @@ public class ArchivalService {
      *
      * @param sipId
      * @throws IOException
-     * @throws RollbackedException
-     * @throws StillProcessingException
+     * @throws RollbackStateException
+     * @throws StillProcessingStateException
      */
-    public void delete(String sipId) throws StillProcessingException, RollbackedException, StorageException {
+    public void delete(String sipId) throws StillProcessingStateException, RollbackStateException, StorageException, FailedStateException {
         archivalDbService.registerSipDeletion(sipId);
         this.async.delete(sipId);
     }
@@ -178,11 +188,11 @@ public class ArchivalService {
      *
      * @param sipId
      * @throws IOException
-     * @throws DeletedException
-     * @throws RollbackedException
-     * @throws StillProcessingException
+     * @throws DeletedStateException
+     * @throws RollbackStateException
+     * @throws StillProcessingStateException
      */
-    public void remove(String sipId) throws StillProcessingException, DeletedException, RollbackedException, StorageException {
+    public void remove(String sipId) throws StillProcessingStateException, DeletedStateException, RollbackStateException, StorageException, FailedStateException {
         archivalDbService.removeSip(sipId);
         async.remove(sipId);
     }
@@ -193,10 +203,10 @@ public class ArchivalService {
      * @param sipId
      * @throws IOException
      */
-    public List<AipStateInfo> getAipState(String sipId) throws StillProcessingException, StorageException {
+    public List<AipStateInfo> getAipState(String sipId) throws StillProcessingStateException, StorageException {
         AipSip aip = archivalDbService.getAip(sipId);
         if (aip.getState() == AipState.PROCESSING)
-            throw new StillProcessingException(aip);
+            throw new StillProcessingStateException(aip);
         List<AipStateInfo> aipStateInfos = new ArrayList<>();
         for (StorageService storageService : storageConfigStore.findAll().stream().map(storageProvider::createAdapter).collect(Collectors.toList())) {
             aipStateInfos.add(storageService.getAipInfo(sipId, aip.getChecksum(), aip.getState(), aip.getXmls().stream().collect(Collectors.toMap(xml -> xml.getVersion(), xml -> xml.getChecksum()))));

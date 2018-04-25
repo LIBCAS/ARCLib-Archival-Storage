@@ -6,9 +6,10 @@ import cz.cas.lib.arcstorage.exception.BadArgument;
 import cz.cas.lib.arcstorage.exception.ConflictObject;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.gateway.dto.Checksum;
-import cz.cas.lib.arcstorage.gateway.exception.DeletedException;
-import cz.cas.lib.arcstorage.gateway.exception.RollbackedException;
-import cz.cas.lib.arcstorage.gateway.exception.StillProcessingException;
+import cz.cas.lib.arcstorage.gateway.exception.state.DeletedStateException;
+import cz.cas.lib.arcstorage.gateway.exception.state.FailedStateException;
+import cz.cas.lib.arcstorage.gateway.exception.state.RollbackStateException;
+import cz.cas.lib.arcstorage.gateway.exception.state.StillProcessingStateException;
 import cz.cas.lib.arcstorage.store.AipSipStore;
 import cz.cas.lib.arcstorage.store.AipXmlStore;
 import cz.cas.lib.arcstorage.store.Transactional;
@@ -116,13 +117,13 @@ public class ArchivalDbServiceTest extends DbTest {
     }
 
     @Test
-    public void registerSipDeletion() throws StillProcessingException, RollbackedException {
+    public void registerSipDeletion() throws StillProcessingStateException, RollbackStateException, FailedStateException {
         service.registerSipDeletion(SIP_ID);
         assertThat(sipStore.find(SIP_ID).getState(), equalTo(AipState.PROCESSING));
     }
 
     @Test
-    public void finishSipDeletion() throws StillProcessingException, RollbackedException {
+    public void finishSipDeletion() throws StillProcessingStateException, RollbackStateException, FailedStateException {
         service.registerSipDeletion(SIP_ID);
         service.finishSipDeletion(SIP_ID);
         assertThat(sipStore.find(SIP_ID).getState(), equalTo(AipState.DELETED));
@@ -139,7 +140,7 @@ public class ArchivalDbServiceTest extends DbTest {
 
     @Test
     @Transactional
-    public void removeSip() throws DeletedException, StillProcessingException, RollbackedException {
+    public void removeSip() throws DeletedStateException, StillProcessingStateException, RollbackStateException, FailedStateException {
         service.removeSip(SIP_ID);
         AipSip aip = service.getAip(SIP_ID);
         assertThat(aip.getState(), equalTo(AipState.REMOVED));
@@ -256,15 +257,15 @@ public class ArchivalDbServiceTest extends DbTest {
         AipSip sip = sipStore.find(SIP_ID);
         sip.setState(AipState.PROCESSING);
         sipStore.save(sip);
-        assertThrown(() -> service.registerSipDeletion(SIP_ID)).isInstanceOf(StillProcessingException.class);
-        assertThrown(() -> service.removeSip(SIP_ID)).isInstanceOf(StillProcessingException.class);
+        assertThrown(() -> service.registerSipDeletion(SIP_ID)).isInstanceOf(StillProcessingStateException.class);
+        assertThrown(() -> service.removeSip(SIP_ID)).isInstanceOf(StillProcessingStateException.class);
         sip.setState(AipState.ROLLBACKED);
         sipStore.save(sip);
-        assertThrown(() -> service.registerSipDeletion(SIP_ID)).isInstanceOf(RollbackedException.class);
-        assertThrown(() -> service.removeSip(SIP_ID)).isInstanceOf(RollbackedException.class);
+        assertThrown(() -> service.registerSipDeletion(SIP_ID)).isInstanceOf(RollbackStateException.class);
+        assertThrown(() -> service.removeSip(SIP_ID)).isInstanceOf(RollbackStateException.class);
         sip.setState(AipState.DELETED);
         sipStore.save(sip);
-        assertThrown(() -> service.removeSip(SIP_ID)).isInstanceOf(DeletedException.class);
+        assertThrown(() -> service.removeSip(SIP_ID)).isInstanceOf(DeletedStateException.class);
     }
 
     @Test

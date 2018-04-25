@@ -3,9 +3,10 @@ package cz.cas.lib.arcstorage.gateway.service;
 import cz.cas.lib.arcstorage.domain.*;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.gateway.dto.*;
-import cz.cas.lib.arcstorage.gateway.exception.DeletedException;
-import cz.cas.lib.arcstorage.gateway.exception.RollbackedException;
-import cz.cas.lib.arcstorage.gateway.exception.StillProcessingException;
+import cz.cas.lib.arcstorage.gateway.exception.state.DeletedStateException;
+import cz.cas.lib.arcstorage.gateway.exception.state.FailedStateException;
+import cz.cas.lib.arcstorage.gateway.exception.state.RollbackStateException;
+import cz.cas.lib.arcstorage.gateway.exception.state.StillProcessingStateException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.store.AipSipStore;
@@ -148,7 +149,7 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void getAll() throws DeletedException, StillProcessingException, RollbackedException, StorageException {
+    public void getAll() throws DeletedStateException, StillProcessingStateException, RollbackStateException, StorageException, FailedStateException {
         AipRef aip = archivalService.get(SIP_ID, Optional.of(true));
 
         assertThat(aip.getSip(), equalTo(new ArchiveFileRef(SIP_ID, new FileRef(SIP_STREAM), sipHash)));
@@ -168,7 +169,7 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void getLatest() throws RollbackedException, DeletedException, StorageException, StillProcessingException {
+    public void getLatest() throws RollbackStateException, DeletedStateException, StorageException, StillProcessingStateException, FailedStateException {
         AipRef aip = archivalService.get(SIP_ID, Optional.of(false));
 
         assertThat(aip.getSip(), equalTo(new ArchiveFileRef(SIP_ID, new FileRef(SIP_STREAM), sipHash)));
@@ -183,14 +184,14 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void getXml() throws StorageException, StillProcessingException, RollbackedException {
+    public void getXml() throws StorageException, StillProcessingStateException, RollbackStateException, FailedStateException {
         Optional<Integer> version = Optional.empty();
         XmlRef xml = archivalService.getXml(SIP_ID, version);
         assertThat(xml.getVersion(), is(2));
     }
 
     @Test
-    public void getXmlVersionSpecified() throws StorageException, StillProcessingException, RollbackedException {
+    public void getXmlVersionSpecified() throws StorageException, StillProcessingStateException, RollbackStateException, FailedStateException {
         Optional<Integer> version1 = Optional.of(1);
         XmlRef xml = archivalService.getXml(SIP_ID, version1);
         assertThat(xml.getVersion(), is(1));
@@ -212,11 +213,11 @@ public class ArchivalServiceTest extends DbTest {
 
         xml2.setState(XmlState.ROLLBACKED);
         aipXmlStore.save(xml2);
-        assertThrown(() -> archivalService.getXml(SIP_ID, version)).isInstanceOf(RollbackedException.class);
+        assertThrown(() -> archivalService.getXml(SIP_ID, version)).isInstanceOf(RollbackStateException.class);
 
         xml2.setState(XmlState.PROCESSING);
         aipXmlStore.save(xml2);
-        assertThrown(() -> archivalService.getXml(SIP_ID, version)).isInstanceOf(StillProcessingException.class);
+        assertThrown(() -> archivalService.getXml(SIP_ID, version)).isInstanceOf(StillProcessingStateException.class);
     }
 
     @Test
@@ -249,7 +250,7 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void getAipInfo() throws StillProcessingException, StorageException {
+    public void getAipInfo() throws StillProcessingStateException, StorageException {
         when(storageService.getAipInfo(anyObject(), anyObject(), anyObject(), anyObject())).thenReturn(
                 new AipStateInfo("", StorageType.CEPH, AipState.ARCHIVED, anyObject()));
 
@@ -271,20 +272,20 @@ public class ArchivalServiceTest extends DbTest {
     public void getIllegalStateSipTest() {
         sip.setState(AipState.DELETED);
         aipSipStore.save(sip);
-        assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(DeletedException.class);
+        assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(DeletedStateException.class);
 
         sip.setState(AipState.ROLLBACKED);
         aipSipStore.save(sip);
-        assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(RollbackedException.class);
+        assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(RollbackStateException.class);
 
         sip.setState(AipState.PROCESSING);
         aipSipStore.save(sip);
-        assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(StillProcessingException.class);
+        assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(StillProcessingStateException.class);
 
         AipXml xml = sip.getXml(0);
         xml.setState(XmlState.PROCESSING);
         aipXmlStore.save(xml);
-        assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(StillProcessingException.class);
+        assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(StillProcessingStateException.class);
 
         xml = sip.getXml(0);
         xml.setState(XmlState.ROLLBACKED);
@@ -296,11 +297,11 @@ public class ArchivalServiceTest extends DbTest {
         xml.setSip(aipSip);
         aipXmlStore.save(xml);
 
-        assertThrown(() -> archivalService.get(SIP2_ID, Optional.of(true))).isInstanceOf(RollbackedException.class);
+        assertThrown(() -> archivalService.get(SIP2_ID, Optional.of(true))).isInstanceOf(RollbackStateException.class);
     }
 
     @Test
-    public void delete() throws StorageException, StillProcessingException, RollbackedException {
+    public void delete() throws StorageException, StillProcessingStateException, RollbackStateException, FailedStateException {
         archivalService.delete(SIP_ID);
 
         AipSip sip = archivalDbService.getAip(SIP_ID);
@@ -309,7 +310,7 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void remove() throws RollbackedException, DeletedException, StorageException, StillProcessingException {
+    public void remove() throws RollbackStateException, DeletedStateException, StorageException, StillProcessingStateException, FailedStateException {
         archivalService.remove(SIP_ID);
 
         AipSip sip = archivalDbService.getAip(SIP_ID);

@@ -8,9 +8,10 @@ import cz.cas.lib.arcstorage.exception.BadArgument;
 import cz.cas.lib.arcstorage.exception.ConflictObject;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.gateway.dto.Checksum;
-import cz.cas.lib.arcstorage.gateway.exception.DeletedException;
-import cz.cas.lib.arcstorage.gateway.exception.RollbackedException;
-import cz.cas.lib.arcstorage.gateway.exception.StillProcessingException;
+import cz.cas.lib.arcstorage.gateway.exception.state.DeletedStateException;
+import cz.cas.lib.arcstorage.gateway.exception.state.FailedStateException;
+import cz.cas.lib.arcstorage.gateway.exception.state.RollbackStateException;
+import cz.cas.lib.arcstorage.gateway.exception.state.StillProcessingStateException;
 import cz.cas.lib.arcstorage.store.AipSipStore;
 import cz.cas.lib.arcstorage.store.AipXmlStore;
 import cz.cas.lib.arcstorage.store.Transactional;
@@ -93,19 +94,23 @@ public class ArchivalDbService {
      * Registers that AIP SIP deletion process has started.
      *
      * @param sipId
-     * @throws RollbackedException
-     * @throws StillProcessingException
+     * @throws RollbackStateException
+     * @throws StillProcessingStateException
      */
-    public void registerSipDeletion(String sipId) throws StillProcessingException, RollbackedException {
+    public void registerSipDeletion(String sipId) throws StillProcessingStateException, RollbackStateException, FailedStateException {
         AipSip sip = aipSipStore.find(sipId);
         notNull(sip, () -> {
             log.warn("Could not find AIP: " + sipId);
             return new MissingObject(AipSip.class, sipId);
         });
-        if (sip.getState() == AipState.PROCESSING)
-            throw new StillProcessingException(sip);
-        if (sip.getState() == AipState.ROLLBACKED)
-            throw new RollbackedException(sip);
+        switch (sip.getState()) {
+            case PROCESSING:
+                throw new StillProcessingStateException(sip);
+            case FAILED:
+                throw new FailedStateException(sip);
+            case ROLLBACKED:
+                throw new RollbackStateException(sip);
+        }
         sip.setState(AipState.PROCESSING);
         aipSipStore.save(sip);
     }
@@ -176,22 +181,26 @@ public class ArchivalDbService {
      * Logically removes SIP i.e. sets its state to {@link AipState#REMOVED} in the database.
      *
      * @param sipId
-     * @throws DeletedException         if SIP is deleted
-     * @throws RollbackedException
-     * @throws StillProcessingException
+     * @throws DeletedStateException         if SIP is deleted
+     * @throws RollbackStateException
+     * @throws StillProcessingStateException
      */
-    public void removeSip(String sipId) throws DeletedException, RollbackedException, StillProcessingException {
+    public void removeSip(String sipId) throws DeletedStateException, RollbackStateException, StillProcessingStateException, FailedStateException {
         AipSip sip = aipSipStore.find(sipId);
         notNull(sip, () -> {
             log.warn("Could not find AIP: " + sipId);
             return new MissingObject(AipSip.class, sipId);
         });
-        if (sip.getState() == AipState.DELETED)
-            throw new DeletedException(sip);
-        if (sip.getState() == AipState.ROLLBACKED)
-            throw new RollbackedException(sip);
-        if (sip.getState() == AipState.PROCESSING)
-            throw new StillProcessingException(sip);
+        switch (sip.getState()) {
+            case ROLLBACKED:
+                throw new RollbackStateException(sip);
+            case DELETED:
+                throw new DeletedStateException(sip);
+            case PROCESSING:
+                throw new StillProcessingStateException(sip);
+            case FAILED:
+                throw new FailedStateException(sip);
+        }
         sip.setState(AipState.REMOVED);
         aipSipStore.save(sip);
     }
