@@ -14,13 +14,15 @@ public class AipStateInfo {
     private StorageType storageType;
     private AipState aipState;
     private boolean consistent;
-    private Checksum checksum;
+    private Checksum storageChecksum;
+    private Checksum databaseChecksum;
     private List<XmlStateInfo> xmlsState = new ArrayList<>();
 
-    public AipStateInfo(String storageName, StorageType storageType, AipState aipState) {
+    public AipStateInfo(String storageName, StorageType storageType, AipState aipState, Checksum databaseChecksum) {
         this.storageName = storageName;
         this.storageType = storageType;
         this.aipState = aipState;
+        this.databaseChecksum = databaseChecksum;
     }
 
     public void addXmlInfo(XmlStateInfo xmlStateInfo) {

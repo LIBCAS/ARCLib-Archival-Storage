@@ -11,8 +11,4 @@ public class FileDoesNotExistException extends StorageException {
     public FileDoesNotExistException(String message, Throwable cause) {
         super(message, cause);
     }
-
-    public FileDoesNotExistException(Throwable cause) {
-        super(cause);
-    }
 }
