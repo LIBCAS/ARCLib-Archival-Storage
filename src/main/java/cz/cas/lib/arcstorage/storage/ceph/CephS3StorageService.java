@@ -38,7 +38,6 @@ public class CephS3StorageService implements StorageService {
     //keys must not contain dash or camelcase
     static final String STATE_KEY = "state";
     static final String CREATED_KEY = "created";
-    static final String UPLOAD_ID = "upload-id";
 
     private StorageConfig storageConfig;
     private String userAccessKey;
@@ -201,7 +200,6 @@ public class CephS3StorageService implements StorageService {
             objectMetadata.addUserMetadata(checksum.getType().toString(), checksum.getHash());
             objectMetadata.addUserMetadata(STATE_KEY, AipState.PROCESSING.toString());
             objectMetadata.addUserMetadata(CREATED_KEY, LocalDateTime.now().toString());
-            objectMetadata.addUserMetadata(UPLOAD_ID, initRes.getUploadId());
             objectMetadata.setContentLength(0);
             PutObjectRequest metadataPutRequest = new PutObjectRequest(storageConfig.getLocation(), toMetadataObjectId(id), new NullInputStream(0), objectMetadata);
             s3.putObject(metadataPutRequest);
@@ -212,10 +210,8 @@ public class CephS3StorageService implements StorageService {
             List<PartETag> partETags = new ArrayList<>();
             int partNumber = 0;
             do {
-                if (rollback.get()) {
-                    s3.abortMultipartUpload(new AbortMultipartUploadRequest(storageConfig.getLocation(), id, initRes.getUploadId()));
+                if (rollback.get())
                     return;
-                }
                 partNumber++;
                 read = bis.read(buff);
                 last = read != buff.length;
@@ -232,10 +228,8 @@ public class CephS3StorageService implements StorageService {
                         .withLastPart(last);
                 UploadPartResult uploadPartResult = s3.uploadPart(uploadPartRequest);
                 Checksum partChecksum = computeChecksumRollbackAware(new ByteArrayInputStream(buff), ChecksumType.MD5, rollback);
-                if (partChecksum == null) {
-                    s3.abortMultipartUpload(new AbortMultipartUploadRequest(storageConfig.getLocation(), id, initRes.getUploadId()));
+                if (partChecksum == null)
                     return;
-                }
                 if (!partChecksum.getHash().equalsIgnoreCase(uploadPartResult.getETag()))
                     throw new FileCorruptedAfterStoreException("S3 - part of multipart file", new Checksum(ChecksumType.MD5, uploadPartResult.getETag()), partChecksum);
                 partETags.add(uploadPartResult.getPartETag());
@@ -246,8 +240,6 @@ public class CephS3StorageService implements StorageService {
             s3.putObject(metadataPutRequest);
         } catch (Exception e) {
             rollback.set(true);
-            if (initRes != null)
-                s3.abortMultipartUpload(new AbortMultipartUploadRequest(storageConfig.getLocation(), id, initRes.getUploadId()));
             if (e instanceof IOException)
                 throw new IOStorageException(e);
             if (e instanceof FileCorruptedAfterStoreException)
@@ -266,12 +258,12 @@ public class CephS3StorageService implements StorageService {
             objectMetadata = s3.getObjectMetadata(storageConfig.getLocation(), metadataId);
         objectMetadata.addUserMetadata(STATE_KEY, AipState.PROCESSING.toString());
         s3.putObject(storageConfig.getLocation(), metadataId, new NullInputStream(0), objectMetadata);
-
-        String uploadId = objectMetadata.getUserMetadata().get(UPLOAD_ID);
-        if (uploadId != null)
-            s3.abortMultipartUpload(new AbortMultipartUploadRequest(storageConfig.getLocation(), id, uploadId));
+        List<MultipartUpload> multipartUploads = s3.listMultipartUploads(new ListMultipartUploadsRequest(storageConfig.getLocation()).withPrefix(id)).getMultipartUploads();
+        if (multipartUploads.size() == 1)
+            s3.abortMultipartUpload(new AbortMultipartUploadRequest(storageConfig.getLocation(), id, multipartUploads.get(0).getUploadId()));
+        else if (multipartUploads.size() > 1)
+            throw new GeneralException("unexpected error during rollback of file: " + id + " : there are more than one upload in progress");
         s3.deleteObject(storageConfig.getLocation(), id);
-
         objectMetadata.addUserMetadata(STATE_KEY, AipState.ROLLBACKED.toString());
         s3.putObject(storageConfig.getLocation(), metadataId, new NullInputStream(0), objectMetadata);
     }
