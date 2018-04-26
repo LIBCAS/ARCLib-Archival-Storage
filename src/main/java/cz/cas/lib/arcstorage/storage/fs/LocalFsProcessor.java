@@ -99,6 +99,11 @@ public class LocalFsProcessor implements StorageService {
     }
 
     @Override
+    public void storeSip(ArchiveFileRef aipRef, AtomicBoolean rollback) throws StorageException {
+        storeFile(getSipFolderPath(aipRef.getId()), aipRef.getId(), aipRef.getInputStream(), aipRef.getChecksum(), rollback);
+    }
+
+    @Override
     public void deleteSip(String sipId) throws IOStorageException, FileDoesNotExistException {
         Path sipFolder = getSipFolderPath(sipId);
         Path sipFilePath = sipFolder.resolve(sipId);

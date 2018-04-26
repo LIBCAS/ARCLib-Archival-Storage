@@ -1,15 +1,18 @@
 package cz.cas.lib.arcstorage.gateway.service;
 
-import cz.cas.lib.arcstorage.domain.*;
+import cz.cas.lib.arcstorage.domain.AipSip;
+import cz.cas.lib.arcstorage.domain.AipState;
+import cz.cas.lib.arcstorage.domain.AipXml;
+import cz.cas.lib.arcstorage.domain.XmlState;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.gateway.dto.*;
-import cz.cas.lib.arcstorage.gateway.exception.*;
+import cz.cas.lib.arcstorage.gateway.exception.CantWriteException;
+import cz.cas.lib.arcstorage.gateway.exception.InvalidChecksumException;
 import cz.cas.lib.arcstorage.gateway.exception.state.DeletedStateException;
 import cz.cas.lib.arcstorage.gateway.exception.state.FailedStateException;
 import cz.cas.lib.arcstorage.gateway.exception.state.RollbackStateException;
 import cz.cas.lib.arcstorage.gateway.exception.state.StillProcessingStateException;
-import cz.cas.lib.arcstorage.gateway.exception.*;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.StorageUtils;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
@@ -21,7 +24,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import javax.inject.Inject;
-import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -47,12 +49,13 @@ public class ArchivalService {
      * @return reference of AIP which contains id and inputStream of SIP and XML/XMLs, if there are more XML to return those
      * which are rollbacked are skipped
      * @throws DeletedStateException         if SIP is deleted
-     * @throws RollbackStateException      if SIP is rollbacked or only one XML is requested and that one is rollbacked
+     * @throws RollbackStateException        if SIP is rollbacked or only one XML is requested and that one is rollbacked
      * @throws StillProcessingStateException if SIP or some of requested XML is still processing
-     * @throws InvalidChecksumException if SIP has been corrupted at all storages
+     * @throws InvalidChecksumException      if SIP has been corrupted at all storages
+     * @throws FailedStateException          if SIP is failed
      */
     public AipRef get(String sipId, Optional<Boolean> all) throws RollbackStateException, StillProcessingStateException,
-            DeletedStateException, StorageException, FailedStateException {
+            DeletedStateException, FailedStateException, InvalidChecksumException {
         AipSip sipEntity = archivalDbService.getAip(sipId);
 
         switch (sipEntity.getState()) {
@@ -100,6 +103,9 @@ public class ArchivalService {
      * @param version specifies version of XML to return, by default the latest XML is returned
      * @return reference to AIP XML
      * @throws InvalidChecksumException
+     * @throws FailedStateException
+     * @throws RollbackStateException
+     * @throws StillProcessingStateException {
      */
     public XmlRef getXml(String sipId, Optional<Integer> version) throws
             InvalidChecksumException, FailedStateException, RollbackStateException, StillProcessingStateException {
@@ -145,7 +151,7 @@ public class ArchivalService {
      * </p>
      *
      * @return SIP ID of created AIP
-     * @throws IOException
+     * @throws CantWriteException
      */
     @Transactional
     public void store(AipRef aip) throws CantWriteException {
@@ -173,9 +179,10 @@ public class ArchivalService {
      * Physically removes SIP from storage. XMLs and data in transaction database are not removed.
      *
      * @param sipId
-     * @throws IOException
      * @throws RollbackStateException
      * @throws StillProcessingStateException
+     * @throws StorageException
+     * @throws FailedStateException
      */
     public void delete(String sipId) throws StillProcessingStateException, RollbackStateException, StorageException, FailedStateException {
         archivalDbService.registerSipDeletion(sipId);
@@ -186,10 +193,11 @@ public class ArchivalService {
      * Logically removes SIP from database.
      *
      * @param sipId
-     * @throws IOException
+     * @throws StorageException
      * @throws DeletedStateException
      * @throws RollbackStateException
      * @throws StillProcessingStateException
+     * @throws FailedStateException
      */
     public void remove(String sipId) throws StillProcessingStateException, DeletedStateException, RollbackStateException, StorageException, FailedStateException {
         archivalDbService.removeSip(sipId);
@@ -200,7 +208,8 @@ public class ArchivalService {
      * Retrieves information about AIP.
      *
      * @param sipId
-     * @throws IOException
+     * @throws StillProcessingStateException
+     * @throws StorageService
      */
     public List<AipStateInfo> getAipState(String sipId) throws StillProcessingStateException, StorageException {
         AipSip aip = archivalDbService.getAip(sipId);
@@ -235,7 +244,7 @@ public class ArchivalService {
      * Rollback files which are in PROCESSING state.
      * This will be used only after system crash.
      *
-     * @throws IOException
+     * @throws StorageException
      */
     public void clearUnfinished() throws StorageException {
         int xmlCounter = 0;
@@ -494,8 +503,8 @@ public class ArchivalService {
     @Setter
     private class Result {
         private List<FileRef> fileRefs;
-        private boolean invalidChecksumFound = false;
         private StorageService storageService;
+        private boolean invalidChecksumFound = false;
 
         private AipSip invalidChecksumSip;
         private List<AipXml> invalidChecksumXmls = new ArrayList<>();

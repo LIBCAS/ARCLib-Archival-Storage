@@ -140,7 +140,8 @@ public class ArchivalDbServiceTest extends DbTest {
 
     @Test
     @Transactional
-    public void removeSip() throws DeletedStateException, StillProcessingStateException, RollbackStateException, FailedStateException {
+    public void removeSip() throws DeletedStateException, StillProcessingStateException, RollbackStateException,
+            FailedStateException {
         service.removeSip(SIP_ID);
         AipSip aip = service.getAip(SIP_ID);
         assertThat(aip.getState(), equalTo(AipState.REMOVED));
@@ -240,14 +241,18 @@ public class ArchivalDbServiceTest extends DbTest {
 
     @Test
     public void alreadyExistsTest() {
-        assertThrown(() -> service.registerAipCreation(SIP_ID, sipChecksum, aipXmlChecksum)).isInstanceOf(ConflictObject.class);
+        assertThrown(() -> service.registerAipCreation(SIP_ID, sipChecksum, aipXmlChecksum))
+                .isInstanceOf(ConflictObject.class);
     }
 
     @Test
     public void nullTest() {
-        assertThrown(() -> service.registerAipCreation(null, sipChecksum, aipXmlChecksum)).isInstanceOf(BadArgument.class);
-        assertThrown(() -> service.registerAipCreation(S, null, aipXmlChecksum)).isInstanceOf(BadArgument.class);
-        assertThrown(() -> service.registerAipCreation("blah", sipChecksum, null)).isInstanceOf(BadArgument.class);
+        assertThrown(() -> service.registerAipCreation(null, sipChecksum, aipXmlChecksum))
+                .isInstanceOf(BadArgument.class);
+        assertThrown(() -> service.registerAipCreation(S, null, aipXmlChecksum))
+                .isInstanceOf(BadArgument.class);
+        assertThrown(() -> service.registerAipCreation("blah", sipChecksum, null))
+                .isInstanceOf(BadArgument.class);
         assertThrown(() -> service.registerXmlUpdate(null, aipXmlChecksum)).isInstanceOf(BadArgument.class);
         assertThrown(() -> service.registerXmlUpdate(S, null)).isInstanceOf(BadArgument.class);
     }
@@ -285,8 +290,10 @@ public class ArchivalDbServiceTest extends DbTest {
 
         assertThat(sipStore.findUnfinishedSips(), empty());
         assertThat(xmlStore.findUnfinishedXmls(), empty());
-        List<AipSip> sips = sipStore.findAll().stream().filter(sip -> sip.getState() != AipState.ROLLBACKED).collect(Collectors.toList());
-        List<AipXml> xmls = xmlStore.findAll().stream().filter(xml -> xml.getState() != XmlState.ROLLBACKED).collect(Collectors.toList());
+        List<AipSip> sips = sipStore.findAll().stream().filter(sip -> sip.getState() != AipState.ROLLBACKED)
+                .collect(Collectors.toList());
+        List<AipXml> xmls = xmlStore.findAll().stream().filter(xml -> xml.getState() != XmlState.ROLLBACKED)
+                .collect(Collectors.toList());
         assertThat(xmls, hasSize(3));
         assertThat(sips, hasSize(2));
     }

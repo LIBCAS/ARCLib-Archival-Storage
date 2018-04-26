@@ -151,7 +151,8 @@ public class ArchivalServiceTest extends DbTest {
 
     @Test
     @Ignore
-    public void getAll() throws DeletedStateException, StillProcessingStateException, RollbackStateException, StorageException, FailedStateException {
+    public void getAll() throws DeletedStateException, StillProcessingStateException, RollbackStateException,
+            StorageException, FailedStateException {
         AipRef aip = archivalService.get(SIP_ID, Optional.of(true));
 
         assertThat(aip.getSip(), equalTo(new ArchiveFileRef(SIP_ID, new FileRef(SIP_STREAM), sipHash)));
@@ -172,7 +173,8 @@ public class ArchivalServiceTest extends DbTest {
 
     @Test
     @Ignore
-    public void getLatest() throws StorageException, DeletedStateException, FailedStateException, RollbackStateException, StillProcessingStateException {
+    public void getLatest() throws StorageException, DeletedStateException, FailedStateException,
+            RollbackStateException, StillProcessingStateException {
         AipRef aip = archivalService.get(SIP_ID, Optional.of(false));
 
         assertThat(aip.getSip(), equalTo(new ArchiveFileRef(SIP_ID, new FileRef(SIP_STREAM), sipHash)));
@@ -315,7 +317,8 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void remove() throws RollbackStateException, DeletedStateException, StorageException, StillProcessingStateException, FailedStateException {
+    public void remove() throws RollbackStateException, DeletedStateException, StorageException,
+            StillProcessingStateException, FailedStateException {
         archivalService.remove(SIP_ID);
 
         AipSip sip = archivalDbService.getAip(SIP_ID);
