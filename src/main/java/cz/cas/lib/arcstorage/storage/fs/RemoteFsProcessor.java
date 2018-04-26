@@ -142,7 +142,7 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public FileRef getXml(String sipId, int version) throws FileDoesNotExistException, StorageException {
+    public FileRef getXml(String sipId, int version) throws StorageException {
         String xmlFilePath = getXmlFolderPath(sipId) + S + toXmlId(sipId, version);
         SSHClient ssh = null;
         try {
@@ -174,6 +174,25 @@ public class RemoteFsProcessor implements StorageService {
                 throw new SshException(ioEx);
             }
             throw new GeneralException(e);
+        }
+    }
+
+    @Override
+    public void storeSip(ArchiveFileRef aipRef, AtomicBoolean rollback) throws StorageException {
+        try (SSHClient ssh = new SSHClient()) {
+            ssh.addHostKeyVerifier(new PromiscuousVerifier());
+            ssh.connect(storageConfig.getHost(), storageConfig.getPort());
+            listenForRollbackToKillSession(ssh, rollback);
+            ssh.authPublickey("arcstorage", keyFilePath);
+            try (SFTPClient sftp = ssh.newSFTPClient()) {
+                storeFile(sftp, getSipFolderPath(aipRef.getId()), aipRef.getId(), S, aipRef.getInputStream(), aipRef.getChecksum(), rollback);
+            }
+        } catch (ConnectionException e) {
+            rollback.set(true);
+            throw new StorageConnectionException(e);
+        } catch (IOException e) {
+            rollback.set(true);
+            throw new SshException(e);
         }
     }
 

@@ -45,6 +45,11 @@ public interface FsAdapter extends StorageService {
     }
 
     @Override
+    default void storeSip(ArchiveFileRef aipRef, AtomicBoolean rollback) throws StorageException {
+        getFsProcessor().storeSip(aipRef, rollback);
+    }
+
+    @Override
     default void deleteSip(String id) throws StorageException {
         getFsProcessor().deleteSip(id);
     }
