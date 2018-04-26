@@ -6,16 +6,20 @@ import com.google.common.io.Resources;
 import cz.cas.lib.arcstorage.domain.DomainObject;
 import cz.cas.lib.arcstorage.exception.BadArgument;
 import cz.cas.lib.arcstorage.exception.ConfigParserException;
+import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.gateway.dto.Checksum;
 import org.springframework.aop.framework.Advised;
 import org.springframework.aop.support.AopUtils;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.Serializable;
 import java.math.BigDecimal;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -379,6 +383,74 @@ public class Utils {
                 if (!hash.matches("\\p{Alnum}{128}")) {
                     throw new BadArgument("Invalid format of SHA512 checksum: " + hash);
                 }
+        }
+    }
+
+    public static class Pair<L, R> implements Serializable {
+        private L l;
+        private R r;
+
+        public Pair(L l, R r) {
+            this.l = l;
+            this.r = r;
+        }
+
+        public L getL() {
+            return l;
+        }
+
+        public R getR() {
+            return r;
+        }
+
+        public void setL(L l) {
+            this.l = l;
+        }
+
+        public void setR(R r) {
+            this.r = r;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+
+            Pair<?, ?> pair = (Pair<?, ?>) o;
+
+            if (l != null ? !l.equals(pair.l) : pair.l != null) return false;
+            return r != null ? r.equals(pair.r) : pair.r == null;
+        }
+
+        @Override
+        public int hashCode() {
+            int result = l != null ? l.hashCode() : 0;
+            result = 31 * result + (r != null ? r.hashCode() : 0);
+            return result;
+        }
+    }
+
+    /**
+     * Executes process wia command.
+     *
+     * @param cmd command to be executed
+     * @return process return code together with string output
+     */
+    public static Pair<Integer, List<String>> executeProcessCustomResultHandle(String... cmd) {
+        File tmp = null;
+        try {
+            tmp = File.createTempFile("out", null);
+            tmp.deleteOnExit();
+            final ProcessBuilder processBuilder = new ProcessBuilder(cmd);
+            processBuilder.redirectErrorStream(true).redirectOutput(tmp);
+            final Process process = processBuilder.start();
+            final int exitCode = process.waitFor();
+            return new Pair<>(exitCode, Files.readAllLines(tmp.toPath()));
+        } catch (InterruptedException | IOException ex) {
+            throw new GeneralException("unexpected error while executing process", ex);
+        } finally {
+            if (tmp != null)
+                tmp.delete();
         }
     }
 

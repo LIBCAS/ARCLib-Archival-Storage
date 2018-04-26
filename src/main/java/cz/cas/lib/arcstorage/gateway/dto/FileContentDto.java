@@ -11,30 +11,36 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+/**
+ * General DTO for file content.
+ */
 @Getter
 @Setter
-public class FileRef {
+public class FileContentDto {
+
     /**
-     * shuld be closed once the object usage ends
+     * Input stream of a file. Should be closed via {@link #freeSources()}.
      */
     private InputStream inputStream;
+
     /**
-     * use {@link #freeSources()} method to close these after transfer
+     * Channels which were used to obtain the file (ssh connection etc.). These should remain open until the file stream is read.
+     * Developer is responsible for closing channels via {@link #freeSources()} once the content is read or if exception occurs.
      */
     private List<Closeable> channels = new ArrayList<>();
 
-    public FileRef(InputStream inputStream, Closeable... channels) {
+    public FileContentDto(InputStream inputStream, Closeable... channels) {
         this(inputStream, Arrays.asList(channels));
     }
 
-    public FileRef(InputStream inputStream, List<Closeable> channels) {
+    public FileContentDto(InputStream inputStream, List<Closeable> channels) {
         this.inputStream = inputStream;
         if (channels != null)
             this.channels = channels;
     }
 
     /**
-     * Closes inputstream and all channels (connections) which have to be closed once the object usage ends.
+     * Closes inputstream and all channels (connections).
      */
     public void freeSources() {
         if (channels.isEmpty())
@@ -43,8 +49,8 @@ public class FileRef {
         // use some internal after-transfer messaging which would be broken by immediate connection closing
         try {
             Thread.sleep(1000);
+            inputStream.close();
             for (Closeable closeable : channels) {
-                inputStream.close();
                 closeable.close();
             }
         } catch (IOException | InterruptedException e) {

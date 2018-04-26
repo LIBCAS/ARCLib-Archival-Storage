@@ -1,6 +1,9 @@
 package cz.cas.lib.arcstorage.store;
 
-import cz.cas.lib.arcstorage.domain.*;
+import cz.cas.lib.arcstorage.domain.AipSip;
+import cz.cas.lib.arcstorage.domain.AipXml;
+import cz.cas.lib.arcstorage.domain.ObjectState;
+import cz.cas.lib.arcstorage.domain.QAipXml;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
@@ -29,11 +32,11 @@ public class AipXmlStore extends DomainStore<AipXml, QAipXml> {
      */
     public List<AipXml> findUnfinishedXmls() {
         QAipXml xml = qObject();
-        return (List<AipXml>) query().where(xml.state.in(XmlState.PROCESSING, XmlState.FAILED)).where(xml.sip.state.eq(AipState.PROCESSING).not()).fetch();
+        return (List<AipXml>) query().where(xml.state.in(ObjectState.PROCESSING, ObjectState.FAILED)).where(xml.sip.state.eq(ObjectState.PROCESSING).not()).fetch();
     }
 
     public void rollbackUnfinishedXmlsRecords() {
         QAipXml xml = qObject();
-        queryFactory.update(xml).where(xml.state.in(XmlState.PROCESSING, XmlState.FAILED)).set(xml.state, XmlState.ROLLBACKED).execute();
+        queryFactory.update(xml).where(xml.state.in(ObjectState.PROCESSING, ObjectState.FAILED)).set(xml.state, ObjectState.ROLLBACKED).execute();
     }
 }

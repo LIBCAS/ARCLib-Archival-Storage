@@ -1,9 +1,8 @@
 package cz.cas.lib.arcstorage.gateway.service;
 
 import cz.cas.lib.arcstorage.domain.AipSip;
-import cz.cas.lib.arcstorage.domain.AipState;
 import cz.cas.lib.arcstorage.domain.AipXml;
-import cz.cas.lib.arcstorage.domain.XmlState;
+import cz.cas.lib.arcstorage.domain.ObjectState;
 import cz.cas.lib.arcstorage.exception.BadArgument;
 import cz.cas.lib.arcstorage.exception.ConflictObject;
 import cz.cas.lib.arcstorage.exception.MissingObject;
@@ -53,8 +52,8 @@ public class ArchivalDbService {
         AipSip sip = aipSipStore.find(sipId);
         if (sip != null)
             throw new ConflictObject(sip);
-        sip = new AipSip(sipId, sipChecksum, AipState.PROCESSING);
-        AipXml xml = new AipXml(xmlChecksum, new AipSip(sipId), 1, XmlState.PROCESSING);
+        sip = new AipSip(sipId, sipChecksum, ObjectState.PROCESSING);
+        AipXml xml = new AipXml(xmlChecksum, new AipSip(sipId), 1, ObjectState.PROCESSING);
         aipSipStore.save(sip);
         aipXmlStore.save(xml);
         return xml.getId();
@@ -68,7 +67,7 @@ public class ArchivalDbService {
      */
     public void finishAipCreation(String sipId, String xmlId) {
         AipSip sip = aipSipStore.find(sipId);
-        sip.setState(AipState.ARCHIVED);
+        sip.setState(ObjectState.ARCHIVED);
         aipSipStore.save(sip);
         finishXmlProcess(xmlId);
     }
@@ -85,7 +84,7 @@ public class ArchivalDbService {
         notNull(xmlChecksum, () -> new BadArgument(xmlChecksum));
 
         int xmlVersion = aipXmlStore.getNextXmlVersionNumber(sipId);
-        AipXml newVersion = new AipXml(xmlChecksum, new AipSip(sipId), xmlVersion, XmlState.PROCESSING);
+        AipXml newVersion = new AipXml(xmlChecksum, new AipSip(sipId), xmlVersion, ObjectState.PROCESSING);
         aipXmlStore.save(newVersion);
         return newVersion;
     }
@@ -111,7 +110,7 @@ public class ArchivalDbService {
             case ROLLBACKED:
                 throw new RollbackStateException(sip);
         }
-        sip.setState(AipState.PROCESSING);
+        sip.setState(ObjectState.PROCESSING);
         aipSipStore.save(sip);
     }
 
@@ -122,7 +121,7 @@ public class ArchivalDbService {
      */
     public void finishSipDeletion(String sipId) {
         AipSip sip = aipSipStore.find(sipId);
-        sip.setState(AipState.DELETED);
+        sip.setState(ObjectState.DELETED);
         aipSipStore.save(sip);
     }
 
@@ -133,7 +132,7 @@ public class ArchivalDbService {
      */
     public void finishXmlProcess(String xmlId) {
         AipXml xml = aipXmlStore.find(xmlId);
-        xml.setState(XmlState.ARCHIVED);
+        xml.setState(ObjectState.ARCHIVED);
         aipXmlStore.save(xml);
     }
 
@@ -149,7 +148,7 @@ public class ArchivalDbService {
             log.warn("Could not find AIP: " + sipId);
             return new MissingObject(AipSip.class, sipId);
         });
-        sip.setState(AipState.FAILED);
+        sip.setState(ObjectState.FAILED);
         aipSipStore.save(sip);
 
         AipXml xml = aipXmlStore.find(xmlId);
@@ -157,7 +156,7 @@ public class ArchivalDbService {
             log.warn("Could not find XML: " + xmlId);
             return new MissingObject(AipXml.class, xmlId);
         });
-        xml.setState(XmlState.FAILED);
+        xml.setState(ObjectState.FAILED);
         aipXmlStore.save(xml);
     }
 
@@ -172,13 +171,13 @@ public class ArchivalDbService {
             log.warn("Could not find XML: " + xmlId);
             return new MissingObject(AipXml.class, xmlId);
         });
-        xml.setState(XmlState.FAILED);
+        xml.setState(ObjectState.FAILED);
         aipXmlStore.save(xml);
     }
 
 
     /**
-     * Logically removes SIP i.e. sets its state to {@link AipState#REMOVED} in the database.
+     * Logically removes SIP i.e. sets its state to {@link ObjectState#REMOVED} in the database.
      *
      * @param sipId
      * @throws DeletedStateException         if SIP is deleted
@@ -201,7 +200,7 @@ public class ArchivalDbService {
             case FAILED:
                 throw new FailedStateException(sip);
         }
-        sip.setState(AipState.REMOVED);
+        sip.setState(ObjectState.REMOVED);
         aipSipStore.save(sip);
     }
 
@@ -227,7 +226,7 @@ public class ArchivalDbService {
      */
     public void rollbackSip(String id, String xmlId) {
         AipSip sip = aipSipStore.find(id);
-        sip.setState(AipState.ROLLBACKED);
+        sip.setState(ObjectState.ROLLBACKED);
         aipSipStore.save(sip);
         rollbackXml(xmlId);
     }
@@ -239,7 +238,7 @@ public class ArchivalDbService {
      */
     public void rollbackXml(String id) {
         AipXml xml = aipXmlStore.find(id);
-        xml.setState(XmlState.ROLLBACKED);
+        xml.setState(ObjectState.ROLLBACKED);
         aipXmlStore.save(xml);
     }
 

@@ -9,15 +9,15 @@ import org.hibernate.annotations.BatchSize;
 
 import javax.persistence.*;
 
+/**
+ * XML database entity. Its id is used only on the service layer and is neither accessible over API nor projected to storage.
+ */
 @Getter
 @Setter
 @BatchSize(size = 100)
 @Entity
 @Table(name = "arcstorage_aip_xml")
 @NoArgsConstructor
-/**
- * XML database entity. Its id is used only for internal purpose and is neither accessible over API nor projected to storage.
- */
 public class AipXml extends ArchivalObject {
 
     @ManyToOne
@@ -27,16 +27,22 @@ public class AipXml extends ArchivalObject {
     private int version;
 
     @Enumerated(EnumType.STRING)
-    private XmlState state;
+    private ObjectState state;
 
-    public AipXml(String id, Checksum checksum, AipSip sip, int version, XmlState state) {
+    /**
+     * Creates entity with assigned id.
+     */
+    public AipXml(String id, Checksum checksum, AipSip sip, int version, ObjectState state) {
         super(id, checksum);
         this.sip = sip;
         this.version = version;
         this.state = state;
     }
 
-    public AipXml(Checksum checksum, AipSip sip, int version, XmlState state) {
+    /**
+     * Creates entity with generated id.
+     */
+    public AipXml(Checksum checksum, AipSip sip, int version, ObjectState state) {
         super(checksum);
         this.sip = sip;
         this.version = version;

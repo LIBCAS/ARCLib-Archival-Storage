@@ -4,16 +4,16 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * Transfer class for file data
+ * DTO for archive file containing its id, checksum and input stream. Used directly as DTO for SIP object with its content.
  */
 @Setter
 @Getter
-public class ArchiveFileRef extends FileRef {
+public class ArchivalObjectDto extends FileContentDto {
     private String id;
     private Checksum checksum;
 
-    public ArchiveFileRef(String id, FileRef fileRef, Checksum checksum) {
-        super(fileRef.getInputStream(), fileRef.getChannels());
+    public ArchivalObjectDto(String id, FileContentDto fileContentDto, Checksum checksum) {
+        super(fileContentDto.getInputStream(), fileContentDto.getChannels());
         this.id = id;
         this.checksum = checksum;
     }
@@ -23,9 +23,9 @@ public class ArchiveFileRef extends FileRef {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
 
-        ArchiveFileRef archiveFileRef = (ArchiveFileRef) o;
+        ArchivalObjectDto archivalObjectDto = (ArchivalObjectDto) o;
 
-        return getId().equals(archiveFileRef.getId());
+        return getId().equals(archivalObjectDto.getId());
     }
 
     @Override

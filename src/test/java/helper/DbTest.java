@@ -9,13 +9,10 @@ import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
-import org.springframework.util.FileSystemUtils;
 
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.Persistence;
-import java.io.File;
-import java.io.IOException;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -93,10 +90,5 @@ public abstract class DbTest {
             store.setEntityManager(em);
             store.setQueryFactory(new JPAQueryFactory(em));
         }
-    }
-
-    protected static void delete(String path) throws IOException {
-        File file = new File(path);
-        FileSystemUtils.deleteRecursively(file);
     }
 }

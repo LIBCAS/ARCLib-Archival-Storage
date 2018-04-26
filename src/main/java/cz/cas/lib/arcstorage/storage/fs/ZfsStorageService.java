@@ -1,27 +1,13 @@
 package cz.cas.lib.arcstorage.storage.fs;
 
+import cz.cas.lib.arcstorage.domain.ObjectState;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
-import cz.cas.lib.arcstorage.exception.GeneralException;
-import cz.cas.lib.arcstorage.gateway.dto.SpaceInfo;
-import cz.cas.lib.arcstorage.gateway.dto.StorageState;
+import cz.cas.lib.arcstorage.gateway.dto.StorageStateDto;
 import cz.cas.lib.arcstorage.storage.StorageService;
-import cz.cas.lib.arcstorage.storage.exception.SshException;
-import cz.cas.lib.arcstorage.storage.exception.StorageConnectionException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.store.Transactional;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import net.schmizz.sshj.SSHClient;
-import net.schmizz.sshj.connection.ConnectionException;
-import net.schmizz.sshj.connection.channel.direct.Session;
-import net.schmizz.sshj.transport.verification.PromiscuousVerifier;
-import org.apache.commons.io.IOUtils;
-
-import java.io.File;
-import java.io.IOException;
-import java.nio.charset.Charset;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.isLocalhost;
 
@@ -35,7 +21,7 @@ import static cz.cas.lib.arcstorage.storage.StorageUtils.isLocalhost;
  * <li>initial checksum of file and its type: checksums are stored during creation to the same directory as file into text file with file name and <i>.{@link cz.cas.lib.arcstorage.domain.ChecksumType}</i> suffix</li>
  * <li>creation time of file: provided by filesystem</li>
  * <li>info if file is being processed: new empty file with original file name and <i>.PROCESSING</i> suffix is created when processing starts and deleted when it ends</li>
- * <li>for SIP its ID and info if is {@link cz.cas.lib.arcstorage.domain.AipState#DELETED} or {@link cz.cas.lib.arcstorage.domain.AipState#REMOVED}:
+ * <li>for SIP its ID and info if is {@link ObjectState#DELETED} or {@link ObjectState#REMOVED}:
  * SIP ID is its file name, when SIP is DELETED its files are no longer stored, when its REMOVED new empty file with SIP ID and <i>.REMOVED</i> sufffix is created</li>
  * <li>for XML its version and ID of SIP: XML file name follows <i>'SIPID'_xml_'XMLVERSION'</i> pattern</li>
  * </ul>
@@ -49,8 +35,20 @@ public class ZfsStorageService implements FsAdapter {
     @Getter
     private StorageService fsProcessor;
     private String keyFilePath;
+    private String pool;
+    private String dataset;
 
-    public ZfsStorageService(StorageConfig storageConfig, String keyFilePath) {
+    /**
+     * Creates a new ZFS storage service.
+     *
+     * @param storageConfig storage config
+     * @param pool          ZFS zpool
+     * @param dataset       specific dataset of a zpool
+     * @param keyFilePath   path to private key used for authentication to remote server
+     */
+    public ZfsStorageService(StorageConfig storageConfig, String pool, String dataset, String keyFilePath) {
+        this.pool = pool;
+        this.dataset = dataset;
         this.keyFilePath = keyFilePath;
         this.storageConfig = storageConfig;
         String separator = storageConfig.getLocation().startsWith("/") ? "/" : "\\";
@@ -60,38 +58,43 @@ public class ZfsStorageService implements FsAdapter {
             this.fsProcessor = new RemoteFsProcessor(storageConfig, separator, keyFilePath);
     }
 
-    /**
-     * may be different for zfs/fs one day so that is why this is not implemented in adapter
-     *
-     * @return
-     * @throws StorageException
-     */
     @Override
-    public StorageState getStorageState() throws StorageException {
-        if (isLocalhost(storageConfig)) {
-            File anchor = new File(storageConfig.getLocation());
-            long capacity = anchor.getTotalSpace();
-            long free = anchor.getFreeSpace();
-            return new FsStorageState(storageConfig, new SpaceInfo(capacity, capacity - free, free));
-        }
-        String dfResult;
-        try (SSHClient ssh = new SSHClient()) {
-            ssh.addHostKeyVerifier(new PromiscuousVerifier());
-            ssh.connect(storageConfig.getHost(), storageConfig.getPort());
-            ssh.authPublickey("root", keyFilePath);
-            try (Session s = ssh.startSession()) {
-                dfResult = IOUtils.toString(s.exec("df " + storageConfig.getLocation()).getInputStream(), Charset.defaultCharset());
-            }
-        } catch (ConnectionException e) {
-            throw new StorageConnectionException(e);
-        } catch (IOException e) {
-            throw new SshException(e);
-        }
-        Matcher m = Pattern.compile(".+\\d+\\s+(\\d+)\\s+(\\d+)\\s+").matcher(dfResult);
-        if (!m.find())
-            throw new GeneralException("could not parse bytes from df command, cmd result: " + dfResult);
-        long used = Long.parseLong(m.group(1));
-        long free = Long.parseLong(m.group(2));
-        return new FsStorageState(storageConfig, new SpaceInfo(used + free, used, free));
+    public StorageStateDto getStorageState() throws StorageException {
+        throw new UnsupportedOperationException();
+//        List<String> lines;
+//        if (isLocalhost(storageConfig)) {
+//            Utils.Pair<Integer, List<String>> processResult = executeProcessCustomResultHandle("zfs", "list");
+//            lines = processResult.getR();
+//            if (!processResult.getL().equals(0))
+//                throw new CmdProcessException("zfs list", lines);
+//        } else {
+//            try (SSHClient ssh = new SSHClient()) {
+//                ssh.addHostKeyVerifier(new PromiscuousVerifier());
+//                ssh.connect(storageConfig.getHost(), storageConfig.getPort());
+//                ssh.authPublickey("arcstorage", keyFilePath);
+//                try (Session s = ssh.startSession()) {
+//                    lines = Arrays.asList(IOUtils.toString(s.exec("sudo zfs list").getInputStream(), Charset.defaultCharset()).split(System.lineSeparator()));
+//                }
+//            } catch (IOException e) {
+//                throw new SshException(e);
+//            }
+//        }
+//        Map<String, String> storageStateData = new HashMap<>();
+//        Pattern pattern = Pattern.compile("(\\w+)\\s+(\\w+)\\s+(\\w+)");
+//        for (String line : lines) {
+//            Matcher m = pattern.matcher(line);
+//            if (!m.find())
+//                throw new CmdOutputParsingException("sudo zfs list", lines);
+//            if (m.group(1).equals(pool)) {
+//                storageStateData.put(pool + " used", m.group(2));
+//                storageStateData.put(pool + " available", m.group(3));
+//                continue;
+//            }
+//            if (m.group(1).equals(dataset)) {
+//                storageStateData.put(dataset + " used", m.group(2));
+//                storageStateData.put(dataset + " available", m.group(3));
+//            }
+//        }
+//        return new StorageStateDto(storageConfig, storageStateData);
     }
 }

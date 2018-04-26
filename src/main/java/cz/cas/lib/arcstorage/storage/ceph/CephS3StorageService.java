@@ -9,8 +9,8 @@ import com.amazonaws.client.builder.AwsClientBuilder;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.*;
-import cz.cas.lib.arcstorage.domain.AipState;
 import cz.cas.lib.arcstorage.domain.ChecksumType;
+import cz.cas.lib.arcstorage.domain.ObjectState;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.*;
@@ -59,10 +59,10 @@ public class CephS3StorageService implements StorageService {
     }
 
     @Override
-    public void storeAip(AipRef aipRef, AtomicBoolean rollback) throws StorageException {
+    public void storeAip(AipDto aipDto, AtomicBoolean rollback) throws StorageException {
         AmazonS3 s3 = connect();
-        ArchiveFileRef sip = aipRef.getSip();
-        XmlRef xml = aipRef.getXml();
+        ArchivalObjectDto sip = aipDto.getSip();
+        XmlDto xml = aipDto.getXml();
         storeFile(s3, sip.getId(), sip.getInputStream(), sip.getChecksum(), rollback);
         storeFile(s3, toXmlId(sip.getId(), xml.getVersion()), xml.getInputStream(), xml.getChecksum(), rollback);
     }
@@ -76,35 +76,35 @@ public class CephS3StorageService implements StorageService {
      * @throws StorageException
      */
     @Override
-    public List<FileRef> getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException {
+    public List<FileContentDto> getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException {
         AmazonS3 s3 = connect();
-        List<FileRef> list = new ArrayList<>();
+        List<FileContentDto> list = new ArrayList<>();
         checkFileExists(s3, sipId);
-        list.add(new FileRef(s3.getObject(storageConfig.getLocation(), sipId).getObjectContent()));
+        list.add(new FileContentDto(s3.getObject(storageConfig.getLocation(), sipId).getObjectContent()));
         for (Integer xmlVersion : xmlVersions) {
             String xmlId = toXmlId(sipId, xmlVersion);
             checkFileExists(s3, xmlId);
-            list.add(new FileRef(s3.getObject(storageConfig.getLocation(), xmlId).getObjectContent()));
+            list.add(new FileContentDto(s3.getObject(storageConfig.getLocation(), xmlId).getObjectContent()));
         }
         return list;
     }
 
     @Override
-    public void storeXml(String sipId, XmlRef xmlRef, AtomicBoolean rollback) throws StorageException {
+    public void storeXml(String sipId, XmlDto xmlRef, AtomicBoolean rollback) throws StorageException {
         AmazonS3 s3 = connect();
         storeFile(s3, toXmlId(sipId, xmlRef.getVersion()), xmlRef.getInputStream(), xmlRef.getChecksum(), rollback);
     }
 
     @Override
-    public FileRef getXml(String sipId, int version) throws FileDoesNotExistException {
+    public FileContentDto getXml(String sipId, int version) throws FileDoesNotExistException {
         AmazonS3 s3 = connect();
         String xmlId = toXmlId(sipId, version);
         checkFileExists(s3, xmlId);
-        return new FileRef(s3.getObject(storageConfig.getLocation(), xmlId).getObjectContent());
+        return new FileContentDto(s3.getObject(storageConfig.getLocation(), xmlId).getObjectContent());
     }
 
     @Override
-    public void storeSip(ArchiveFileRef aipRef, AtomicBoolean rollback) throws StorageException {
+    public void storeSip(ArchivalObjectDto aipRef, AtomicBoolean rollback) throws StorageException {
         AmazonS3 s3 = connect();
         storeFile(s3, aipRef.getId(), aipRef.getInputStream(), aipRef.getChecksum(), rollback);
     }
@@ -115,10 +115,10 @@ public class CephS3StorageService implements StorageService {
         String metadataId = toMetadataObjectId(sipId);
         checkFileExists(s3, metadataId);
         ObjectMetadata metadata = s3.getObjectMetadata(storageConfig.getLocation(), metadataId);
-        metadata.addUserMetadata(STATE_KEY, AipState.PROCESSING.toString());
+        metadata.addUserMetadata(STATE_KEY, ObjectState.PROCESSING.toString());
         s3.putObject(storageConfig.getLocation(), toMetadataObjectId(sipId), new NullInputStream(0), metadata);
         s3.deleteObject(storageConfig.getLocation(), sipId);
-        metadata.addUserMetadata(STATE_KEY, AipState.DELETED.toString());
+        metadata.addUserMetadata(STATE_KEY, ObjectState.DELETED.toString());
         s3.putObject(storageConfig.getLocation(), toMetadataObjectId(sipId), new NullInputStream(0), metadata);
     }
 
@@ -128,7 +128,7 @@ public class CephS3StorageService implements StorageService {
         String metadataId = toMetadataObjectId(sipId);
         checkFileExists(s3, metadataId);
         ObjectMetadata objectMetadata = s3.getObjectMetadata(storageConfig.getLocation(), metadataId);
-        objectMetadata.addUserMetadata(STATE_KEY, AipState.REMOVED.toString());
+        objectMetadata.addUserMetadata(STATE_KEY, ObjectState.REMOVED.toString());
         s3.putObject(storageConfig.getLocation(), toMetadataObjectId(sipId), new NullInputStream(0), objectMetadata);
     }
 
@@ -146,10 +146,10 @@ public class CephS3StorageService implements StorageService {
     }
 
     @Override
-    public AipStateInfo getAipInfo(String sipId, Checksum sipChecksum, AipState aipState, Map<Integer, Checksum> xmlVersions) throws FileDoesNotExistException {
+    public AipStateInfoDto getAipInfo(String sipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions) throws FileDoesNotExistException {
         AmazonS3 s3 = connect();
-        AipStateInfo info = new AipStateInfo(storageConfig.getName(), storageConfig.getStorageType(), aipState, sipChecksum);
-        if (aipState == AipState.ARCHIVED || aipState == AipState.REMOVED) {
+        AipStateInfoDto info = new AipStateInfoDto(storageConfig.getName(), storageConfig.getStorageType(), objectState, sipChecksum);
+        if (objectState == ObjectState.ARCHIVED || objectState == ObjectState.REMOVED) {
             checkFileExists(s3, sipId);
             S3Object sipObject = s3.getObject(storageConfig.getLocation(), sipId);
             Checksum storageFileChecksum = StorageUtils.computeChecksum(sipObject.getObjectContent(), sipChecksum.getType());
@@ -166,14 +166,15 @@ public class CephS3StorageService implements StorageService {
             S3Object xmlObject = s3.getObject(storageConfig.getLocation(), xmlId);
             Checksum dbChecksum = xmlVersions.get(version);
             Checksum storageFileChecksum = StorageUtils.computeChecksum(xmlObject.getObjectContent(), dbChecksum.getType());
-            info.addXmlInfo(new XmlStateInfo(version, dbChecksum.equals(storageFileChecksum), storageFileChecksum, dbChecksum));
+            info.addXmlInfo(new XmlStateInfoDto(version, dbChecksum.equals(storageFileChecksum), storageFileChecksum, dbChecksum));
         }
         return info;
     }
 
     @Override
-    public StorageState getStorageState() throws StorageException {
-        return new StorageState(storageConfig);
+    public StorageStateDto getStorageState() throws StorageException {
+        //bucket quota, user quota, whole cluster, number of objects ...
+        throw new UnsupportedOperationException("not supported yet");
     }
 
     @Override
@@ -217,7 +218,7 @@ public class CephS3StorageService implements StorageService {
 
             ObjectMetadata objectMetadata = new ObjectMetadata();
             objectMetadata.addUserMetadata(checksum.getType().toString(), checksum.getHash());
-            objectMetadata.addUserMetadata(STATE_KEY, AipState.PROCESSING.toString());
+            objectMetadata.addUserMetadata(STATE_KEY, ObjectState.PROCESSING.toString());
             objectMetadata.addUserMetadata(CREATED_KEY, LocalDateTime.now().toString());
             objectMetadata.setContentLength(0);
             PutObjectRequest metadataPutRequest = new PutObjectRequest(storageConfig.getLocation(), toMetadataObjectId(id), new NullInputStream(0), objectMetadata);
@@ -255,7 +256,7 @@ public class CephS3StorageService implements StorageService {
             } while (!last);
             CompleteMultipartUploadRequest completeReq = new CompleteMultipartUploadRequest(storageConfig.getLocation(), id, initRes.getUploadId(), partETags);
             s3.completeMultipartUpload(completeReq);
-            objectMetadata.addUserMetadata(STATE_KEY, AipState.ARCHIVED.toString());
+            objectMetadata.addUserMetadata(STATE_KEY, ObjectState.ARCHIVED.toString());
             s3.putObject(metadataPutRequest);
         } catch (Exception e) {
             rollback.set(true);
@@ -275,7 +276,7 @@ public class CephS3StorageService implements StorageService {
             objectMetadata = new ObjectMetadata();
         else
             objectMetadata = s3.getObjectMetadata(storageConfig.getLocation(), metadataId);
-        objectMetadata.addUserMetadata(STATE_KEY, AipState.PROCESSING.toString());
+        objectMetadata.addUserMetadata(STATE_KEY, ObjectState.PROCESSING.toString());
         s3.putObject(storageConfig.getLocation(), metadataId, new NullInputStream(0), objectMetadata);
         List<MultipartUpload> multipartUploads = s3.listMultipartUploads(new ListMultipartUploadsRequest(storageConfig.getLocation()).withPrefix(id)).getMultipartUploads();
         if (multipartUploads.size() == 1)
@@ -283,7 +284,7 @@ public class CephS3StorageService implements StorageService {
         else if (multipartUploads.size() > 1)
             throw new GeneralException("unexpected error during rollback of file: " + id + " : there are more than one upload in progress");
         s3.deleteObject(storageConfig.getLocation(), id);
-        objectMetadata.addUserMetadata(STATE_KEY, AipState.ROLLBACKED.toString());
+        objectMetadata.addUserMetadata(STATE_KEY, ObjectState.ROLLBACKED.toString());
         s3.putObject(storageConfig.getLocation(), metadataId, new NullInputStream(0), objectMetadata);
     }
 

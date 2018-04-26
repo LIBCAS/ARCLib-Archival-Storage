@@ -1,6 +1,6 @@
 package cz.cas.lib.arcstorage.storage.fs;
 
-import cz.cas.lib.arcstorage.domain.AipState;
+import cz.cas.lib.arcstorage.domain.ObjectState;
 import cz.cas.lib.arcstorage.gateway.dto.*;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
@@ -17,7 +17,7 @@ public interface FsAdapter extends StorageService {
     StorageService getFsProcessor();
 
     @Override
-    StorageState getStorageState() throws StorageException;
+    StorageStateDto getStorageState() throws StorageException;
 
     @Override
     default boolean testConnection() {
@@ -25,27 +25,27 @@ public interface FsAdapter extends StorageService {
     }
 
     @Override
-    default void storeAip(AipRef aipRef, AtomicBoolean rollback) throws StorageException {
-        getFsProcessor().storeAip(aipRef, rollback);
+    default void storeAip(AipDto aipDto, AtomicBoolean rollback) throws StorageException {
+        getFsProcessor().storeAip(aipDto, rollback);
     }
 
     @Override
-    default List<FileRef> getAip(String sipId, Integer... xmlVersions) throws StorageException {
+    default List<FileContentDto> getAip(String sipId, Integer... xmlVersions) throws StorageException {
         return getFsProcessor().getAip(sipId, xmlVersions);
     }
 
     @Override
-    default void storeXml(String sipId, XmlRef xmlRef, AtomicBoolean rollback) throws StorageException {
+    default void storeXml(String sipId, XmlDto xmlRef, AtomicBoolean rollback) throws StorageException {
         getFsProcessor().storeXml(sipId, xmlRef, rollback);
     }
 
     @Override
-    default FileRef getXml(String sipId, int version) throws StorageException {
+    default FileContentDto getXml(String sipId, int version) throws StorageException {
         return getFsProcessor().getXml(sipId, version);
     }
 
     @Override
-    default void storeSip(ArchiveFileRef aipRef, AtomicBoolean rollback) throws StorageException {
+    default void storeSip(ArchivalObjectDto aipRef, AtomicBoolean rollback) throws StorageException {
         getFsProcessor().storeSip(aipRef, rollback);
     }
 
@@ -70,7 +70,7 @@ public interface FsAdapter extends StorageService {
     }
 
     @Override
-    default AipStateInfo getAipInfo(String sipId, Checksum sipChecksum, AipState aipState, Map<Integer, Checksum> xmlVersions) throws StorageException {
-        return getFsProcessor().getAipInfo(sipId, sipChecksum, aipState, xmlVersions);
+    default AipStateInfoDto getAipInfo(String sipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions) throws StorageException {
+        return getFsProcessor().getAipInfo(sipId, sipChecksum, objectState, xmlVersions);
     }
 }

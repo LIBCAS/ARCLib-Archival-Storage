@@ -7,7 +7,7 @@ import lombok.Setter;
 @AllArgsConstructor
 @Getter
 @Setter
-public class XmlStateInfo {
+public class XmlStateInfoDto {
     private int version;
     private boolean consistent;
     private Checksum storageChecksum;

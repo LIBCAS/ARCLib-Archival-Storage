@@ -1,7 +1,7 @@
 package cz.cas.lib.arcstorage.store;
 
 import cz.cas.lib.arcstorage.domain.AipSip;
-import cz.cas.lib.arcstorage.domain.AipState;
+import cz.cas.lib.arcstorage.domain.ObjectState;
 import cz.cas.lib.arcstorage.domain.QAipSip;
 import org.springframework.stereotype.Repository;
 
@@ -18,11 +18,11 @@ public class AipSipStore extends DomainStore<AipSip, QAipSip> {
      */
     public List<AipSip> findUnfinishedSips() {
         QAipSip sip = qObject();
-        return (List<AipSip>) query().where(sip.state.in(AipState.PROCESSING, AipState.FAILED)).fetch();
+        return (List<AipSip>) query().where(sip.state.in(ObjectState.PROCESSING, ObjectState.FAILED)).fetch();
     }
 
     public void rollbackUnfinishedSipsRecords() {
         QAipSip sip = qObject();
-        queryFactory.update(sip).where(sip.state.in(AipState.PROCESSING, AipState.FAILED)).set(sip.state, AipState.ROLLBACKED).execute();
+        queryFactory.update(sip).where(sip.state.in(ObjectState.PROCESSING, ObjectState.FAILED)).set(sip.state, ObjectState.ROLLBACKED).execute();
     }
 }

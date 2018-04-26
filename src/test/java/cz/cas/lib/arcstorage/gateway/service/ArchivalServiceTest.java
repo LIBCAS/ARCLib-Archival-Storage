@@ -102,13 +102,13 @@ public class ArchivalServiceTest extends DbTest {
         xml2Hash.setType(ChecksumType.MD5);
         xml2Hash.setHash(XML2_HASH);
 
-        xml1 = new AipXml(XML1_ID, xml1Hash, null, 1, XmlState.ARCHIVED);
-        xml2 = new AipXml(XML2_ID, xml2Hash, null, 2, XmlState.ARCHIVED);
+        xml1 = new AipXml(XML1_ID, xml1Hash, null, 1, ObjectState.ARCHIVED);
+        xml2 = new AipXml(XML2_ID, xml2Hash, null, 2, ObjectState.ARCHIVED);
 
         aipXmlStore.save(xml1);
         aipXmlStore.save(xml2);
 
-        sip = new AipSip(SIP_ID, sipHash, AipState.ARCHIVED, xml1, xml2);
+        sip = new AipSip(SIP_ID, sipHash, ObjectState.ARCHIVED, xml1, xml2);
         aipSipStore.save(sip);
 
         xml1.setSip(sip);
@@ -123,21 +123,21 @@ public class ArchivalServiceTest extends DbTest {
 
         storageConfigStore.save(storageConfig);
 
-        FileRef xml1FileRef = new FileRef(XML1_STREAM);
-        FileRef xml2FileRef = new FileRef(XML2_STREAM);
+        FileContentDto xml1FileContentDto = new FileContentDto(XML1_STREAM);
+        FileContentDto xml2FileContentDto = new FileContentDto(XML2_STREAM);
 
-        List<FileRef> fileRefs1 = new ArrayList<>();
-        fileRefs1.add(new FileRef(SIP_STREAM));
-        fileRefs1.add(xml1FileRef);
+        List<FileContentDto> fileRefs1 = new ArrayList<>();
+        fileRefs1.add(new FileContentDto(SIP_STREAM));
+        fileRefs1.add(xml1FileContentDto);
 
-        List<FileRef> fileRefs2 = new ArrayList<>();
-        fileRefs2.add(new FileRef(SIP_STREAM));
-        fileRefs2.add(xml2FileRef);
+        List<FileContentDto> fileRefs2 = new ArrayList<>();
+        fileRefs2.add(new FileContentDto(SIP_STREAM));
+        fileRefs2.add(xml2FileContentDto);
 
-        List<FileRef> fileRefs3 = new ArrayList<>();
-        fileRefs3.add(new FileRef(SIP_STREAM));
-        fileRefs3.add(xml1FileRef);
-        fileRefs3.add(xml2FileRef);
+        List<FileContentDto> fileRefs3 = new ArrayList<>();
+        fileRefs3.add(new FileContentDto(SIP_STREAM));
+        fileRefs3.add(xml1FileContentDto);
+        fileRefs3.add(xml2FileContentDto);
 
         when(storageService.getAip(SIP_ID, 1)).thenReturn(fileRefs1);
         when(storageService.getAip(SIP_ID, 2)).thenReturn(fileRefs2);
@@ -145,27 +145,26 @@ public class ArchivalServiceTest extends DbTest {
 
         when(storageProvider.createAdapter(anyObject())).thenReturn(storageService);
 
-        when(storageService.getXml(SIP_ID, 1)).thenReturn(xml1FileRef);
-        when(storageService.getXml(SIP_ID, 2)).thenReturn(xml2FileRef);
+        when(storageService.getXml(SIP_ID, 1)).thenReturn(xml1FileContentDto);
+        when(storageService.getXml(SIP_ID, 2)).thenReturn(xml2FileContentDto);
     }
 
     @Test
     @Ignore
-    public void getAll() throws DeletedStateException, StillProcessingStateException, RollbackStateException,
-            StorageException, FailedStateException {
-        AipRef aip = archivalService.get(SIP_ID, Optional.of(true));
+    public void getAll() throws DeletedStateException, StillProcessingStateException, RollbackStateException, StorageException, FailedStateException {
+        AipDto aip = archivalService.get(SIP_ID, Optional.of(true));
 
-        assertThat(aip.getSip(), equalTo(new ArchiveFileRef(SIP_ID, new FileRef(SIP_STREAM), sipHash)));
+        assertThat(aip.getSip(), equalTo(new ArchivalObjectDto(SIP_ID, new FileContentDto(SIP_STREAM), sipHash)));
 
-        List<XmlRef> xmls = aip.getXmls();
+        List<XmlDto> xmls = aip.getXmls();
         assertThat(xmls, hasSize(2));
 
-        XmlRef xmlRef1 = xmls.stream().filter(xml -> xml.getId().equals(XML1_ID)).collect(Collectors.toList()).get(0);
+        XmlDto xmlRef1 = xmls.stream().filter(xml -> xml.getId().equals(XML1_ID)).collect(Collectors.toList()).get(0);
         assertThat(xmlRef1.getVersion(), is(1));
         assertThat(xmlRef1.getChecksum(), equalTo(xml1Hash));
         assertThat(xmlRef1.getInputStream(), equalTo(XML1_STREAM));
 
-        XmlRef xmlRef2 = xmls.stream().filter(xml -> xml.getId().equals(XML2_ID)).collect(Collectors.toList()).get(0);
+        XmlDto xmlRef2 = xmls.stream().filter(xml -> xml.getId().equals(XML2_ID)).collect(Collectors.toList()).get(0);
         assertThat(xmlRef2.getVersion(), is(2));
         assertThat(xmlRef2.getChecksum(), equalTo(xml2Hash));
         assertThat(xmlRef2.getInputStream(), equalTo(XML2_STREAM));
@@ -173,16 +172,16 @@ public class ArchivalServiceTest extends DbTest {
 
     @Test
     @Ignore
-    public void getLatest() throws StorageException, DeletedStateException, FailedStateException,
-            RollbackStateException, StillProcessingStateException {
-        AipRef aip = archivalService.get(SIP_ID, Optional.of(false));
+    public void getLatest() throws
+            RollbackStateException, DeletedStateException, StorageException, StillProcessingStateException, FailedStateException {
+        AipDto aip = archivalService.get(SIP_ID, Optional.of(false));
 
-        assertThat(aip.getSip(), equalTo(new ArchiveFileRef(SIP_ID, new FileRef(SIP_STREAM), sipHash)));
+        assertThat(aip.getSip(), equalTo(new ArchivalObjectDto(SIP_ID, new FileContentDto(SIP_STREAM), sipHash)));
 
-        List<XmlRef> xmls = aip.getXmls();
+        List<XmlDto> xmls = aip.getXmls();
         assertThat(xmls, hasSize(1));
 
-        XmlRef xmlRef = xmls.stream().filter(xml -> xml.getId().equals(XML2_ID)).collect(Collectors.toList()).get(0);
+        XmlDto xmlRef = xmls.stream().filter(xml -> xml.getId().equals(XML2_ID)).collect(Collectors.toList()).get(0);
         assertThat(xmlRef.getVersion(), is(2));
         assertThat(xmlRef.getChecksum(), equalTo(xml2Hash));
         assertThat(xmlRef.getInputStream(), equalTo(XML2_STREAM));
@@ -190,21 +189,23 @@ public class ArchivalServiceTest extends DbTest {
 
     @Test
     @Ignore
-    public void getXml() throws StorageException, FailedStateException, RollbackStateException, StillProcessingStateException {
+    public void getXml() throws
+            StorageException, FailedStateException, RollbackStateException, StillProcessingStateException {
         Optional<Integer> version = Optional.empty();
-        XmlRef xml = archivalService.getXml(SIP_ID, version);
+        XmlDto xml = archivalService.getXml(SIP_ID, version);
         assertThat(xml.getVersion(), is(2));
     }
 
     @Test
     @Ignore
-    public void getXmlVersionSpecified() throws StorageException, FailedStateException, RollbackStateException, StillProcessingStateException {
+    public void getXmlVersionSpecified() throws
+            StorageException, FailedStateException, RollbackStateException, StillProcessingStateException {
         Optional<Integer> version1 = Optional.of(1);
-        XmlRef xml = archivalService.getXml(SIP_ID, version1);
+        XmlDto xml = archivalService.getXml(SIP_ID, version1);
         assertThat(xml.getVersion(), is(1));
 
         Optional<Integer> version2 = Optional.of(2);
-        XmlRef xml2 = archivalService.getXml(SIP_ID, version2);
+        XmlDto xml2 = archivalService.getXml(SIP_ID, version2);
         assertThat(xml2.getVersion(), is(2));
     }
 
@@ -218,23 +219,23 @@ public class ArchivalServiceTest extends DbTest {
     public void getXmlIllegalStates() {
         Optional<Integer> version = Optional.of(2);
 
-        xml2.setState(XmlState.ROLLBACKED);
+        xml2.setState(ObjectState.ROLLBACKED);
         aipXmlStore.save(xml2);
         assertThrown(() -> archivalService.getXml(SIP_ID, version)).isInstanceOf(RollbackStateException.class);
 
-        xml2.setState(XmlState.PROCESSING);
+        xml2.setState(ObjectState.PROCESSING);
         aipXmlStore.save(xml2);
         assertThrown(() -> archivalService.getXml(SIP_ID, version)).isInstanceOf(StillProcessingStateException.class);
     }
 
     @Test
     public void store() {
-        AipRef aipRef = new AipRef(SIP2_ID, SIP_STREAM, sipHash, XML1_STREAM, xml1Hash);
-        archivalService.store(aipRef);
+        AipDto aipDto = new AipDto(SIP2_ID, SIP_STREAM, sipHash, XML1_STREAM, xml1Hash);
+        archivalService.store(aipDto);
 
         AipSip aipSip = archivalDbService.getAip(SIP2_ID);
         assertThat(aipSip, notNullValue());
-        verify(async).store(eq(aipRef));
+        verify(async).store(eq(aipDto));
     }
 
     @Test
@@ -252,53 +253,53 @@ public class ArchivalServiceTest extends DbTest {
                 .findFirst()
                 .get();
 
-        XmlRef xmlRef = new XmlRef(latestAipXml.getId(), new FileRef(XML1_STREAM), xml1Hash, 1);
+        XmlDto xmlRef = new XmlDto(latestAipXml.getId(), new FileContentDto(XML1_STREAM), xml1Hash, 1);
         verify(async).updateXml(eq(SIP_ID), eq(xmlRef));
     }
 
     @Test
     public void getAipInfo() throws StillProcessingStateException, StorageException {
         when(storageService.getAipInfo(anyObject(), anyObject(), anyObject(), anyObject())).thenReturn(
-                new AipStateInfo("", StorageType.CEPH, AipState.ARCHIVED, anyObject()));
+                new AipStateInfoDto("", StorageType.CEPH, ObjectState.ARCHIVED, anyObject()));
 
-        sip.setState(AipState.ARCHIVED);
+        sip.setState(ObjectState.ARCHIVED);
         aipSipStore.save(sip);
 
         flushCache();
 
-        List<AipStateInfo> aipStateInfos = archivalService.getAipState(SIP_ID);
+        List<AipStateInfoDto> aipStateInfoDtos = archivalService.getAipState(SIP_ID);
 
-        assertThat(aipStateInfos.size(), is(1));
+        assertThat(aipStateInfoDtos.size(), is(1));
 
-        AipStateInfo aipStateInfo = aipStateInfos.get(0);
-        assertThat(aipStateInfo.getStorageType(), is(StorageType.CEPH));
-        assertThat(aipStateInfo.getAipState(), is(AipState.ARCHIVED));
+        AipStateInfoDto aipStateInfoDto = aipStateInfoDtos.get(0);
+        assertThat(aipStateInfoDto.getStorageType(), is(StorageType.CEPH));
+        assertThat(aipStateInfoDto.getObjectState(), is(ObjectState.ARCHIVED));
     }
 
     @Test
     public void getIllegalStateSipTest() {
-        sip.setState(AipState.DELETED);
+        sip.setState(ObjectState.DELETED);
         aipSipStore.save(sip);
         assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(DeletedStateException.class);
 
-        sip.setState(AipState.ROLLBACKED);
+        sip.setState(ObjectState.ROLLBACKED);
         aipSipStore.save(sip);
         assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(RollbackStateException.class);
 
-        sip.setState(AipState.PROCESSING);
+        sip.setState(ObjectState.PROCESSING);
         aipSipStore.save(sip);
         assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(StillProcessingStateException.class);
 
         AipXml xml = sip.getXml(0);
-        xml.setState(XmlState.PROCESSING);
+        xml.setState(ObjectState.PROCESSING);
         aipXmlStore.save(xml);
         assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(StillProcessingStateException.class);
 
         xml = sip.getXml(0);
-        xml.setState(XmlState.ROLLBACKED);
+        xml.setState(ObjectState.ROLLBACKED);
         aipXmlStore.save(xml);
 
-        AipSip aipSip = new AipSip(SIP2_ID, sipHash, AipState.ARCHIVED, xml);
+        AipSip aipSip = new AipSip(SIP2_ID, sipHash, ObjectState.ARCHIVED, xml);
         aipSipStore.save(aipSip);
 
         xml.setSip(aipSip);
@@ -308,11 +309,12 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void delete() throws StorageException, StillProcessingStateException, RollbackStateException, FailedStateException {
+    public void delete() throws
+            StorageException, StillProcessingStateException, RollbackStateException, FailedStateException {
         archivalService.delete(SIP_ID);
 
         AipSip sip = archivalDbService.getAip(SIP_ID);
-        assertThat(sip.getState(), is(AipState.PROCESSING));
+        assertThat(sip.getState(), is(ObjectState.PROCESSING));
         verify(async).delete(eq(sip.getId()));
     }
 
@@ -322,7 +324,7 @@ public class ArchivalServiceTest extends DbTest {
         archivalService.remove(SIP_ID);
 
         AipSip sip = archivalDbService.getAip(SIP_ID);
-        assertThat(sip.getState(), is(AipState.REMOVED));
+        assertThat(sip.getState(), is(ObjectState.REMOVED));
         verify(async).remove(eq(sip.getId()));
     }
 }

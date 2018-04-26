@@ -71,6 +71,7 @@
             </column>
             <column name="note" type="varchar(2000)"/>
             <column name="config" type="varchar(2000)"/>
+            <column name="reachable" type="boolean"/>
         </createTable>
 
         <addUniqueConstraint

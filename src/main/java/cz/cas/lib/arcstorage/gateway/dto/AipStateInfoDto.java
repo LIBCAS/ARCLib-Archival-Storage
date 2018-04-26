@@ -1,6 +1,6 @@
 package cz.cas.lib.arcstorage.gateway.dto;
 
-import cz.cas.lib.arcstorage.domain.AipState;
+import cz.cas.lib.arcstorage.domain.ObjectState;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -9,24 +9,24 @@ import java.util.List;
 
 @Getter
 @Setter
-public class AipStateInfo {
+public class AipStateInfoDto {
     private String storageName;
     private StorageType storageType;
-    private AipState aipState;
+    private ObjectState objectState;
     private boolean consistent;
     private Checksum storageChecksum;
     private Checksum databaseChecksum;
-    private List<XmlStateInfo> xmlsState = new ArrayList<>();
+    private List<XmlStateInfoDto> xmlsState = new ArrayList<>();
 
-    public AipStateInfo(String storageName, StorageType storageType, AipState aipState, Checksum databaseChecksum) {
+    public AipStateInfoDto(String storageName, StorageType storageType, ObjectState objectState, Checksum databaseChecksum) {
         this.storageName = storageName;
         this.storageType = storageType;
-        this.aipState = aipState;
+        this.objectState = objectState;
         this.databaseChecksum = databaseChecksum;
     }
 
-    public void addXmlInfo(XmlStateInfo xmlStateInfo) {
-        xmlsState.add(xmlStateInfo);
+    public void addXmlInfo(XmlStateInfoDto xmlStateInfoDto) {
+        xmlsState.add(xmlStateInfoDto);
     }
 }
 

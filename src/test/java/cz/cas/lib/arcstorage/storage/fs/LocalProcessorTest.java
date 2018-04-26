@@ -1,7 +1,6 @@
-package cz.cas.lib.arcstorage.storage.ceph;
+package cz.cas.lib.arcstorage.storage.fs;
 
 import cz.cas.lib.arcstorage.domain.StorageConfig;
-import cz.cas.lib.arcstorage.storage.fs.LocalFsProcessor;
 import org.junit.BeforeClass;
 import org.junit.Test;
 

@@ -2,9 +2,9 @@ package cz.cas.lib.arcstorage.gateway.service;
 
 
 import cz.cas.lib.arcstorage.exception.GeneralException;
-import cz.cas.lib.arcstorage.gateway.dto.AipRef;
-import cz.cas.lib.arcstorage.gateway.dto.FileRef;
-import cz.cas.lib.arcstorage.gateway.dto.XmlRef;
+import cz.cas.lib.arcstorage.gateway.dto.AipDto;
+import cz.cas.lib.arcstorage.gateway.dto.FileContentDto;
+import cz.cas.lib.arcstorage.gateway.dto.XmlDto;
 import cz.cas.lib.arcstorage.gateway.exception.CantReadException;
 import cz.cas.lib.arcstorage.gateway.exception.CantWriteException;
 import cz.cas.lib.arcstorage.storage.StorageService;
@@ -46,7 +46,7 @@ public class ArchivalAsyncService {
 
     @Async
     @Transactional
-    public void store(AipRef aip) {
+    public void store(AipDto aip) {
         String op = "AIP storage ";
         Path tmpXmlPath = tmpFolder.resolve(aip.getXml().getId());
         Path tmpSipPath = tmpFolder.resolve(aip.getSip().getId());
@@ -67,7 +67,7 @@ public class ArchivalAsyncService {
             CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                         try (BufferedInputStream sipStream = new BufferedInputStream(new FileInputStream(tmpSipPath.toFile()));
                              BufferedInputStream xmlStream = new BufferedInputStream(new FileInputStream(tmpXmlPath.toFile()))) {
-                            a.storeAip(new AipRef(aip, sipStream, xmlStream), rollback);
+                            a.storeAip(new AipDto(aip, sipStream, xmlStream), rollback);
                             log.info(strSA(a.getStorageConfig().getName(), aip.getSip().getId()) + op + "success");
                         } catch (StorageException e) {
                             log.warn(strSA(a.getStorageConfig().getName(), aip.getSip().getId()) + op + "error: " + e);
@@ -131,7 +131,7 @@ public class ArchivalAsyncService {
     }
 
     @Async
-    public void updateXml(String sipId, XmlRef xml) {
+    public void updateXml(String sipId, XmlDto xml) {
         String op = "AIP storage ";
         Path tmpXmlPath = tmpFolder.resolve(xml.getId());
         try {
@@ -145,7 +145,7 @@ public class ArchivalAsyncService {
         for (StorageService a : adapters) {
             CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                         try (BufferedInputStream xmlStream = new BufferedInputStream(new FileInputStream(tmpXmlPath.toFile()))) {
-                            a.storeXml(sipId, new XmlRef(xml, new FileRef(xmlStream)), rollback);
+                            a.storeXml(sipId, new XmlDto(xml, new FileContentDto(xmlStream)), rollback);
                             log.info(strSX(a.getStorageConfig().getName(), xml.getId()) + op + "success");
                         } catch (StorageException e) {
                             log.warn(strSX(a.getStorageConfig().getName(), xml.getId()) + op + "error");

@@ -1,5 +1,6 @@
 package cz.cas.lib.arcstorage.api;
 
+import cz.cas.lib.arcstorage.domain.ObjectState;
 import cz.cas.lib.arcstorage.gateway.dto.*;
 import cz.cas.lib.arcstorage.gateway.exception.state.DeletedStateException;
 import cz.cas.lib.arcstorage.gateway.exception.state.FailedStateException;
@@ -44,7 +45,7 @@ public class AipApi {
             throws IOException, RollbackStateException, DeletedStateException, StorageException, StillProcessingStateException, FailedStateException {
         checkUUID(sipId);
 
-        AipRef aip = archivalService.get(sipId, all);
+        AipDto aip = archivalService.get(sipId, all);
         response.setContentType("application/zip");
         response.setStatus(200);
         response.addHeader("Content-Disposition", "attachment; filename=aip_" + aip.getSip().getId());
@@ -54,7 +55,7 @@ public class AipApi {
             IOUtils.copyLarge(new BufferedInputStream(aip.getSip().getInputStream()), zipOut);
             zipOut.closeEntry();
             aip.getSip().freeSources();
-            for (XmlRef xml : aip.getXmls()) {
+            for (XmlDto xml : aip.getXmls()) {
                 zipOut.putNextEntry(new ZipEntry(String.format("%s_xml_%d", sipId, xml.getVersion())));
                 IOUtils.copyLarge(new BufferedInputStream(xml.getInputStream()), zipOut);
                 zipOut.closeEntry();
@@ -74,7 +75,7 @@ public class AipApi {
             Optional<Integer> version, HttpServletResponse response) throws StorageException, StillProcessingStateException,
             RollbackStateException, IOException, FailedStateException {
         checkUUID(sipId);
-        XmlRef xml = archivalService.getXml(sipId, version);
+        XmlDto xml = archivalService.getXml(sipId, version);
         response.setContentType("application/xml");
         response.setStatus(200);
         response.addHeader("Content-Disposition", "attachment; filename=" + sipId + "_xml_" + xml.getVersion());
@@ -108,8 +109,8 @@ public class AipApi {
         checkChecksum(sipChecksum);
         checkChecksum(aipXmlChecksum);
 
-        AipRef aipRef = new AipRef(sipId, sip.getInputStream(), sipChecksum, aipXml.getInputStream(), aipXmlChecksum);
-        archivalService.store(aipRef);
+        AipDto aipDto = new AipDto(sipId, sip.getInputStream(), sipChecksum, aipXml.getInputStream(), aipXmlChecksum);
+        archivalService.store(aipDto);
         return sipId;
     }
 
@@ -136,7 +137,7 @@ public class AipApi {
     }
 
     /**
-     * Logically removes AIP package by setting its state to {@link cz.cas.lib.arcstorage.domain.AipState#REMOVED}
+     * Logically removes AIP package by setting its state to {@link ObjectState#REMOVED}
      * <p>Removed package can is still retrieved when {@link AipApi#get} method is called.</p>
      *
      * @param sipId
@@ -154,7 +155,7 @@ public class AipApi {
 
     /**
      * Physically removes SIP part of AIP package and sets its state to
-     * {@link cz.cas.lib.arcstorage.domain.AipState#DELETED}. XMLs and data in transaction database are not removed.
+     * {@link ObjectState#DELETED}. XMLs and data in transaction database are not removed.
      * <p>Deleted package is no longer retrieved when {@link AipApi#get} method is called.</p>
      *
      * @param sipId
@@ -177,7 +178,7 @@ public class AipApi {
      * @throws StorageException
      */
     @RequestMapping(value = "/{uuid}/state", method = RequestMethod.GET)
-    public List<AipStateInfo> getAipState(@PathVariable("uuid") String sipId) throws StillProcessingStateException,
+    public List<AipStateInfoDto> getAipState(@PathVariable("uuid") String sipId) throws StillProcessingStateException,
             StorageException {
         checkUUID(sipId);
         return archivalService.getAipState(sipId);
@@ -189,7 +190,7 @@ public class AipApi {
      * @return
      */
     @RequestMapping(value = "/state", method = RequestMethod.GET)
-    public List<StorageState> getStorageState() {
+    public List<StorageStateDto> getStorageState() {
         return archivalService.getStorageState();
     }
 

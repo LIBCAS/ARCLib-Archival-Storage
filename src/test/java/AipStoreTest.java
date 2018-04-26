@@ -1,6 +1,5 @@
-import com.querydsl.jpa.impl.JPAQueryFactory;
 import cz.cas.lib.arcstorage.domain.AipSip;
-import cz.cas.lib.arcstorage.domain.AipState;
+import cz.cas.lib.arcstorage.domain.ObjectState;
 import cz.cas.lib.arcstorage.store.AipSipStore;
 import helper.DbTest;
 import org.junit.Before;
@@ -20,40 +19,41 @@ public class AipStoreTest extends DbTest {
         aipStore = new AipSipStore();
         initializeStores(aipStore);
     }
+
     @Test
     public void testFindUnfinishedSips() {
         AipSip aipSip1 = new AipSip();
-        aipSip1.setState(AipState.FAILED);
+        aipSip1.setState(ObjectState.FAILED);
         aipStore.save(aipSip1);
 
         AipSip aipSip2 = new AipSip();
-        aipSip2.setState(AipState.PROCESSING);
+        aipSip2.setState(ObjectState.PROCESSING);
         aipStore.save(aipSip2);
 
         AipSip aipSip3 = new AipSip();
-        aipSip3.setState(AipState.ARCHIVED);
+        aipSip3.setState(ObjectState.ARCHIVED);
         aipStore.save(aipSip3);
 
         AipSip aipSip4 = new AipSip();
-        aipSip4.setState(AipState.ROLLBACKED);
+        aipSip4.setState(ObjectState.ROLLBACKED);
         aipStore.save(aipSip4);
 
         AipSip aipSip5 = new AipSip();
-        aipSip5.setState(AipState.DELETED);
+        aipSip5.setState(ObjectState.DELETED);
         aipStore.save(aipSip5);
 
         AipSip aipSip6 = new AipSip();
-        aipSip6.setState(AipState.REMOVED);
+        aipSip6.setState(ObjectState.REMOVED);
         aipStore.save(aipSip6);
 
         flushCache();
 
         List<AipSip> unfinishedSips = aipStore.findUnfinishedSips();
 
-        List<AipState> states = unfinishedSips.stream()
+        List<ObjectState> states = unfinishedSips.stream()
                 .map(AipSip::getState)
                 .collect(Collectors.toList());
 
-        assertThat(states.containsAll(asList(AipState.FAILED, AipState.PROCESSING)));
+        assertThat(states.containsAll(asList(ObjectState.FAILED, ObjectState.PROCESSING)));
     }
 }

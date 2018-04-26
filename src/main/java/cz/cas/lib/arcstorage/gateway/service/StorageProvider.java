@@ -27,15 +27,24 @@ public class StorageProvider {
 
     public StorageService createAdapter(StorageConfig storageConfig) throws ConfigParserException {
         StorageService service;
+        JsonNode root;
         switch (storageConfig.getStorageType()) {
             case FS:
                 service = new FsStorageService(storageConfig, keyFilePath);
                 break;
             case ZFS:
-                service = new ZfsStorageService(storageConfig, keyFilePath);
+                try {
+                    root = new ObjectMapper().readTree(storageConfig.getConfig());
+                } catch (IOException e) {
+                    throw new ConfigParserException(e);
+                }
+                String pool = root.at("/pool").textValue();
+                String dataset = root.at("/dataset").textValue();
+                if (pool == null || dataset == null)
+                    throw new ConfigParserException("pool or dataset string missing in ZFS storage config");
+                service = new ZfsStorageService(storageConfig, pool, dataset, keyFilePath);
                 break;
             case CEPH:
-                JsonNode root;
                 try {
                     root = new ObjectMapper().readTree(storageConfig.getConfig());
                 } catch (IOException e) {
@@ -48,7 +57,7 @@ public class StorageProvider {
                     case S3:
                         String region = root.at("/region").textValue();
                         if (userKey == null || userSecret == null)
-                            throw new ConfigParserException("userKey or userSecret string missing in storage config");
+                            throw new ConfigParserException("userKey or userSecret string missing in CEPH storage config");
                         service = new CephS3StorageService(storageConfig, userKey, userSecret, region);
                         break;
                     case SWIFT:

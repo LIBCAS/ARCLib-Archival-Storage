@@ -13,7 +13,7 @@ import javax.persistence.*;
 import java.time.Instant;
 
 /**
- * Abstract class for core files of archival storage i.e. AipSip data and AipSip XML.
+ * Abstract class for core files of archival storage i.e. AIP SIP and AIP XML.
  */
 @Getter
 @Setter

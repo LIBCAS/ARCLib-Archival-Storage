@@ -5,9 +5,15 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.Map;
+
+/**
+ * General DTO for storage state information to be sent through API.
+ */
 @Getter
 @Setter
 @AllArgsConstructor
-public class StorageState {
+public class StorageStateDto {
     private StorageConfig storageConfig;
+    private Map<String, String> storageStateData;
 }

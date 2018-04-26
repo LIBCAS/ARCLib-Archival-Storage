@@ -1,9 +1,8 @@
 package cz.cas.lib.arcstorage.storage;
 
-import cz.cas.lib.arcstorage.domain.AipState;
 import cz.cas.lib.arcstorage.domain.ChecksumType;
+import cz.cas.lib.arcstorage.domain.ObjectState;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
-import cz.cas.lib.arcstorage.domain.XmlState;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.*;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
@@ -27,7 +26,7 @@ import static cz.cas.lib.arcstorage.util.Utils.bytesToHexString;
  * <ul>
  * <li>initial MD5 storageChecksum of file</li>
  * <li>creation time of file</li>
- * <li>state of file matching {@link AipState} or {@link XmlState}, except FAILED state which signalizes fail of storage and thus is not retrievable (thus files marked as FAILED in database may not exist on storage or have PROCESSING state on storage)</li>
+ * <li>state of file matching {@link ObjectState} or {@link XmlState}, except FAILED state which signalizes fail of storage and thus is not retrievable (thus files marked as FAILED in database may not exist on storage or have PROCESSING state on storage)</li>
  * <li>for XML its version and ID of SIP</li>
  * </ul>
  */
@@ -54,10 +53,10 @@ public interface StorageService {
      *
      * @throws StorageException
      */
-    void storeAip(AipRef aipRef, AtomicBoolean rollback) throws StorageException;
+    void storeAip(AipDto aipDto, AtomicBoolean rollback) throws StorageException;
 
     /**
-     * Retrieves reference to Aip files. Caller is responsible for calling {@link FileRef#freeSources()} once the stream is not needed anymore.
+     * Retrieves reference to Aip files. Caller is responsible for calling {@link FileContentDto#freeSources()} once the stream is not needed anymore.
      *
      * @param sipId
      * @param xmlVersions specifies which XML versions should be retrieved, typically all or the latest only
@@ -65,7 +64,7 @@ public interface StorageService {
      * @throws StorageException
      * @throws cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException
      */
-    List<FileRef> getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException, StorageException;
+    List<FileContentDto> getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException, StorageException;
 
     /**
      * Stores XML files into storage.
@@ -83,10 +82,10 @@ public interface StorageService {
      * This operation may take a while and therefore sets file state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set state to PROCESSING before calling this method and to desired state after the method is done.
      * </p>
      */
-    void storeXml(String sipId, XmlRef xmlRef, AtomicBoolean rollback) throws StorageException;
+    void storeXml(String sipId, XmlDto xmlRef, AtomicBoolean rollback) throws StorageException;
 
     /**
-     * Retrieves reference to AipXml file. Caller is responsible for calling {@link FileRef#freeSources()} once the stream is not needed anymore.
+     * Retrieves reference to AipXml file. Caller is responsible for calling {@link FileContentDto#freeSources()} once the stream is not needed anymore.
      *
      * @param sipId
      * @param version
@@ -94,7 +93,7 @@ public interface StorageService {
      * @throws StorageException
      * @throws cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException
      */
-    FileRef getXml(String sipId, int version) throws FileDoesNotExistException, StorageException;
+    FileContentDto getXml(String sipId, int version) throws FileDoesNotExistException, StorageException;
 
     /**
      * Stores SIP file into storage.
@@ -109,7 +108,7 @@ public interface StorageService {
      * @return Object containing MD5 checksums computed from stored files.
      * @throws IOException
      */
-    void storeSip(ArchiveFileRef aipRef, AtomicBoolean rollback) throws StorageException;
+    void storeSip(ArchivalObjectDto aipRef, AtomicBoolean rollback) throws StorageException;
 
     /**
      * Deletes SIP file from storage. Must not fail if SIP package is already physically deleted.
@@ -166,20 +165,20 @@ public interface StorageService {
      *
      * @param sipId
      * @param sipChecksum expected storageChecksum to be compared with storage storageChecksum to verify fixity
-     * @param aipState    state of the AIP in database (it is used to get clue if it make sense to look for the fixity of the file e.g. when it is deleted)
+     * @param objectState state of the AIP in database (it is used to get clue if it make sense to look for the fixity of the file e.g. when it is deleted)
      * @param xmlVersions map of xml version numbers and their expected checksums
-     * @return AipStateInfo object
+     * @return AipStateInfoDto object
      * @throws StorageException
      * @throws cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException if the file is missing and thus its fixity can't be verified
      */
-    AipStateInfo getAipInfo(String sipId, Checksum sipChecksum, AipState aipState, Map<Integer, Checksum> xmlVersions) throws StorageException;
+    AipStateInfoDto getAipInfo(String sipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions) throws StorageException;
 
     /**
      * Returns state of currently used storage.
      *
      * @return
      */
-    StorageState getStorageState() throws StorageException;
+    StorageStateDto getStorageState() throws StorageException;
 
     /**
      * Tests if storage is reachable.
