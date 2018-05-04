@@ -128,6 +128,13 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- h2 database -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!--ssh-->
         <dependency>
             <groupId>com.hierynomus</groupId>
