@@ -12,4 +12,10 @@ public class StorageConfigStore extends DomainStore<StorageConfig, QStorageConfi
     public StorageConfigStore() {
         super(StorageConfig.class, QStorageConfig.class);
     }
+
+    @Transactional
+    @Override
+    public StorageConfig save(StorageConfig entity) {
+        return super.save(entity);
+    }
 }

@@ -4,11 +4,14 @@ import cz.cas.lib.arcstorage.domain.ChecksumType;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.Checksum;
+import cz.cas.lib.arcstorage.gateway.exception.InvalidChecksumException;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.BufferedInputStream;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
@@ -19,9 +22,11 @@ import static cz.cas.lib.arcstorage.util.Utils.notNull;
 public class StorageUtils {
 
     /**
+     * Computes checksum of the given type for the file.
+     *
      * @param fileStream   which is closed by this method
-     * @param checksumType
-     * @return
+     * @param checksumType type of checksum to compute
+     * @return computed checksum
      */
     public static Checksum computeChecksum(InputStream fileStream, ChecksumType checksumType) {
         MessageDigest complete = checksumComputationPrecheck(fileStream, checksumType);
@@ -61,5 +66,14 @@ public class StorageUtils {
 
     public static boolean isLocalhost(StorageConfig config) {
         return config.getHost().equals("localhost") || config.getHost().equals("127.0.0.1");
+    }
+
+    public static void validateChecksum(Checksum checksum, Path tmpSipPath) throws IOException, InvalidChecksumException {
+        try (BufferedInputStream fis = new BufferedInputStream(new FileInputStream(tmpSipPath.toString()))) {
+            Checksum computedChecksum = StorageUtils.computeChecksum(fis, checksum.getType());
+            if (!checksum.equals(computedChecksum)) {
+                throw new InvalidChecksumException(tmpSipPath, computedChecksum, checksum);
+            }
+        }
     }
 }

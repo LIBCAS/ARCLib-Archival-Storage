@@ -3,6 +3,7 @@ package cz.cas.lib.arcstorage.gateway.service;
 import cz.cas.lib.arcstorage.domain.*;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.gateway.dto.*;
+import cz.cas.lib.arcstorage.gateway.exception.InvalidChecksumException;
 import cz.cas.lib.arcstorage.gateway.exception.state.DeletedStateException;
 import cz.cas.lib.arcstorage.gateway.exception.state.FailedStateException;
 import cz.cas.lib.arcstorage.gateway.exception.state.RollbackStateException;
@@ -229,7 +230,7 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void store() {
+    public void store() throws InvalidChecksumException {
         AipDto aipDto = new AipDto(SIP2_ID, SIP_STREAM, sipHash, XML1_STREAM, xml1Hash);
         archivalService.store(aipDto);
 

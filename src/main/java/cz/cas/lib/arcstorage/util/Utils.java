@@ -371,7 +371,7 @@ public class Utils {
      *
      * @param checksum
      */
-    public static void checkChecksum(Checksum checksum) {
+    public static void checkChecksumFormat(Checksum checksum) {
         String hash = checksum.getHash();
         switch (checksum.getType()) {
             case MD5:
@@ -457,5 +457,4 @@ public class Utils {
     public static void checkUUID(String id) {
         checked(() -> UUID.fromString(id), () -> new BadArgument(id));
     }
-
 }

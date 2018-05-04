@@ -7,6 +7,7 @@ import cz.cas.lib.arcstorage.gateway.dto.FileContentDto;
 import cz.cas.lib.arcstorage.gateway.dto.XmlDto;
 import cz.cas.lib.arcstorage.gateway.exception.CantReadException;
 import cz.cas.lib.arcstorage.gateway.exception.CantWriteException;
+import cz.cas.lib.arcstorage.gateway.exception.InvalidChecksumException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.store.StorageConfigStore;
@@ -32,6 +33,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
+import static cz.cas.lib.arcstorage.storage.StorageUtils.validateChecksum;
 import static cz.cas.lib.arcstorage.util.Utils.*;
 
 @Service
@@ -46,17 +48,19 @@ public class ArchivalAsyncService {
 
     @Async
     @Transactional
-    public void store(AipDto aip) {
+    public void store(AipDto aip) throws InvalidChecksumException {
         String op = "AIP storage ";
         Path tmpXmlPath = tmpFolder.resolve(aip.getXml().getId());
         Path tmpSipPath = tmpFolder.resolve(aip.getSip().getId());
         try {
             Files.copy(aip.getXml().getInputStream(), tmpXmlPath, StandardCopyOption.REPLACE_EXISTING);
+            validateChecksum(aip.getXml().getChecksum(), tmpXmlPath);
         } catch (IOException e) {
             throw new CantWriteException(tmpXmlPath.toString(), e);
         }
         try {
             Files.copy(aip.getSip().getInputStream(), tmpSipPath, StandardCopyOption.REPLACE_EXISTING);
+            validateChecksum(aip.getSip().getChecksum(), tmpSipPath);
         } catch (IOException e) {
             throw new CantWriteException(tmpSipPath.toString(), e);
         }

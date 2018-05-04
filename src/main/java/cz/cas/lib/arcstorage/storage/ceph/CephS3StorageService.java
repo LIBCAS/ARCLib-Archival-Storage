@@ -152,7 +152,8 @@ public class CephS3StorageService implements StorageService {
         if (objectState == ObjectState.ARCHIVED || objectState == ObjectState.REMOVED) {
             checkFileExists(s3, sipId);
             S3Object sipObject = s3.getObject(storageConfig.getLocation(), sipId);
-            Checksum storageFileChecksum = StorageUtils.computeChecksum(sipObject.getObjectContent(), sipChecksum.getType());
+            Checksum storageFileChecksum = StorageUtils.computeChecksum(sipObject.getObjectContent(),
+                    sipChecksum.getType());
             info.setStorageChecksum(storageFileChecksum);
             info.setConsistent(sipChecksum.equals(storageFileChecksum));
         } else {
@@ -165,8 +166,10 @@ public class CephS3StorageService implements StorageService {
             checkFileExists(s3, xmlId);
             S3Object xmlObject = s3.getObject(storageConfig.getLocation(), xmlId);
             Checksum dbChecksum = xmlVersions.get(version);
-            Checksum storageFileChecksum = StorageUtils.computeChecksum(xmlObject.getObjectContent(), dbChecksum.getType());
-            info.addXmlInfo(new XmlStateInfoDto(version, dbChecksum.equals(storageFileChecksum), storageFileChecksum, dbChecksum));
+            Checksum storageFileChecksum = StorageUtils.computeChecksum(xmlObject.getObjectContent(),
+                    dbChecksum.getType());
+            info.addXmlInfo(new XmlStateInfoDto(version, dbChecksum.equals(storageFileChecksum), storageFileChecksum,
+                    dbChecksum));
         }
         return info;
     }

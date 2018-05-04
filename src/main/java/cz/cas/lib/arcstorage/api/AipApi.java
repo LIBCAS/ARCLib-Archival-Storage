@@ -1,7 +1,9 @@
 package cz.cas.lib.arcstorage.api;
 
+import cz.cas.lib.arcstorage.domain.ChecksumType;
 import cz.cas.lib.arcstorage.domain.ObjectState;
 import cz.cas.lib.arcstorage.gateway.dto.*;
+import cz.cas.lib.arcstorage.gateway.exception.InvalidChecksumException;
 import cz.cas.lib.arcstorage.gateway.exception.state.DeletedStateException;
 import cz.cas.lib.arcstorage.gateway.exception.state.FailedStateException;
 import cz.cas.lib.arcstorage.gateway.exception.state.RollbackStateException;
@@ -23,7 +25,7 @@ import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-import static cz.cas.lib.arcstorage.util.Utils.checkChecksum;
+import static cz.cas.lib.arcstorage.util.Utils.checkChecksumFormat;
 import static cz.cas.lib.arcstorage.util.Utils.checkUUID;
 
 @RestController
@@ -92,22 +94,29 @@ public class AipApi {
      * This endpoint also handles AIP versioning when whole AIP is versioned.
      * </p>
      *
-     * @param sip            SIP part of AIP
-     * @param aipXml         ARCLib XML part of AIP
-     * @param sipChecksum    SIP checksum
-     * @param aipXmlChecksum XML checksum
-     * @param id             optional parameter, if not specified id is generated
+     * @param sip                SIP part of AIP
+     * @param aipXml             ARCLib XML part of AIP
+     * @param sipChecksumType    type of SIP checksum
+     * @param sipChecksumValue   value of SIP checksum
+     * @param aipXmlChecksumType type of XML checksum
+     * @param sipChecksumType    value of SIP checksum
+     * @param id                 optional parameter, if not specified id is generated
      * @return SIP ID of created AIP
      * @throws IOException
      */
     @RequestMapping(value = "/store", method = RequestMethod.POST)
     public String save(@RequestParam("sip") MultipartFile sip, @RequestParam("aipXml") MultipartFile aipXml,
-                       @RequestParam("sipChecksum") Checksum sipChecksum, @RequestParam("aipXmlChecksum") Checksum aipXmlChecksum,
-                       @RequestParam(value = "UUID") Optional<String> id) throws IOException {
+                       @RequestParam("sipChecksumValue") String sipChecksumValue, @RequestParam("sipChecksumType") ChecksumType sipChecksumType,
+                       @RequestParam("aipXmlChecksumValue") String aipXmlChecksumValue,
+                       @RequestParam("aipXmlChecksumType") ChecksumType aipXmlChecksumType, @RequestParam(value = "UUID") Optional<String> id)
+            throws IOException, InvalidChecksumException {
         String sipId = id.isPresent() ? id.get() : UUID.randomUUID().toString();
 
-        checkChecksum(sipChecksum);
-        checkChecksum(aipXmlChecksum);
+        Checksum sipChecksum = new Checksum(sipChecksumType, sipChecksumValue);
+        checkChecksumFormat(sipChecksum);
+
+        Checksum aipXmlChecksum = new Checksum(aipXmlChecksumType, aipXmlChecksumValue);
+        checkChecksumFormat(aipXmlChecksum);
 
         AipDto aipDto = new AipDto(sipId, sip.getInputStream(), sipChecksum, aipXml.getInputStream(), aipXmlChecksum);
         archivalService.store(aipDto);
@@ -123,15 +132,18 @@ public class AipApi {
      * This endpoint handles AIP versioning when AIP XML is versioned.
      * </p>
      *
-     * @param sipId    Id of SIP to which XML belongs
-     * @param xml      ARCLib XML
-     * @param checksum XML checksum
+     * @param sipId         Id of SIP to which XML belongs
+     * @param xml           ARCLib XML
+     * @param checksumValue XML checksum value
+     * @param checksumType  XML checksum type
      */
     @RequestMapping(value = "/{sipId}/update", method = RequestMethod.POST)
     public void updateXml(@PathVariable("sipId") String sipId, @RequestParam("xml") MultipartFile xml,
-                          @RequestParam("xmlChecksum") Checksum checksum) throws IOException {
+                          @RequestParam("checksumValue") String checksumValue,
+                          @RequestParam("checksumType") ChecksumType checksumType) throws IOException {
         checkUUID(sipId);
-        checkChecksum(checksum);
+        Checksum checksum = new Checksum(checksumType, checksumValue);
+        checkChecksumFormat(checksum);
 
         archivalService.updateXml(sipId, xml.getInputStream(), checksum);
     }

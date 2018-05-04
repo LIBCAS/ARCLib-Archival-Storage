@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.io.Closeable;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -22,6 +23,11 @@ public class FileContentDto {
      * Input stream of a file. Should be closed via {@link #freeSources()}.
      */
     private InputStream inputStream;
+
+    /**
+     * Tmp file storing the file content
+     */
+    private File file;
 
     /**
      * Channels which were used to obtain the file (ssh connection etc.). These should remain open until the file stream is read.
@@ -43,6 +49,9 @@ public class FileContentDto {
      * Closes inputstream and all channels (connections).
      */
     public void freeSources() {
+        if (file != null && file.exists()) {
+            file.delete();
+        }
         if (channels.isEmpty())
             return;
         //developer usually calls this right after data are read but it should wait a while because used technology can
