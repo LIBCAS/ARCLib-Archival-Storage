@@ -1,10 +1,10 @@
 package cz.cas.lib.arcstorage.storage;
 
-import cz.cas.lib.arcstorage.domain.ChecksumType;
-import cz.cas.lib.arcstorage.domain.ObjectState;
-import cz.cas.lib.arcstorage.domain.StorageConfig;
+import cz.cas.lib.arcstorage.dto.ChecksumType;
+import cz.cas.lib.arcstorage.dto.ObjectState;
+import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
 import cz.cas.lib.arcstorage.exception.GeneralException;
-import cz.cas.lib.arcstorage.gateway.dto.*;
+import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
 import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
 import cz.cas.lib.arcstorage.storage.exception.IOStorageException;

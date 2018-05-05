@@ -1,10 +1,8 @@
 package cz.cas.lib.arcstorage.storage.fs;
 
-import cz.cas.lib.arcstorage.domain.ChecksumType;
-import cz.cas.lib.arcstorage.domain.ObjectState;
-import cz.cas.lib.arcstorage.domain.StorageConfig;
+import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
+import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.GeneralException;
-import cz.cas.lib.arcstorage.gateway.dto.*;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.StorageUtils;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
@@ -253,7 +251,7 @@ public class LocalFsProcessor implements StorageService {
     }
 
     private Path getFolderPath(String fileName) {
-        return Paths.get(storageConfig.getLocation()).resolve("sip").resolve(fileName.substring(0, 2)).resolve(fileName.substring(2, 4)).resolve(fileName.substring(4, 6));
+        return Paths.get(storageConfig.getLocation()).resolve(fileName.substring(0, 2)).resolve(fileName.substring(2, 4)).resolve(fileName.substring(4, 6));
     }
 
     private void setState(Path folder, String fileId, ObjectState state) throws IOException {

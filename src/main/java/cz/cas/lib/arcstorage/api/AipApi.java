@@ -1,17 +1,18 @@
 package cz.cas.lib.arcstorage.api;
 
-import cz.cas.lib.arcstorage.domain.ChecksumType;
-import cz.cas.lib.arcstorage.domain.ObjectState;
-import cz.cas.lib.arcstorage.gateway.dto.*;
-import cz.cas.lib.arcstorage.gateway.exception.InvalidChecksumException;
-import cz.cas.lib.arcstorage.gateway.exception.StorageNotReachableException;
-import cz.cas.lib.arcstorage.gateway.exception.state.DeletedStateException;
-import cz.cas.lib.arcstorage.gateway.exception.state.FailedStateException;
-import cz.cas.lib.arcstorage.gateway.exception.state.RollbackStateException;
-import cz.cas.lib.arcstorage.gateway.exception.state.StillProcessingStateException;
-import cz.cas.lib.arcstorage.gateway.service.ArchivalService;
+import cz.cas.lib.arcstorage.dto.*;
+import cz.cas.lib.arcstorage.exception.BadRequestException;
+import cz.cas.lib.arcstorage.service.ArchivalService;
+import cz.cas.lib.arcstorage.service.exception.FileCorruptedAtAllStoragesException;
+import cz.cas.lib.arcstorage.service.exception.InvalidChecksumException;
+import cz.cas.lib.arcstorage.service.exception.StorageNotReachableException;
+import cz.cas.lib.arcstorage.service.exception.state.DeletedStateException;
+import cz.cas.lib.arcstorage.service.exception.state.FailedStateException;
+import cz.cas.lib.arcstorage.service.exception.state.RollbackStateException;
+import cz.cas.lib.arcstorage.service.exception.state.StillProcessingStateException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import org.apache.commons.io.IOUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -20,6 +21,9 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,6 +39,7 @@ import static cz.cas.lib.arcstorage.util.Utils.checkUUID;
 public class AipApi {
 
     private ArchivalService archivalService;
+    private Path tmpFolder;
 
     /**
      * Retrieves specified AIP as ZIP package.
@@ -46,7 +51,7 @@ public class AipApi {
     @RequestMapping(value = "/{sipId}", method = RequestMethod.GET)
     public void get(@PathVariable("sipId") String sipId,
                     @RequestParam(value = "all") Optional<Boolean> all, HttpServletResponse response)
-            throws IOException, RollbackStateException, DeletedStateException, StorageException, StillProcessingStateException, FailedStateException {
+            throws IOException, RollbackStateException, DeletedStateException, StorageException, StillProcessingStateException, FailedStateException, FileCorruptedAtAllStoragesException, BadRequestException {
         checkUUID(sipId);
 
         AipRetrievalResource aipRetrievalResource = archivalService.get(sipId, all);
@@ -54,15 +59,18 @@ public class AipApi {
         response.setStatus(200);
         response.addHeader("Content-Disposition", "attachment; filename=aip_" + sipId);
 
-        try (ZipOutputStream zipOut = new ZipOutputStream(new BufferedOutputStream(response.getOutputStream()))) {
+        try (ZipOutputStream zipOut = new ZipOutputStream(new BufferedOutputStream(response.getOutputStream()));
+             InputStream sipIs = new BufferedInputStream(aipRetrievalResource.getSip())) {
             zipOut.putNextEntry(new ZipEntry(sipId));
-            IOUtils.copyLarge(new BufferedInputStream(aipRetrievalResource.getSip()), zipOut);
+            IOUtils.copyLarge(sipIs, zipOut);
             zipOut.closeEntry();
             for (Integer xmlVersion : aipRetrievalResource.getXmls().keySet()) {
                 zipOut.putNextEntry(new ZipEntry(toXmlId(sipId, xmlVersion)));
                 IOUtils.copyLarge(new BufferedInputStream(aipRetrievalResource.getXmls().get(xmlVersion)), zipOut);
                 zipOut.closeEntry();
             }
+        } finally {
+            tmpFolder.resolve(aipRetrievalResource.getId()).toFile().delete();
         }
     }
 
@@ -75,7 +83,7 @@ public class AipApi {
     @RequestMapping(value = "/xml/{sipId}", method = RequestMethod.GET)
     public void getXml(@PathVariable("sipId") String sipId, @RequestParam(value = "v")
             Optional<Integer> version, HttpServletResponse response) throws StorageException, StillProcessingStateException,
-            RollbackStateException, IOException, FailedStateException {
+            RollbackStateException, IOException, FailedStateException, FileCorruptedAtAllStoragesException, BadRequestException {
         checkUUID(sipId);
         ArchivalObjectDto xml = archivalService.getXml(sipId, version);
         response.setContentType("application/xml");
@@ -108,7 +116,7 @@ public class AipApi {
                        @RequestParam("sipChecksumValue") String sipChecksumValue, @RequestParam("sipChecksumType") ChecksumType sipChecksumType,
                        @RequestParam("aipXmlChecksumValue") String aipXmlChecksumValue,
                        @RequestParam("aipXmlChecksumType") ChecksumType aipXmlChecksumType, @RequestParam(value = "UUID") Optional<String> id)
-            throws IOException, InvalidChecksumException, StorageNotReachableException {
+            throws IOException, InvalidChecksumException, StorageNotReachableException, BadRequestException {
         String sipId = id.isPresent() ? id.get() : UUID.randomUUID().toString();
 
         Checksum sipChecksum = new Checksum(sipChecksumType, sipChecksumValue);
@@ -139,7 +147,7 @@ public class AipApi {
     @RequestMapping(value = "/{sipId}/update", method = RequestMethod.POST)
     public void updateXml(@PathVariable("sipId") String sipId, @RequestParam("xml") MultipartFile xml,
                           @RequestParam("checksumValue") String checksumValue,
-                          @RequestParam("checksumType") ChecksumType checksumType) throws IOException, StorageNotReachableException {
+                          @RequestParam("checksumType") ChecksumType checksumType) throws IOException, StorageNotReachableException, BadRequestException {
         checkUUID(sipId);
         Checksum checksum = new Checksum(checksumType, checksumValue);
         checkChecksumFormat(checksum);
@@ -159,7 +167,7 @@ public class AipApi {
      */
     @RequestMapping(value = "/{sipId}", method = RequestMethod.DELETE)
     public void remove(@PathVariable("sipId") String sipId) throws DeletedStateException, StillProcessingStateException,
-            RollbackStateException, StorageException, FailedStateException, StorageNotReachableException {
+            RollbackStateException, StorageException, FailedStateException, StorageNotReachableException, BadRequestException {
         checkUUID(sipId);
         archivalService.remove(sipId);
     }
@@ -176,7 +184,7 @@ public class AipApi {
      */
     @RequestMapping(value = "/{sipId}/hard", method = RequestMethod.DELETE)
     public void delete(@PathVariable("sipId") String sipId) throws StillProcessingStateException, RollbackStateException,
-            StorageException, FailedStateException, StorageNotReachableException {
+            StorageException, FailedStateException, StorageNotReachableException, BadRequestException {
         checkUUID(sipId);
         archivalService.delete(sipId);
     }
@@ -190,7 +198,7 @@ public class AipApi {
      */
     @RequestMapping(value = "/{uuid}/state", method = RequestMethod.GET)
     public List<AipStateInfoDto> getAipState(@PathVariable("uuid") String sipId) throws StillProcessingStateException,
-            StorageException {
+            StorageException, BadRequestException {
         checkUUID(sipId);
         return archivalService.getAipState(sipId);
     }
@@ -208,5 +216,10 @@ public class AipApi {
     @Inject
     public void setArchivalService(ArchivalService archivalService) {
         this.archivalService = archivalService;
+    }
+
+    @Inject
+    public void setTmpFolder(@Value("${arcstorage.tmp-folder}") String path) {
+        this.tmpFolder = Paths.get(path);
     }
 }

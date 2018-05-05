@@ -2,7 +2,7 @@ package helper;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import cz.cas.lib.arcstorage.gateway.api.ResourceExceptionHandler;
+import cz.cas.lib.arcstorage.api.ResourceExceptionHandler;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup;

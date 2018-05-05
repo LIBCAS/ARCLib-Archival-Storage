@@ -1,6 +1,6 @@
-import cz.cas.lib.arcstorage.domain.AipSip;
-import cz.cas.lib.arcstorage.domain.ObjectState;
-import cz.cas.lib.arcstorage.store.AipSipStore;
+import cz.cas.lib.arcstorage.domain.entity.AipSip;
+import cz.cas.lib.arcstorage.dto.ObjectState;
+import cz.cas.lib.arcstorage.domain.store.AipSipStore;
 import helper.DbTest;
 import org.junit.Before;
 import org.junit.Test;

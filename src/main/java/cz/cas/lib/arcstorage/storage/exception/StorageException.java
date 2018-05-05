@@ -1,5 +1,8 @@
 package cz.cas.lib.arcstorage.storage.exception;
 
+/**
+ * Abstract class to be extended by exceptions which occurs on the storage layer.
+ */
 public abstract class StorageException extends Exception {
     public StorageException() {
     }

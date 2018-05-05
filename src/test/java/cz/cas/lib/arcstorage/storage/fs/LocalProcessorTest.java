@@ -1,6 +1,6 @@
 package cz.cas.lib.arcstorage.storage.fs;
 
-import cz.cas.lib.arcstorage.domain.StorageConfig;
+import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
 import org.junit.BeforeClass;
 import org.junit.Test;
 

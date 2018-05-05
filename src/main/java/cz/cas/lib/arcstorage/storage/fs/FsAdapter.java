@@ -1,7 +1,7 @@
 package cz.cas.lib.arcstorage.storage.fs;
 
-import cz.cas.lib.arcstorage.domain.ObjectState;
-import cz.cas.lib.arcstorage.gateway.dto.*;
+import cz.cas.lib.arcstorage.dto.ObjectState;
+import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 

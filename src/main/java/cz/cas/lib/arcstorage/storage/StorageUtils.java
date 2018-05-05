@@ -1,10 +1,10 @@
 package cz.cas.lib.arcstorage.storage;
 
-import cz.cas.lib.arcstorage.domain.ChecksumType;
-import cz.cas.lib.arcstorage.domain.StorageConfig;
+import cz.cas.lib.arcstorage.dto.ChecksumType;
+import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
 import cz.cas.lib.arcstorage.exception.GeneralException;
-import cz.cas.lib.arcstorage.gateway.dto.Checksum;
-import cz.cas.lib.arcstorage.gateway.exception.InvalidChecksumException;
+import cz.cas.lib.arcstorage.dto.Checksum;
+import cz.cas.lib.arcstorage.service.exception.InvalidChecksumException;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.*;

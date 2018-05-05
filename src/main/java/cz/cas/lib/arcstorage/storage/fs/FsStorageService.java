@@ -1,13 +1,14 @@
 package cz.cas.lib.arcstorage.storage.fs;
 
-import cz.cas.lib.arcstorage.domain.ObjectState;
-import cz.cas.lib.arcstorage.domain.StorageConfig;
-import cz.cas.lib.arcstorage.gateway.dto.StorageStateDto;
+import cz.cas.lib.arcstorage.dto.ObjectState;
+import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
+import cz.cas.lib.arcstorage.dto.ChecksumType;
+import cz.cas.lib.arcstorage.dto.StorageStateDto;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.CmdOutputParsingException;
 import cz.cas.lib.arcstorage.storage.exception.SshException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
-import cz.cas.lib.arcstorage.store.Transactional;
+import cz.cas.lib.arcstorage.domain.store.Transactional;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.schmizz.sshj.SSHClient;
@@ -33,7 +34,7 @@ import static cz.cas.lib.arcstorage.storage.StorageUtils.isLocalhost;
  * <p>
  * Store files in that way that later it is possible to retrieve:
  * <ul>
- * <li>initial checksum of file and its type: checksums are stored during creation to the same directory as file into text file with file name and <i>.{@link cz.cas.lib.arcstorage.domain.ChecksumType}</i> suffix</li>
+ * <li>initial checksum of file and its type: checksums are stored during creation to the same directory as file into text file with file name and <i>.{@link ChecksumType}</i> suffix</li>
  * <li>creation time of file: provided by filesystem</li>
  * <li>info if file is being processed: new empty file with original file name and <i>.PROCESSING</i> suffix is created when processing starts and deleted when it ends</li>
  * <li>for SIP its ID and info if is {@link ObjectState#DELETED} or {@link ObjectState#REMOVED}:

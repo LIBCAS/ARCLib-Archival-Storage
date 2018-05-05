@@ -1,7 +1,7 @@
 package helper;
 
 import com.querydsl.jpa.impl.JPAQueryFactory;
-import cz.cas.lib.arcstorage.store.DomainStore;
+import cz.cas.lib.arcstorage.domain.store.DomainStore;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.hibernate.internal.SessionImpl;

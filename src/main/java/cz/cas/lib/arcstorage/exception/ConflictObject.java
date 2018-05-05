@@ -1,6 +1,6 @@
 package cz.cas.lib.arcstorage.exception;
 
-import cz.cas.lib.arcstorage.domain.DomainObject;
+import cz.cas.lib.arcstorage.domain.entity.DomainObject;
 
 public class ConflictObject extends GeneralException {
     private Object object;

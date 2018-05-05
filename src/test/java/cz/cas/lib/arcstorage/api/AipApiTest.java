@@ -1,16 +1,18 @@
 package cz.cas.lib.arcstorage.api;
 
 import com.querydsl.jpa.impl.JPAQueryFactory;
-import cz.cas.lib.arcstorage.domain.*;
-import cz.cas.lib.arcstorage.gateway.dto.*;
-import cz.cas.lib.arcstorage.gateway.service.StorageProvider;
+import cz.cas.lib.arcstorage.domain.entity.AipSip;
+import cz.cas.lib.arcstorage.domain.entity.AipXml;
+import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
+import cz.cas.lib.arcstorage.domain.store.AipSipStore;
+import cz.cas.lib.arcstorage.domain.store.AipXmlStore;
+import cz.cas.lib.arcstorage.domain.store.StorageConfigStore;
+import cz.cas.lib.arcstorage.dto.*;
+import cz.cas.lib.arcstorage.service.StorageProvider;
 import cz.cas.lib.arcstorage.storage.ceph.CephS3StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.storage.fs.FsStorageService;
 import cz.cas.lib.arcstorage.storage.fs.ZfsStorageService;
-import cz.cas.lib.arcstorage.store.AipSipStore;
-import cz.cas.lib.arcstorage.store.AipXmlStore;
-import cz.cas.lib.arcstorage.store.StorageConfigStore;
 import helper.ApiTest;
 import helper.DbTest;
 import org.apache.commons.io.FileUtils;
@@ -23,7 +25,6 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.junit4.SpringRunner;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
-import org.springframework.web.util.NestedServletException;
 
 import javax.inject.Inject;
 import java.io.*;
@@ -36,7 +37,6 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 import static cz.cas.lib.arcstorage.util.Utils.asMap;
-import static helper.ThrowableAssertion.assertThrown;
 import static java.lang.String.valueOf;
 import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.assertThat;
@@ -88,10 +88,6 @@ public class AipApiTest extends DbTest implements ApiTest {
     private static final String XML1_HASH = "F09E5F27526A0ED7EC5B2D9D5C0B53CF";
     private static final String XML2_HASH = "D5B6402517014CF00C223D6A785A4230";
 
-    private static final Path SIP_PATH_DIRS = Paths.get(SIP_ID.substring(0, 2), SIP_ID.substring(2, 4), SIP_ID.substring(4, 6));
-    private static final Path SIP_PATH = Paths.get("sip").resolve(SIP_PATH_DIRS);
-    private static final Path XMLS_PATH = Paths.get("xml").resolve(SIP_PATH_DIRS);
-
     private static final String BASE = "/api/storage";
     private static final Path SIP_SOURCE_PATH = Paths.get("src/test/resources", "KPW01169310.ZIP");
 
@@ -104,17 +100,6 @@ public class AipApiTest extends DbTest implements ApiTest {
 
     @BeforeClass
     public static void setup() throws IOException {
-        if (Files.isDirectory(Paths.get("sip")))
-            FileUtils.deleteDirectory(new File("sip"));
-        if (Files.isDirectory(Paths.get("xml")))
-            FileUtils.deleteDirectory(new File("xml"));
-
-        Files.createDirectories(SIP_PATH);
-        Files.createDirectories(XMLS_PATH);
-
-        Files.copy(Paths.get(SIP_SOURCE_PATH.toString()), SIP_PATH.resolve(SIP_ID));
-        Files.copy(Paths.get("./src/test/resources/aip/xml1.xml"), XMLS_PATH.resolve(toXmlId(SIP_ID, 1)));
-        Files.copy(Paths.get("./src/test/resources/aip/xml2.xml"), XMLS_PATH.resolve(toXmlId(SIP_ID, 2)));
 
         s1 = new StorageConfig();
         s1.setHost("localhost");
@@ -152,9 +137,10 @@ public class AipApiTest extends DbTest implements ApiTest {
 
     @Before
     public void before() throws StorageException, FileNotFoundException {
-        FileInputStream sipContent = new FileInputStream(SIP_PATH.resolve(SIP_ID).toString());
-        FileInputStream xml1InputStream = new FileInputStream(XMLS_PATH.resolve(toXmlId(SIP_ID, 1)).toString());
-        FileInputStream xml2InputStream = new FileInputStream(XMLS_PATH.resolve(toXmlId(SIP_ID, 2)).toString());
+
+        FileInputStream sipContent = new FileInputStream(SIP_SOURCE_PATH.toFile());
+        FileInputStream xml1InputStream = new FileInputStream(Paths.get("./src/test/resources/aip/xml1.xml").toFile());
+        FileInputStream xml2InputStream = new FileInputStream(Paths.get("./src/test/resources/aip/xml2.xml").toFile());
 
         sip = new AipSip(SIP_ID, new Checksum(ChecksumType.MD5, SIP_HASH), ObjectState.ARCHIVED);
 
@@ -273,6 +259,7 @@ public class AipApiTest extends DbTest implements ApiTest {
      */
     @Test
     public void getSipAndAllXmls() throws Exception {
+        int tmpFilesBeforeRetrieval = tmpFolder.toFile().listFiles().length;
         byte[] zip = mvc(api)
                 .perform(MockMvcRequestBuilders.get(BASE + "/{sipId}", SIP_ID).param("all", "true"))
                 .andExpect(header().string("Content-Type", "application/zip"))
@@ -288,6 +275,8 @@ public class AipApiTest extends DbTest implements ApiTest {
                 packedFiles.add(entry.getName());
             }
         }
+        int tmpFilesAfterRetrieval = tmpFolder.toFile().listFiles().length;
+        assertThat(tmpFilesAfterRetrieval, is(tmpFilesBeforeRetrieval));
         assertThat(packedFiles, containsInAnyOrder(SIP_ID, toXmlId(SIP_ID, 1), toXmlId(SIP_ID, 2)));
     }
 
@@ -323,7 +312,7 @@ public class AipApiTest extends DbTest implements ApiTest {
                 "aipXml", "xml", "text/plain", xmlId.getBytes());
 
         String xmlHash = "af5e897c3cc424f31b84af579b274626";
-
+        int tmpFilesBeforeRetrieval = tmpFolder.toFile().listFiles().length;
         mvc(api)
                 .perform(MockMvcRequestBuilders
                         .fileUpload(BASE + "/store").file(sipFile).file(xmlFile)
@@ -339,8 +328,9 @@ public class AipApiTest extends DbTest implements ApiTest {
         AipSip aipSip = sipStore.find(sipId);
         assertThat(aipSip.getState(), is(ObjectState.ARCHIVED));
         assertThat(aipSip.getXmls().size(), is(1));
-
         assertThat(aipSip.getXml(0).getState(), is(ObjectState.ARCHIVED));
+        int tmpFilesAfterRetrieval = tmpFolder.toFile().listFiles().length;
+        assertThat(tmpFilesAfterRetrieval, is(tmpFilesBeforeRetrieval));
     }
 
     /**
@@ -528,9 +518,8 @@ public class AipApiTest extends DbTest implements ApiTest {
         AipSip aipSip = sipStore.find(SIP_ID);
         assertThat(aipSip.getState(), is(ObjectState.DELETED));
 
-        assertThrown(() -> mvc(api)
-                .perform(MockMvcRequestBuilders.get(BASE + "/{sipId}", SIP_ID)))
-                .isInstanceOf(NestedServletException.class);
+        mvc(api)
+                .perform(MockMvcRequestBuilders.get(BASE + "/{sipId}", SIP_ID)).andExpect(status().is(403));
     }
 
     /**

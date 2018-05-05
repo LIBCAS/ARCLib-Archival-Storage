@@ -1,6 +1,6 @@
 package cz.cas.lib.arcstorage.storage.exception;
 
-import cz.cas.lib.arcstorage.gateway.dto.Checksum;
+import cz.cas.lib.arcstorage.dto.Checksum;
 
 public class FileCorruptedAfterStoreException extends StorageException {
 
