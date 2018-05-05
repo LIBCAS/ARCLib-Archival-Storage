@@ -427,7 +427,7 @@ public class CephS3Test implements StorageServiceTest {
 
         assertThrown(() -> s3.getObject(bucketName, fileId)).isInstanceOf(AmazonS3Exception.class).messageContains("NoSuchKey");
         userMetadata = s3.getObjectMetadata(bucketName, service.toMetadataObjectId(fileId)).getUserMetadata();
-        assertThat(userMetadata.get(CephS3StorageService.STATE_KEY), is(ObjectState.ROLLBACKED.toString()));
+        assertThat(userMetadata.get(CephS3StorageService.STATE_KEY), is(ObjectState.ROLLED_BACK.toString()));
     }
 
     @Test
@@ -441,7 +441,7 @@ public class CephS3Test implements StorageServiceTest {
 
         assertThrown(() -> s3.getObject(bucketName, fileId)).isInstanceOf(AmazonS3Exception.class).messageContains("NoSuchKey");
         Map<String, String> userMetadata = s3.getObjectMetadata(bucketName, service.toMetadataObjectId(fileId)).getUserMetadata();
-        assertThat(userMetadata.get(CephS3StorageService.STATE_KEY), is(ObjectState.ROLLBACKED.toString()));
+        assertThat(userMetadata.get(CephS3StorageService.STATE_KEY), is(ObjectState.ROLLED_BACK.toString()));
     }
 
     @Test
@@ -450,7 +450,7 @@ public class CephS3Test implements StorageServiceTest {
         AmazonS3 s3 = service.connect();
         service.rollbackFile(s3, fileId);
         Map<String, String> userMetadata = s3.getObjectMetadata(bucketName, service.toMetadataObjectId(fileId)).getUserMetadata();
-        assertThat(userMetadata.get(CephS3StorageService.STATE_KEY), is(ObjectState.ROLLBACKED.toString()));
+        assertThat(userMetadata.get(CephS3StorageService.STATE_KEY), is(ObjectState.ROLLED_BACK.toString()));
     }
 
     @Test
@@ -470,8 +470,8 @@ public class CephS3Test implements StorageServiceTest {
         assertThrown(() -> s3.getObject(bucketName, xmlId)).isInstanceOf(AmazonS3Exception.class).messageContains("NoSuchKey");
         S3Object xmlObjMeta = s3.getObject(bucketName, service.toMetadataObjectId(xmlId));
 
-        assertThat(sipObjMeta.getObjectMetadata().getUserMetadata().get(service.STATE_KEY), is(ObjectState.ROLLBACKED.toString()));
-        assertThat(xmlObjMeta.getObjectMetadata().getUserMetadata().get(service.STATE_KEY), is(ObjectState.ROLLBACKED.toString()));
+        assertThat(sipObjMeta.getObjectMetadata().getUserMetadata().get(service.STATE_KEY), is(ObjectState.ROLLED_BACK.toString()));
+        assertThat(xmlObjMeta.getObjectMetadata().getUserMetadata().get(service.STATE_KEY), is(ObjectState.ROLLED_BACK.toString()));
     }
 
     @Test
@@ -493,7 +493,7 @@ public class CephS3Test implements StorageServiceTest {
 
         assertThat(streamToString(sipObj.getObjectContent()), is(SIP_CONTENT));
         assertThat(sipObjMeta.getObjectMetadata().getUserMetadata().get(service.STATE_KEY), is(ObjectState.ARCHIVED.toString()));
-        assertThat(xmlObjMeta.getObjectMetadata().getUserMetadata().get(service.STATE_KEY), is(ObjectState.ROLLBACKED.toString()));
+        assertThat(xmlObjMeta.getObjectMetadata().getUserMetadata().get(service.STATE_KEY), is(ObjectState.ROLLED_BACK.toString()));
     }
 
     /**

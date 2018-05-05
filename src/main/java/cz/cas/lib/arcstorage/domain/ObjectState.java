@@ -13,7 +13,7 @@ public enum ObjectState {
     //object creation has finished and now is archived, used for both SIP and XML, stored also at storage layer
     ARCHIVED,
     //object processing has failed and so its file content was physically deleted from the storage, used for both SIP and XML, record itself remains in database and also in storage
-    ROLLBACKED,
+    ROLLED_BACK,
     //object has been physically deleted from the storage, used only for SIP (XMLs cant be deleted), stored also at storage layer
     DELETED,
     //object has been logically removed: it exists in storage but should not be accessible to all users, used only for SIP (XMLs cant be removed), stored also at storage layer

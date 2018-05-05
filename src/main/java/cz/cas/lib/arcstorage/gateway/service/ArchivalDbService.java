@@ -108,7 +108,7 @@ public class ArchivalDbService {
                 throw new StillProcessingStateException(sip);
             case FAILED:
                 throw new FailedStateException(sip);
-            case ROLLBACKED:
+            case ROLLED_BACK:
                 throw new RollbackStateException(sip);
         }
         sip.setState(ObjectState.PROCESSING);
@@ -192,7 +192,7 @@ public class ArchivalDbService {
             return new MissingObject(AipSip.class, sipId);
         });
         switch (sip.getState()) {
-            case ROLLBACKED:
+            case ROLLED_BACK:
                 throw new RollbackStateException(sip);
             case DELETED:
                 throw new DeletedStateException(sip);
@@ -227,7 +227,7 @@ public class ArchivalDbService {
      */
     public void rollbackSip(String id, String xmlId) {
         AipSip sip = aipSipStore.find(id);
-        sip.setState(ObjectState.ROLLBACKED);
+        sip.setState(ObjectState.ROLLED_BACK);
         aipSipStore.save(sip);
         rollbackXml(xmlId);
     }
@@ -239,7 +239,7 @@ public class ArchivalDbService {
      */
     public void rollbackXml(String id) {
         AipXml xml = aipXmlStore.find(id);
-        xml.setState(ObjectState.ROLLBACKED);
+        xml.setState(ObjectState.ROLLED_BACK);
         aipXmlStore.save(xml);
     }
 

@@ -37,6 +37,6 @@ public class AipXmlStore extends DomainStore<AipXml, QAipXml> {
 
     public void rollbackUnfinishedXmlsRecords() {
         QAipXml xml = qObject();
-        queryFactory.update(xml).where(xml.state.in(ObjectState.PROCESSING, ObjectState.FAILED)).set(xml.state, ObjectState.ROLLBACKED).execute();
+        queryFactory.update(xml).where(xml.state.in(ObjectState.PROCESSING, ObjectState.FAILED)).set(xml.state, ObjectState.ROLLED_BACK).execute();
     }
 }

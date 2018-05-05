@@ -345,7 +345,7 @@ public class AipApiTest extends DbTest implements ApiTest {
 
     /**
      * Send AIP creation request with AIP data where MD5 param does not match MD5 of a file.
-     * Then send request for AIP state and verifies that both XML and SIP are ROLLBACKED.
+     * Then send request for AIP state and verifies that both XML and SIP are ROLLED BACK.
      * Then send request for AIP data and verifies 500 response code.
      *
      * @throws Exception
@@ -372,12 +372,12 @@ public class AipApiTest extends DbTest implements ApiTest {
         Thread.sleep(6000);
 
 //        AipSip aipSip = sipStore.find(sipId);
-//        assertThat(aipSip.getState(), is(ObjectState.ROLLBACKED));
+//        assertThat(aipSip.getState(), is(ObjectState.ROLLED_BACK));
 //        assertThat(aipSip.isConsistent(), is(true));
 //
-//        assertThat(aipSip.getXml(0).getState(), is(ObjectState.ROLLBACKED));
+//        assertThat(aipSip.getXml(0).getState(), is(ObjectState.ROLLED_BACK));
 //        assertThat(aipSip.getXml(0).isConsistent(), is(true));
-
+//
 //        mvc(api)
 //                .perform(MockMvcRequestBuilders.get(BASE + "/{sipId}", sipId))
 //                .andExpect(status().is(500));
@@ -428,7 +428,7 @@ public class AipApiTest extends DbTest implements ApiTest {
 
     /**
      * Send request for XML update where MD5 param does not match MD5 of a file.
-     * Then send request for AIP state and verifies that only last XML is ROLLBACKED.
+     * Then send request for AIP state and verifies that only last XML is ROLLED_BACK.
      * Then send request for XML data and verifies 500 response code.
      *
      * @throws Exception
@@ -449,7 +449,7 @@ public class AipApiTest extends DbTest implements ApiTest {
 
         AipSip aipSip = sipStore.find(SIP_ID);
         assertThat(aipSip.getXml(0).getState(), is(ObjectState.ARCHIVED));
-        assertThat(aipSip.getXml(2).getState(), is(ObjectState.ROLLBACKED));
+        assertThat(aipSip.getXml(2).getState(), is(ObjectState.ROLLED_BACK));
 
         mvc(api)
                 .perform(MockMvcRequestBuilders.get(BASE + "/xml/{sipId}", SIP_ID))

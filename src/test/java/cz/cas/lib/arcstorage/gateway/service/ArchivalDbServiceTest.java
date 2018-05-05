@@ -167,8 +167,8 @@ public class ArchivalDbServiceTest extends DbTest {
         service.rollbackSip(SIP_ID, XML1_ID);
         AipSip aip = service.getAip(SIP_ID);
         AipXml xml = xmlStore.find(XML1_ID);
-        assertThat(xml.getState(), equalTo(ObjectState.ROLLBACKED));
-        assertThat(aip.getState(), equalTo(ObjectState.ROLLBACKED));
+        assertThat(xml.getState(), equalTo(ObjectState.ROLLED_BACK));
+        assertThat(aip.getState(), equalTo(ObjectState.ROLLED_BACK));
     }
 
     @Test
@@ -225,18 +225,18 @@ public class ArchivalDbServiceTest extends DbTest {
         sip2 = service.getAip(sip2.getId());
         sip3 = service.getAip(sip3.getId());
 
-        assertThat(aipXml1.getState(), is(ObjectState.ROLLBACKED));
-        assertThat(aipXml2.getState(), is(ObjectState.ROLLBACKED));
+        assertThat(aipXml1.getState(), is(ObjectState.ROLLED_BACK));
+        assertThat(aipXml2.getState(), is(ObjectState.ROLLED_BACK));
 
-        assertThat(sip2.getState(), is(ObjectState.ROLLBACKED));
-        assertThat(sip3.getState(), is(ObjectState.ROLLBACKED));
+        assertThat(sip2.getState(), is(ObjectState.ROLLED_BACK));
+        assertThat(sip3.getState(), is(ObjectState.ROLLED_BACK));
     }
 
     @Test
     public void rollBackXml() {
         service.rollbackXml(XML1_ID);
         AipXml xml = xmlStore.find(XML1_ID);
-        assertThat(xml.getState(), equalTo(ObjectState.ROLLBACKED));
+        assertThat(xml.getState(), equalTo(ObjectState.ROLLED_BACK));
     }
 
     @Test
@@ -272,7 +272,7 @@ public class ArchivalDbServiceTest extends DbTest {
         sipStore.save(sip);
         assertThrown(() -> service.registerSipDeletion(SIP_ID)).isInstanceOf(StillProcessingStateException.class);
         assertThrown(() -> service.removeSip(SIP_ID)).isInstanceOf(StillProcessingStateException.class);
-        sip.setState(ObjectState.ROLLBACKED);
+        sip.setState(ObjectState.ROLLED_BACK);
         sipStore.save(sip);
         assertThrown(() -> service.registerSipDeletion(SIP_ID)).isInstanceOf(RollbackStateException.class);
         assertThrown(() -> service.removeSip(SIP_ID)).isInstanceOf(RollbackStateException.class);
@@ -299,8 +299,8 @@ public class ArchivalDbServiceTest extends DbTest {
         assertThat(sipStore.findUnfinishedSips(), empty());
         assertThat(xmlStore.findUnfinishedXmls(), empty());
 
-        List<AipSip> sips = sipStore.findAll().stream().filter(sip -> sip.getState() != ObjectState.ROLLBACKED).collect(Collectors.toList());
-        List<AipXml> xmls = xmlStore.findAll().stream().filter(xml -> xml.getState() != ObjectState.ROLLBACKED).collect(Collectors.toList());
+        List<AipSip> sips = sipStore.findAll().stream().filter(sip -> sip.getState() != ObjectState.ROLLED_BACK).collect(Collectors.toList());
+        List<AipXml> xmls = xmlStore.findAll().stream().filter(xml -> xml.getState() != ObjectState.ROLLED_BACK).collect(Collectors.toList());
         assertThat(xmls, hasSize(3));
         assertThat(sips, hasSize(2));
     }

@@ -23,6 +23,6 @@ public class AipSipStore extends DomainStore<AipSip, QAipSip> {
 
     public void rollbackUnfinishedSipsRecords() {
         QAipSip sip = qObject();
-        queryFactory.update(sip).where(sip.state.in(ObjectState.PROCESSING, ObjectState.FAILED)).set(sip.state, ObjectState.ROLLBACKED).execute();
+        queryFactory.update(sip).where(sip.state.in(ObjectState.PROCESSING, ObjectState.FAILED)).set(sip.state, ObjectState.ROLLED_BACK).execute();
     }
 }

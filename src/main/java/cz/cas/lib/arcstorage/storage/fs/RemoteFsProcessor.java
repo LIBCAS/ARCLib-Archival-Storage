@@ -437,10 +437,10 @@ public class RemoteFsProcessor implements StorageService {
         sftp.mkdirs(folder);
         sftp.put(new InputStreamSource(new ByteArrayInputStream("".getBytes()), toStateStr(fileId, ObjectState.PROCESSING)), folder);
         deleteIfExistsSftp(sftp, folder + S + toStateStr(fileId, ObjectState.REMOVED));
-        deleteIfExistsSftp(sftp, folder + S + toStateStr(fileId, ObjectState.ROLLBACKED));
+        deleteIfExistsSftp(sftp, folder + S + toStateStr(fileId, ObjectState.ROLLED_BACK));
         deleteIfExistsSftp(sftp, folder + S + toStateStr(fileId, ObjectState.DELETED));
         deleteIfExistsSftp(sftp, folder + S + fileId);
-        transitProcessingState(sftp, folder, fileId, ObjectState.ROLLBACKED);
+        transitProcessingState(sftp, folder, fileId, ObjectState.ROLLED_BACK);
     }
 
     private static class InputStreamSource extends InMemorySourceFile {

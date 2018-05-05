@@ -35,7 +35,7 @@ public class AipStoreTest extends DbTest {
         aipStore.save(aipSip3);
 
         AipSip aipSip4 = new AipSip();
-        aipSip4.setState(ObjectState.ROLLBACKED);
+        aipSip4.setState(ObjectState.ROLLED_BACK);
         aipStore.save(aipSip4);
 
         AipSip aipSip5 = new AipSip();

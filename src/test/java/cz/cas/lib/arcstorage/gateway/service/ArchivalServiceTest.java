@@ -223,7 +223,7 @@ public class ArchivalServiceTest extends DbTest {
     public void getXmlIllegalStates() {
         Optional<Integer> version = Optional.of(2);
 
-        xml2.setState(ObjectState.ROLLBACKED);
+        xml2.setState(ObjectState.ROLLED_BACK);
         aipXmlStore.save(xml2);
         assertThrown(() -> archivalService.getXml(SIP_ID, version)).isInstanceOf(RollbackStateException.class);
 
@@ -286,7 +286,7 @@ public class ArchivalServiceTest extends DbTest {
         aipSipStore.save(sip);
         assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(DeletedStateException.class);
 
-        sip.setState(ObjectState.ROLLBACKED);
+        sip.setState(ObjectState.ROLLED_BACK);
         aipSipStore.save(sip);
         assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(RollbackStateException.class);
 
@@ -300,7 +300,7 @@ public class ArchivalServiceTest extends DbTest {
         assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(StillProcessingStateException.class);
 
         xml = sip.getXml(0);
-        xml.setState(ObjectState.ROLLBACKED);
+        xml.setState(ObjectState.ROLLED_BACK);
         aipXmlStore.save(xml);
 
         AipSip aipSip = new AipSip(SIP2_ID, sipHash, ObjectState.ARCHIVED, xml);

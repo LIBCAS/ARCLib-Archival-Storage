@@ -3,7 +3,6 @@ package cz.cas.lib.arcstorage.gateway.service;
 import cz.cas.lib.arcstorage.domain.AipSip;
 import cz.cas.lib.arcstorage.domain.AipXml;
 import cz.cas.lib.arcstorage.domain.ObjectState;
-import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.gateway.dto.*;
@@ -55,9 +54,9 @@ public class ArchivalService {
      * @param sipId
      * @param all   if true reference to SIP and all XMLs is returned otherwise reference to SIP and latest XML is retrieved
      * @return reference of AIP which contains id and inputStream of SIP and XML/XMLs, if there are more XML to return those
-     * which are rollbacked are skipped
+     * which are rolled back are skipped
      * @throws DeletedStateException         if SIP is deleted
-     * @throws RollbackStateException        if SIP is rollbacked or only one XML is requested and that one is rollbacked
+     * @throws RollbackStateException        if SIP is rolled back or only one XML is requested and that one is rolled back
      * @throws StillProcessingStateException if SIP or some of requested XML is still processing
      * @throws StorageException              if error has occurred during retrieval process of AIP
      * @throws FailedStateException          if SIP is failed
@@ -73,7 +72,7 @@ public class ArchivalService {
                 throw new FailedStateException(sipEntity);
             case DELETED:
                 throw new DeletedStateException(sipEntity);
-            case ROLLBACKED:
+            case ROLLED_BACK:
                 throw new RollbackStateException(sipEntity);
         }
 
@@ -85,11 +84,11 @@ public class ArchivalService {
 
         if (unfinishedXml.isPresent())
             throw new StillProcessingStateException(unfinishedXml.get());
-        if (xmls.size() == 1 && xmls.get(0).getState() == ObjectState.ROLLBACKED)
+        if (xmls.size() == 1 && xmls.get(0).getState() == ObjectState.ROLLED_BACK)
             throw new RollbackStateException(xmls.get(0));
 
         xmls = xmls.stream()
-                .filter(xml -> xml.getState() != ObjectState.ROLLBACKED)
+                .filter(xml -> xml.getState() != ObjectState.ROLLED_BACK)
                 .collect(Collectors.toList());
 
         return retrieveAip(sipEntity, xmls);
@@ -120,7 +119,7 @@ public class ArchivalService {
         } else
             requestedXml = sipEntity.getLatestXml();
         switch (requestedXml.getState()) {
-            case ROLLBACKED:
+            case ROLLED_BACK:
                 throw new RollbackStateException(requestedXml);
             case FAILED:
                 throw new FailedStateException(requestedXml);
@@ -251,7 +250,7 @@ public class ArchivalService {
      *
      * @throws StorageException
      */
-    public void clearUnfinished() throws StorageException {
+    public void cleanUp() throws StorageException {
         int xmlCounter = 0;
         List<AipSip> unfinishedSips = new ArrayList<>();
         List<AipXml> unfinishedXmls = new ArrayList<>();
@@ -259,14 +258,14 @@ public class ArchivalService {
         for (StorageService storageService : storageConfigStore.findAll().stream().map(c -> storageProvider.createAdapter(c)).collect(Collectors.toList())) {
             for (AipSip sip : unfinishedSips) {
                 if (sip.getXmls().size() > 1)
-                    log.warn("Found more than one XML of SIP package with id " + sip.getId() + " which was in PROCESSING state. SIP and its first XML will be rollbacked.");
+                    log.warn("Found more than one XML of SIP package with id " + sip.getId() + " which was in PROCESSING state. SIP and its first XML will be rolled back.");
                 storageService.rollbackAip(sip.getId());
             }
             for (AipXml xml : unfinishedXmls)
                 storageService.rollbackObject(toXmlId(xml.getSip().getId(), xml.getVersion()));
         }
         archivalDbService.rollbackUnfinishedFilesRecords();
-        log.info("Successfully rollbacked " + unfinishedSips.size() + " SIPs and " + xmlCounter + unfinishedXmls.size() + " XMLs");
+        log.info("Successfully rolled back " + unfinishedSips.size() + " SIPs and " + xmlCounter + unfinishedXmls.size() + " XMLs");
     }
 
     /**

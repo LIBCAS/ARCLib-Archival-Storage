@@ -133,7 +133,7 @@ public interface StorageService {
     /**
      * Rollbacks AIP and its first XML file from storage. Used only in case of cleaning process after storage/application failure.
      * <p>
-     * In any case (file not found / already rollbacked / file which was never actually stored / inconsistent ...) this method has to set ROLLBACKED state in metadata and delete the file (if exists).
+     * In any case (file not found / already rolled back / file which was never actually stored / inconsistent ...) this method has to set ROLLED_BACK state in metadata and delete the file (if exists).
      * </p>
      * <p>
      * This operation may take a while and therefore sets file state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set state to PROCESSING before calling this method and to desired state after the method is done.
@@ -147,7 +147,7 @@ public interface StorageService {
     /**
      * Rollbacks object from storage. Used only in case of cleaning process after storage/application failure.
      * <p>
-     * In any case (file not found / already rollbacked / file which was never actually stored / inconsistent ...) this method has to set ROLLBACKED state in metadata and delete the file (if exists).
+     * In any case (file not found / already rolled back / file which was never actually stored / inconsistent ...) this method has to set ROLLED_BACK state in metadata and delete the file (if exists).
      * </p>
      * <p>
      * This operation may take a while and therefore sets file state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set state to PROCESSING before calling this method and to desired state after the method is done.

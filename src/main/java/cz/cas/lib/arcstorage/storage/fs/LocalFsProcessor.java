@@ -240,9 +240,9 @@ public class LocalFsProcessor implements StorageService {
             Files.createFile(folder.resolve(processingStateId));
         Files.deleteIfExists(folder.resolve(toStateStr(fileId, ObjectState.REMOVED)));
         Files.deleteIfExists(folder.resolve(toStateStr(fileId, ObjectState.DELETED)));
-        Files.deleteIfExists(folder.resolve(toStateStr(fileId, ObjectState.ROLLBACKED)));
+        Files.deleteIfExists(folder.resolve(toStateStr(fileId, ObjectState.ROLLED_BACK)));
         Files.deleteIfExists(folder.resolve(fileId));
-        transitProcessingState(folder, fileId, ObjectState.ROLLBACKED);
+        transitProcessingState(folder, fileId, ObjectState.ROLLED_BACK);
     }
 
     private void checkFixityMetadataExists(Path sipFilePath) throws FileDoesNotExistException {

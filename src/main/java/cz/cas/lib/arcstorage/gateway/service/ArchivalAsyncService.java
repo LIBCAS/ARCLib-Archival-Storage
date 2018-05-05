@@ -110,7 +110,7 @@ public class ArchivalAsyncService {
             CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                 try {
                     a.rollbackAip(aip.getSip().getId());
-                    log.warn(strSA(a.getStorageConfig().getName(), aip.getSip().getId()) + "rollbacked");
+                    log.warn(strSA(a.getStorageConfig().getName(), aip.getSip().getId()) + "rolled back");
                 } catch (StorageException e) {
                     log.error(strSA(a.getStorageConfig().getName(), aip.getSip().getId()) + "rollback process error: " + e);
                     throw new GeneralException(e);
@@ -189,7 +189,7 @@ public class ArchivalAsyncService {
             CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                 try {
                     a.rollbackObject(archivalObject.getId());
-                    log.warn(strSX(a.getStorageConfig().getName(), archivalObject.getId()) + "rollbacked");
+                    log.warn(strSX(a.getStorageConfig().getName(), archivalObject.getId()) + "rolled back");
                 } catch (StorageException e) {
                     log.error(strSX(a.getStorageConfig().getName(), archivalObject.getId()) + "rollback process error");
                     throw new GeneralException(e);

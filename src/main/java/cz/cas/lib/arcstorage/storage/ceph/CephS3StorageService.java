@@ -287,7 +287,7 @@ public class CephS3StorageService implements StorageService {
         else if (multipartUploads.size() > 1)
             throw new GeneralException("unexpected error during rollback of file: " + id + " : there are more than one upload in progress");
         s3.deleteObject(storageConfig.getLocation(), id);
-        objectMetadata.addUserMetadata(STATE_KEY, ObjectState.ROLLBACKED.toString());
+        objectMetadata.addUserMetadata(STATE_KEY, ObjectState.ROLLED_BACK.toString());
         s3.putObject(storageConfig.getLocation(), metadataId, new NullInputStream(0), objectMetadata);
     }
 
