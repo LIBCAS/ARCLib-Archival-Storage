@@ -34,4 +34,19 @@ public class StorageConfig extends DomainObject {
      */
     String config;
     boolean reachable;
+
+    @Override
+    public String toString() {
+        return "StorageConfig{" +
+                "name='" + name + '\'' +
+                ", host='" + host + '\'' +
+                ", port=" + port +
+                ", priority=" + priority +
+                ", location='" + location + '\'' +
+                ", storageType=" + storageType +
+                ", note='" + note + '\'' +
+                ", config='" + config + '\'' +
+                ", reachable=" + reachable +
+                '}';
+    }
 }

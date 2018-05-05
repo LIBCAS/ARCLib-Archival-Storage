@@ -154,7 +154,7 @@ public class LocalFsProcessor implements StorageService {
         if (objectState == ObjectState.ARCHIVED || objectState == ObjectState.REMOVED) {
             try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(folder.resolve(sipId).toFile()))) {
                 Checksum storageSipChecksum = StorageUtils.computeChecksum(bis, sipChecksum.getType());
-                info.setStorageChecksum(storageSipChecksum);
+                info.setSipStorageChecksum(storageSipChecksum);
                 info.setConsistent(sipChecksum.equals(storageSipChecksum));
             } catch (FileNotFoundException e) {
                 throw new FileDoesNotExistException(folder.resolve(sipId).toAbsolutePath().toString());
@@ -162,7 +162,7 @@ public class LocalFsProcessor implements StorageService {
                 throw new IOStorageException(e);
             }
         } else {
-            info.setStorageChecksum(null);
+            info.setSipStorageChecksum(null);
             info.setConsistent(false);
         }
         for (Integer version : xmlVersions.keySet()) {
@@ -197,7 +197,7 @@ public class LocalFsProcessor implements StorageService {
      * @param folder   path to new file
      * @param id       id of new file
      * @param stream   new file stream
-     * @param checksum storageChecksum of the file
+     * @param checksum sipStorageChecksum of the file
      * @param rollback rollback flag to be periodically checked
      * @throws FileCorruptedAfterStoreException if fixity does not match after store
      * @throws IOStorageException               in case of any {@link IOException}

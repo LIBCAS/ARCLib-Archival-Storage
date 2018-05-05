@@ -4,6 +4,7 @@ import cz.cas.lib.arcstorage.domain.ChecksumType;
 import cz.cas.lib.arcstorage.domain.ObjectState;
 import cz.cas.lib.arcstorage.gateway.dto.*;
 import cz.cas.lib.arcstorage.gateway.exception.InvalidChecksumException;
+import cz.cas.lib.arcstorage.gateway.exception.StorageNotReachableException;
 import cz.cas.lib.arcstorage.gateway.exception.state.DeletedStateException;
 import cz.cas.lib.arcstorage.gateway.exception.state.FailedStateException;
 import cz.cas.lib.arcstorage.gateway.exception.state.RollbackStateException;
@@ -107,7 +108,7 @@ public class AipApi {
                        @RequestParam("sipChecksumValue") String sipChecksumValue, @RequestParam("sipChecksumType") ChecksumType sipChecksumType,
                        @RequestParam("aipXmlChecksumValue") String aipXmlChecksumValue,
                        @RequestParam("aipXmlChecksumType") ChecksumType aipXmlChecksumType, @RequestParam(value = "UUID") Optional<String> id)
-            throws IOException, InvalidChecksumException {
+            throws IOException, InvalidChecksumException, StorageNotReachableException {
         String sipId = id.isPresent() ? id.get() : UUID.randomUUID().toString();
 
         Checksum sipChecksum = new Checksum(sipChecksumType, sipChecksumValue);
@@ -138,7 +139,7 @@ public class AipApi {
     @RequestMapping(value = "/{sipId}/update", method = RequestMethod.POST)
     public void updateXml(@PathVariable("sipId") String sipId, @RequestParam("xml") MultipartFile xml,
                           @RequestParam("checksumValue") String checksumValue,
-                          @RequestParam("checksumType") ChecksumType checksumType) throws IOException {
+                          @RequestParam("checksumType") ChecksumType checksumType) throws IOException, StorageNotReachableException {
         checkUUID(sipId);
         Checksum checksum = new Checksum(checksumType, checksumValue);
         checkChecksumFormat(checksum);
@@ -158,7 +159,7 @@ public class AipApi {
      */
     @RequestMapping(value = "/{sipId}", method = RequestMethod.DELETE)
     public void remove(@PathVariable("sipId") String sipId) throws DeletedStateException, StillProcessingStateException,
-            RollbackStateException, StorageException, FailedStateException {
+            RollbackStateException, StorageException, FailedStateException, StorageNotReachableException {
         checkUUID(sipId);
         archivalService.remove(sipId);
     }
@@ -175,7 +176,7 @@ public class AipApi {
      */
     @RequestMapping(value = "/{sipId}/hard", method = RequestMethod.DELETE)
     public void delete(@PathVariable("sipId") String sipId) throws StillProcessingStateException, RollbackStateException,
-            StorageException, FailedStateException {
+            StorageException, FailedStateException, StorageNotReachableException {
         checkUUID(sipId);
         archivalService.delete(sipId);
     }

@@ -137,7 +137,7 @@ public class CephS3Test implements StorageServiceTest {
     }
 
     /**
-     * tests that rollback is set either when storageChecksum of stored file does not match expectation or if there is another error (NPE for example)
+     * tests that rollback is set either when sipStorageChecksum of stored file does not match expectation or if there is another error (NPE for example)
      */
     @Test
     public void storeFileSettingRollback() throws Exception {
@@ -331,8 +331,8 @@ public class CephS3Test implements StorageServiceTest {
         AipStateInfoDto aipInfo = service.getAipInfo(sipId, SIP_CHECKSUM, ObjectState.ARCHIVED, map);
 
         assertThat(aipInfo.getObjectState(), is(ObjectState.ARCHIVED));
-        assertThat(aipInfo.getStorageChecksum(), is(SIP_CHECKSUM));
-        assertThat(aipInfo.getDatabaseChecksum(), is(SIP_CHECKSUM));
+        assertThat(aipInfo.getSipStorageChecksum(), is(SIP_CHECKSUM));
+        assertThat(aipInfo.getSipDatabaseChecksum(), is(SIP_CHECKSUM));
         assertThat(aipInfo.getStorageType(), is(StorageType.CEPH));
         assertThat(aipInfo.getStorageName(), is(config.getName()));
         assertThat(aipInfo.isConsistent(), is(true));
@@ -384,8 +384,8 @@ public class CephS3Test implements StorageServiceTest {
         AipStateInfoDto aipInfo = service.getAipInfo(sipId, SIP_CHECKSUM, ObjectState.DELETED, map);
 
         assertThat(aipInfo.getObjectState(), is(ObjectState.DELETED));
-        assertThat(aipInfo.getStorageChecksum(), nullValue());
-        assertThat(aipInfo.getDatabaseChecksum(), is(SIP_CHECKSUM));
+        assertThat(aipInfo.getSipStorageChecksum(), nullValue());
+        assertThat(aipInfo.getSipDatabaseChecksum(), is(SIP_CHECKSUM));
         assertThat(aipInfo.isConsistent(), is(false));
 
         List<XmlStateInfoDto> xmlsStates = aipInfo.getXmlsState();

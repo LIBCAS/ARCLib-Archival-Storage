@@ -256,10 +256,10 @@ public class RemoteFsProcessor implements StorageService {
             try (SFTPClient sftp = ssh.newSFTPClient()) {
                 if (objectState == ObjectState.ARCHIVED || objectState == ObjectState.REMOVED) {
                     Checksum storageFileChecksum = StorageUtils.computeChecksum(getFile(ssh, sftp, folder + S + sipId), sipChecksum.getType());
-                    info.setStorageChecksum(storageFileChecksum);
+                    info.setSipStorageChecksum(storageFileChecksum);
                     info.setConsistent(sipChecksum.equals(storageFileChecksum));
                 } else {
-                    info.setStorageChecksum(null);
+                    info.setSipStorageChecksum(null);
                     info.setConsistent(false);
                 }
 
@@ -318,7 +318,7 @@ public class RemoteFsProcessor implements StorageService {
      * @param id       id of new file
      * @param S        platform separator i.e. / or \
      * @param stream   new file stream
-     * @param checksum storageChecksum of the file
+     * @param checksum sipStorageChecksum of the file
      * @param rollback rollback flag to be periodically checked
      * @throws FileCorruptedAfterStoreException if fixity does not match after store
      * @throws IOStorageException               in case of {@link IOException}

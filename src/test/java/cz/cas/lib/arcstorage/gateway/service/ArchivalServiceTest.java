@@ -4,6 +4,7 @@ import cz.cas.lib.arcstorage.domain.*;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.gateway.dto.*;
 import cz.cas.lib.arcstorage.gateway.exception.InvalidChecksumException;
+import cz.cas.lib.arcstorage.gateway.exception.StorageNotReachableException;
 import cz.cas.lib.arcstorage.gateway.exception.state.DeletedStateException;
 import cz.cas.lib.arcstorage.gateway.exception.state.FailedStateException;
 import cz.cas.lib.arcstorage.gateway.exception.state.RollbackStateException;
@@ -31,8 +32,7 @@ import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 import static helper.ThrowableAssertion.assertThrown;
 import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.assertThat;
-import static org.mockito.Matchers.anyObject;
-import static org.mockito.Matchers.eq;
+import static org.mockito.Matchers.*;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -233,17 +233,17 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void store() throws InvalidChecksumException {
+    public void store() throws InvalidChecksumException, StorageNotReachableException {
         AipDto aipDto = new AipDto(SIP2_ID, SIP_STREAM, sipHash, toXmlId(SIP2_ID, 1), XML1_STREAM, xml1Hash);
         archivalService.store(aipDto);
 
         AipSip aipSip = archivalDbService.getAip(SIP2_ID);
         assertThat(aipSip, notNullValue());
-        verify(async).store(eq(aipDto));
+        verify(async).store(eq(aipDto), anyList());
     }
 
     @Test
-    public void updateXml() {
+    public void updateXml() throws StorageNotReachableException {
         Collection<AipXml> allXmls = aipXmlStore.findAll();
         assertThat(allXmls.size(), is(2));
 
@@ -258,7 +258,7 @@ public class ArchivalServiceTest extends DbTest {
                 .get();
 
         ArchivalObjectDto xmlRef = new ArchivalObjectDto(toXmlId(SIP_ID, 3), XML1_STREAM, xml1Hash);
-        verify(async).updateObject(eq(xmlRef));
+        verify(async).updateObject(eq(xmlRef), anyList());
     }
 
     @Test
@@ -314,21 +314,21 @@ public class ArchivalServiceTest extends DbTest {
 
     @Test
     public void delete() throws
-            StorageException, StillProcessingStateException, RollbackStateException, FailedStateException {
+            StorageException, StillProcessingStateException, RollbackStateException, FailedStateException, StorageNotReachableException {
         archivalService.delete(SIP_ID);
 
         AipSip sip = archivalDbService.getAip(SIP_ID);
         assertThat(sip.getState(), is(ObjectState.PROCESSING));
-        verify(async).delete(eq(sip.getId()));
+        verify(async).delete(eq(sip.getId()), anyList());
     }
 
     @Test
     public void remove() throws RollbackStateException, DeletedStateException, StorageException,
-            StillProcessingStateException, FailedStateException {
+            StillProcessingStateException, FailedStateException, StorageNotReachableException {
         archivalService.remove(SIP_ID);
 
         AipSip sip = archivalDbService.getAip(SIP_ID);
         assertThat(sip.getState(), is(ObjectState.REMOVED));
-        verify(async).remove(eq(sip.getId()));
+        verify(async).remove(eq(sip.getId()), anyList());
     }
 }

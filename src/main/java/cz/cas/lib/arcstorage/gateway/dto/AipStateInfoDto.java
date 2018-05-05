@@ -14,15 +14,37 @@ public class AipStateInfoDto {
     private StorageType storageType;
     private ObjectState objectState;
     private boolean consistent;
-    private Checksum storageChecksum;
-    private Checksum databaseChecksum;
+    private boolean reachable;
+    private Checksum sipStorageChecksum;
+    private Checksum sipDatabaseChecksum;
     private List<XmlStateInfoDto> xmlsState = new ArrayList<>();
 
-    public AipStateInfoDto(String storageName, StorageType storageType, ObjectState objectState, Checksum databaseChecksum) {
+    /**
+     * Used by reachable storage services. Dto is further filled.
+     *
+     * @param storageName
+     * @param storageType
+     * @param objectState
+     * @param sipDatabaseChecksum
+     */
+    public AipStateInfoDto(String storageName, StorageType storageType, ObjectState objectState, Checksum sipDatabaseChecksum) {
         this.storageName = storageName;
         this.storageType = storageType;
         this.objectState = objectState;
-        this.databaseChecksum = databaseChecksum;
+        this.sipDatabaseChecksum = sipDatabaseChecksum;
+        reachable = true;
+    }
+
+    /**
+     * Used when storage service is unreachable.
+     *
+     * @param storageName
+     * @param storageType
+     */
+    public AipStateInfoDto(String storageName, StorageType storageType) {
+        this.storageName = storageName;
+        this.storageType = storageType;
+        reachable = false;
     }
 
     public void addXmlInfo(XmlStateInfoDto xmlStateInfoDto) {

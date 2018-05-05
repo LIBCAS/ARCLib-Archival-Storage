@@ -154,10 +154,10 @@ public class CephS3StorageService implements StorageService {
             S3Object sipObject = s3.getObject(storageConfig.getLocation(), sipId);
             Checksum storageFileChecksum = StorageUtils.computeChecksum(sipObject.getObjectContent(),
                     sipChecksum.getType());
-            info.setStorageChecksum(storageFileChecksum);
+            info.setSipStorageChecksum(storageFileChecksum);
             info.setConsistent(sipChecksum.equals(storageFileChecksum));
         } else {
-            info.setStorageChecksum(null);
+            info.setSipStorageChecksum(null);
             info.setConsistent(false);
         }
 
@@ -205,7 +205,7 @@ public class CephS3StorageService implements StorageService {
      * @param s3       connection
      * @param id       id of new file
      * @param stream   new file stream
-     * @param checksum storageChecksum of the file, this is only added to metadata and not used for fixity comparison, fixity is compared per each chunk during upload
+     * @param checksum sipStorageChecksum of the file, this is only added to metadata and not used for fixity comparison, fixity is compared per each chunk during upload
      * @param rollback rollback flag to be periodically checked
      * @throws FileCorruptedAfterStoreException if fixity does not match after store
      * @throws IOStorageException               in case of any {@link IOException}

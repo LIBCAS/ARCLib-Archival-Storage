@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.exception.ConfigParserException;
 import cz.cas.lib.arcstorage.exception.GeneralException;
+import cz.cas.lib.arcstorage.gateway.exception.StorageNotReachableException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.ceph.CephAdapterType;
 import cz.cas.lib.arcstorage.storage.ceph.CephS3StorageService;
@@ -16,6 +17,8 @@ import org.springframework.stereotype.Service;
 
 import javax.inject.Inject;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 import static cz.cas.lib.arcstorage.util.Utils.parseEnumFromConfig;
 
@@ -25,6 +28,13 @@ public class StorageProvider {
     private String keyFilePath;
     private StorageConfigStore storageConfigStore;
 
+    /**
+     * Returns storage service according to storage config. If the storage is not reachable, config is updated and null returned.
+     *
+     * @param storageConfig
+     * @return storage service or null if the storage is not reachable
+     * @throws ConfigParserException
+     */
     public StorageService createAdapter(StorageConfig storageConfig) throws ConfigParserException {
         StorageService service;
         JsonNode root;
@@ -74,7 +84,31 @@ public class StorageProvider {
         boolean reachable = service.testConnection();
         storageConfig.setReachable(reachable);
         storageConfigStore.save(storageConfig);
+        if (!reachable)
+            return null;
         return service;
+    }
+
+    /**
+     * Returns all storage services or throw exception if any of them is unreachable.
+     *
+     * @return storage services for all storages
+     * @throws StorageNotReachableException
+     */
+    public List<StorageService> createReachableAdapters() throws StorageNotReachableException {
+        List<StorageService> storageServices = new ArrayList<>();
+        List<StorageConfig> unreachableStorages = new ArrayList<>();
+        for (StorageConfig storageConfig : storageConfigStore.findAll()) {
+            StorageService service = createAdapter(storageConfig);
+            if (service == null) {
+                unreachableStorages.add(storageConfig);
+                continue;
+            }
+            storageServices.add(service);
+        }
+        if (unreachableStorages.isEmpty())
+            throw new StorageNotReachableException(unreachableStorages);
+        return storageServices;
     }
 
     @Inject

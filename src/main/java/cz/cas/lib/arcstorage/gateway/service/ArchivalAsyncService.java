@@ -9,7 +9,6 @@ import cz.cas.lib.arcstorage.gateway.exception.CantWriteException;
 import cz.cas.lib.arcstorage.gateway.exception.InvalidChecksumException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
-import cz.cas.lib.arcstorage.store.StorageConfigStore;
 import cz.cas.lib.arcstorage.store.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,7 +29,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.validateChecksum;
 import static cz.cas.lib.arcstorage.util.Utils.*;
@@ -40,14 +38,12 @@ import static cz.cas.lib.arcstorage.util.Utils.*;
 public class ArchivalAsyncService {
 
     private ArchivalDbService archivalDbService;
-    private StorageConfigStore storageConfigStore;
     private ExecutorService executor;
     private Path tmpFolder;
-    private StorageProvider storageProvider;
 
     @Async
     @Transactional
-    public void store(AipDto aip) throws InvalidChecksumException {
+    public void store(AipDto aip, List<StorageService> storageServices) throws InvalidChecksumException {
         String op = "AIP storage ";
         Path tmpXmlPath = tmpFolder.resolve(aip.getXml().getId());
         Path tmpSipPath = tmpFolder.resolve(aip.getSip().getId());
@@ -65,8 +61,7 @@ public class ArchivalAsyncService {
         }
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         AtomicBoolean rollback = new AtomicBoolean(false);
-        List<StorageService> adapters = storageConfigStore.findAll().stream().map(storageProvider::createAdapter).collect(Collectors.toList());
-        for (StorageService a : adapters) {
+        for (StorageService a : storageServices) {
             CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                         try (BufferedInputStream sipStream = new BufferedInputStream(new FileInputStream(tmpSipPath.toFile()));
                              BufferedInputStream xmlStream = new BufferedInputStream(new FileInputStream(tmpXmlPath.toFile()))) {
@@ -106,7 +101,7 @@ public class ArchivalAsyncService {
         }
         log.info(op + "Archival storage error. Starting rollback.");
         futures = new ArrayList<>();
-        for (StorageService a : adapters) {
+        for (StorageService a : storageServices) {
             CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                 try {
                     a.rollbackAip(aip.getSip().getId());
@@ -134,7 +129,7 @@ public class ArchivalAsyncService {
     }
 
     @Async
-    public void updateObject(ArchivalObjectDto archivalObject) {
+    public void updateObject(ArchivalObjectDto archivalObject, List<StorageService> storageServices) {
         String op = "AIP storage ";
         Path tmpXmlPath = tmpFolder.resolve(archivalObject.getId());
         try {
@@ -144,8 +139,7 @@ public class ArchivalAsyncService {
         }
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         AtomicBoolean rollback = new AtomicBoolean(false);
-        List<StorageService> adapters = storageConfigStore.findAll().stream().map(storageProvider::createAdapter).collect(Collectors.toList());
-        for (StorageService a : adapters) {
+        for (StorageService a : storageServices) {
             CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                         try (BufferedInputStream xmlStream = new BufferedInputStream(new FileInputStream(tmpXmlPath.toFile()))) {
                             ArchivalObjectDto archivalObjectCpy = new ArchivalObjectDto(archivalObject.getId(), xmlStream, archivalObject.getChecksum());
@@ -185,7 +179,7 @@ public class ArchivalAsyncService {
         }
         log.info(op + "Archival storage error. Starting rollback.");
         futures = new ArrayList<>();
-        for (StorageService a : adapters) {
+        for (StorageService a : storageServices) {
             CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                 try {
                     a.rollbackObject(archivalObject.getId());
@@ -211,9 +205,9 @@ public class ArchivalAsyncService {
     }
 
     @Async
-    public void delete(String sipId) throws StorageException {
+    public void delete(String sipId, List<StorageService> storageServices) throws StorageException {
         try {
-            for (StorageService storageService : storageConfigStore.findAll().stream().map(storageProvider::createAdapter).collect(Collectors.toList())) {
+            for (StorageService storageService : storageServices) {
                 storageService.deleteSip(sipId);
             }
         } catch (StorageException e) {
@@ -225,9 +219,9 @@ public class ArchivalAsyncService {
     }
 
     @Async
-    public void remove(String sipId) throws StorageException {
+    public void remove(String sipId, List<StorageService> storageServices) throws StorageException {
         try {
-            for (StorageService storageService : storageConfigStore.findAll().stream().map(storageProvider::createAdapter).collect(Collectors.toList())) {
+            for (StorageService storageService : storageServices) {
                 storageService.remove(sipId);
             }
         } catch (StorageException e) {
@@ -243,11 +237,6 @@ public class ArchivalAsyncService {
     }
 
     @Inject
-    public void setStorageConfigStore(StorageConfigStore storageConfigStore) {
-        this.storageConfigStore = storageConfigStore;
-    }
-
-    @Inject
     public void setTmpFolder(@Value("${arcstorage.tmp-folder}") String path) {
         this.tmpFolder = Paths.get(path);
     }
@@ -255,10 +244,5 @@ public class ArchivalAsyncService {
     @Inject
     public void setExecutor(ExecutorService executor) {
         this.executor = executor;
-    }
-
-    @Inject
-    public void setStorageProvider(StorageProvider storageProvider) {
-        this.storageProvider = storageProvider;
     }
 }

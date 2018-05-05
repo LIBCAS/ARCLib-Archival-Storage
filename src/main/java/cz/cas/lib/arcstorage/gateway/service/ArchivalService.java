@@ -3,12 +3,14 @@ package cz.cas.lib.arcstorage.gateway.service;
 import cz.cas.lib.arcstorage.domain.AipSip;
 import cz.cas.lib.arcstorage.domain.AipXml;
 import cz.cas.lib.arcstorage.domain.ObjectState;
+import cz.cas.lib.arcstorage.domain.StorageConfig;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.gateway.dto.*;
 import cz.cas.lib.arcstorage.gateway.exception.CantWriteException;
 import cz.cas.lib.arcstorage.gateway.exception.FileCorruptedAtAllStoragesException;
 import cz.cas.lib.arcstorage.gateway.exception.InvalidChecksumException;
+import cz.cas.lib.arcstorage.gateway.exception.StorageNotReachableException;
 import cz.cas.lib.arcstorage.gateway.exception.state.DeletedStateException;
 import cz.cas.lib.arcstorage.gateway.exception.state.FailedStateException;
 import cz.cas.lib.arcstorage.gateway.exception.state.RollbackStateException;
@@ -153,10 +155,11 @@ public class ArchivalService {
      * @throws InvalidChecksumException
      */
     @Transactional
-    public void store(AipDto aip) throws CantWriteException, InvalidChecksumException {
+    public void store(AipDto aip) throws CantWriteException, InvalidChecksumException, StorageNotReachableException {
+        List<StorageService> reachableAdapters = storageProvider.createReachableAdapters();
         archivalDbService.registerAipCreation(aip.getSip().getId(), aip.getSip().getChecksum(), aip.getXml().getId(),
                 aip.getXml().getChecksum());
-        async.store(aip);
+        async.store(aip, reachableAdapters);
     }
 
     /**
@@ -168,9 +171,10 @@ public class ArchivalService {
      * @param xml      Stream of xml file
      * @param checksum
      */
-    public void updateXml(String sipId, InputStream xml, Checksum checksum) {
+    public void updateXml(String sipId, InputStream xml, Checksum checksum) throws StorageNotReachableException {
+        List<StorageService> reachableAdapters = storageProvider.createReachableAdapters();
         AipXml xmlEntity = archivalDbService.registerXmlUpdate(sipId, checksum);
-        async.updateObject(new ArchivalObjectDto(toXmlId(sipId, xmlEntity.getVersion()), xml, checksum));
+        async.updateObject(new ArchivalObjectDto(toXmlId(sipId, xmlEntity.getVersion()), xml, checksum), reachableAdapters);
     }
 
     /**
@@ -183,9 +187,10 @@ public class ArchivalService {
      * @throws FailedStateException
      */
     public void delete(String sipId) throws StillProcessingStateException, RollbackStateException,
-            StorageException, FailedStateException {
+            StorageException, FailedStateException, StorageNotReachableException {
+        List<StorageService> reachableAdapters = storageProvider.createReachableAdapters();
         archivalDbService.registerSipDeletion(sipId);
-        async.delete(sipId);
+        async.delete(sipId, reachableAdapters);
     }
 
     /**
@@ -199,9 +204,10 @@ public class ArchivalService {
      * @throws FailedStateException
      */
     public void remove(String sipId) throws StillProcessingStateException, DeletedStateException,
-            RollbackStateException, StorageException, FailedStateException {
+            RollbackStateException, StorageException, FailedStateException, StorageNotReachableException {
+        List<StorageService> reachableAdapters = storageProvider.createReachableAdapters();
         archivalDbService.removeSip(sipId);
-        async.remove(sipId);
+        async.remove(sipId, reachableAdapters);
     }
 
     /**
@@ -211,32 +217,50 @@ public class ArchivalService {
      * @throws StillProcessingStateException
      * @throws StorageException
      */
+    //todo: implement self-healing
+    //todo: recreate current flat structure (objecstate, databasechecksum etc. are replicated in all AipStateInfos..
+    //todo: it would be better to have parent object with those and then child objects specific for every storage
     public List<AipStateInfoDto> getAipState(String sipId) throws StillProcessingStateException, StorageException {
         AipSip aip = archivalDbService.getAip(sipId);
         if (aip.getState() == ObjectState.PROCESSING)
             throw new StillProcessingStateException(aip);
-        List<AipStateInfoDto> aipStateInfoDtos = new ArrayList<>();
-        for (StorageService storageService : storageConfigStore.findAll().stream()
-                .map(storageProvider::createAdapter)
-                .collect(Collectors.toList())) {
-            aipStateInfoDtos.add(storageService.getAipInfo(sipId, aip.getChecksum(), aip.getState(),
-                    aip.getXmls().stream()
-                            .collect(Collectors.toMap(xml -> xml.getVersion(), xml -> xml.getChecksum()))));
-        }
+        Collection<StorageConfig> allStorageConfigs = storageConfigStore.findAll();
+        List<AipStateInfoDto> aipStates = allStorageConfigs.stream().map(
+                config -> {
+                    StorageService adapter = storageProvider.createAdapter(config);
+                    if (adapter == null) {
+                        return new AipStateInfoDto(config.getName(), config.getStorageType());
+                    } else {
+                        try {
+                            return adapter.getAipInfo(sipId, aip.getChecksum(), aip.getState(),
+                                    aip.getXmls().stream()
+                                            .collect(Collectors.toMap(xml -> xml.getVersion(), xml -> xml.getChecksum())));
+                        } catch (StorageException e) {
+                            return new AipStateInfoDto(config.getName(), config.getStorageType());
+                        }
+                    }
+                }
+        ).collect(Collectors.toList());
         log.info(String.format("Info about AIP: %s has been successfully retrieved.", sipId));
-        return aipStateInfoDtos;
+        return aipStates;
     }
 
     /**
-     * Returns state of currently used storage.
+     * Returns state of all connected storages.
      *
      * @return
      */
     public List<StorageStateDto> getStorageState() {
         List<StorageStateDto> storageStateDtos = new ArrayList<>();
-        storageConfigStore.findAll().stream().forEach(c -> {
+        Collection<StorageConfig> allConfigs = storageConfigStore.findAll();
+        allConfigs.stream().forEach(c -> {
             try {
-                storageStateDtos.add(storageProvider.createAdapter(c).getStorageState());
+                StorageService service = storageProvider.createAdapter(c);
+                if (service == null) {
+                    c.setReachable(false);
+                    storageStateDtos.add(new StorageStateDto(c, null));
+                } else
+                    storageStateDtos.add(service.getStorageState());
             } catch (StorageException e) {
                 throw new GeneralException(e);
             }
@@ -248,14 +272,16 @@ public class ArchivalService {
      * Rollback files which are in {@link ObjectState#PROCESSING} or {@link ObjectState#FAILED} state.
      * This will be used after system failure to clean up storage and free some space.
      *
-     * @throws StorageException
+     * @throws StorageNotReachableException if any storage is unreachable before the process starts
+     * @throws StorageException             if any storage fails to rollback
      */
-    public void cleanUp() throws StorageException {
+    public void cleanUp() throws StorageNotReachableException, StorageException {
         int xmlCounter = 0;
         List<AipSip> unfinishedSips = new ArrayList<>();
         List<AipXml> unfinishedXmls = new ArrayList<>();
+        List<StorageService> storageServices = storageProvider.createReachableAdapters();
         archivalDbService.fillUnfinishedFilesLists(unfinishedSips, unfinishedXmls);
-        for (StorageService storageService : storageConfigStore.findAll().stream().map(c -> storageProvider.createAdapter(c)).collect(Collectors.toList())) {
+        for (StorageService storageService : storageServices) {
             for (AipSip sip : unfinishedSips) {
                 if (sip.getXmls().size() > 1)
                     log.warn("Found more than one XML of SIP package with id " + sip.getId() + " which was in PROCESSING state. SIP and its first XML will be rolled back.");
@@ -568,13 +594,19 @@ public class ArchivalService {
         return xmlInputStream;
     }
 
+    /**
+     * called only by retrieval, GET methods.. methods which writes writes to all storages
+     *
+     * @return
+     */
     private TreeMap<Integer, List<StorageService>> getStorageServicesByPriorities() {
         //sorted map of storage configs where the keys are the priorities and the values are the lists of configs
         TreeMap<Integer, List<StorageService>> storageServicesByPriorities = new TreeMap<>(Collections.reverseOrder());
 
+        Collection<StorageConfig> all = storageConfigStore.findAll();
         storageConfigStore.findAll().forEach(storageConfig -> {
             StorageService storageService = storageProvider.createAdapter(storageConfig);
-            if (storageService.testConnection()) {
+            if (storageService != null) {
                 List<StorageService> storageServices = storageServicesByPriorities.get(storageConfig.getPriority());
                 if (storageServices == null) storageServices = new ArrayList<>();
                 storageServices.add(storageService);
