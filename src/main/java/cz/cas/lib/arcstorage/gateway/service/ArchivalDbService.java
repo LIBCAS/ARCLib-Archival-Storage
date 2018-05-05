@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Propagation;
 import javax.inject.Inject;
 import java.util.List;
 
+import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 import static cz.cas.lib.arcstorage.util.Utils.notNull;
 
 
@@ -40,11 +41,11 @@ public class ArchivalDbService {
      *
      * @param sipId
      * @param sipChecksum
+     * @param xmlId
      * @param xmlChecksum
-     * @return generated ID of XML record
      */
     @org.springframework.transaction.annotation.Transactional(propagation = Propagation.REQUIRES_NEW)
-    public String registerAipCreation(String sipId, Checksum sipChecksum, Checksum xmlChecksum) {
+    public String registerAipCreation(String sipId, Checksum sipChecksum, String xmlId, Checksum xmlChecksum) {
         notNull(sipId, () -> new BadArgument(sipId));
         notNull(sipChecksum, () -> new BadArgument(sipChecksum));
         notNull(xmlChecksum, () -> new BadArgument(xmlChecksum));
@@ -53,7 +54,7 @@ public class ArchivalDbService {
         if (sip != null)
             throw new ConflictObject(sip);
         sip = new AipSip(sipId, sipChecksum, ObjectState.PROCESSING);
-        AipXml xml = new AipXml(xmlChecksum, new AipSip(sipId), 1, ObjectState.PROCESSING);
+        AipXml xml = new AipXml(xmlId, xmlChecksum, new AipSip(sipId), 1, ObjectState.PROCESSING);
         aipSipStore.save(sip);
         aipXmlStore.save(xml);
         return xml.getId();
@@ -77,14 +78,14 @@ public class ArchivalDbService {
      *
      * @param sipId
      * @param xmlChecksum
-     * @return created XML entity filled with generated ID and version
+     * @return created XML entity filled ID and version
      */
     public AipXml registerXmlUpdate(String sipId, Checksum xmlChecksum) {
         notNull(sipId, () -> new BadArgument(sipId));
         notNull(xmlChecksum, () -> new BadArgument(xmlChecksum));
 
         int xmlVersion = aipXmlStore.getNextXmlVersionNumber(sipId);
-        AipXml newVersion = new AipXml(xmlChecksum, new AipSip(sipId), xmlVersion, ObjectState.PROCESSING);
+        AipXml newVersion = new AipXml(toXmlId(sipId, xmlVersion), xmlChecksum, new AipSip(sipId), xmlVersion, ObjectState.PROCESSING);
         aipXmlStore.save(newVersion);
         return newVersion;
     }

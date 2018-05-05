@@ -21,11 +21,13 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.stream.Collectors;
 
+import static cz.cas.lib.arcstorage.storage.StorageUtils.extractXmlVersion;
+import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 import static helper.ThrowableAssertion.assertThrown;
 import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.assertThat;
@@ -119,73 +121,74 @@ public class ArchivalServiceTest extends DbTest {
         aipXmlStore.save(xml2);
 
         storageConfig = new StorageConfig();
+        storageConfig.setPriority(1);
         storageConfig.setStorageType(StorageType.CEPH);
         storageConfig.setConfig(STORAGE_CONFIG);
 
         storageConfigStore.save(storageConfig);
 
-        FileContentDto xml1FileContentDto = new FileContentDto(XML1_STREAM);
-        FileContentDto xml2FileContentDto = new FileContentDto(XML2_STREAM);
+        AipRetrievalResource aip1 = new AipRetrievalResource(null);
+        aip1.setSip(SIP_STREAM);
+        aip1.addXml(1, XML1_STREAM);
 
-        List<FileContentDto> fileRefs1 = new ArrayList<>();
-        fileRefs1.add(new FileContentDto(SIP_STREAM));
-        fileRefs1.add(xml1FileContentDto);
+        AipRetrievalResource aip2 = new AipRetrievalResource(null);
+        aip2.setSip(SIP_STREAM);
+        aip2.addXml(2, XML2_STREAM);
 
-        List<FileContentDto> fileRefs2 = new ArrayList<>();
-        fileRefs2.add(new FileContentDto(SIP_STREAM));
-        fileRefs2.add(xml2FileContentDto);
+        AipRetrievalResource aip3 = new AipRetrievalResource(null);
+        aip3.setSip(SIP_STREAM);
+        aip3.addXml(1, XML1_STREAM);
+        aip3.addXml(2, XML2_STREAM);
 
-        List<FileContentDto> fileRefs3 = new ArrayList<>();
-        fileRefs3.add(new FileContentDto(SIP_STREAM));
-        fileRefs3.add(xml1FileContentDto);
-        fileRefs3.add(xml2FileContentDto);
+        String xml1Id = toXmlId(SIP_ID, 1);
+        String xml2Id = toXmlId(SIP_ID, 2);
 
-        when(storageService.getAip(SIP_ID, 1)).thenReturn(fileRefs1);
-        when(storageService.getAip(SIP_ID, 2)).thenReturn(fileRefs2);
-        when(storageService.getAip(SIP_ID, 1, 2)).thenReturn(fileRefs3);
+        when(storageService.getAip(SIP_ID, 1)).thenReturn(aip1);
+        when(storageService.getAip(SIP_ID, 2)).thenReturn(aip2);
+        when(storageService.getAip(SIP_ID, 1, 2)).thenReturn(aip3);
 
         when(storageProvider.createAdapter(anyObject())).thenReturn(storageService);
 
-        when(storageService.getXml(SIP_ID, 1)).thenReturn(xml1FileContentDto);
-        when(storageService.getXml(SIP_ID, 2)).thenReturn(xml2FileContentDto);
+        ObjectRetrievalResource xml1 = new ObjectRetrievalResource(XML1_STREAM, null);
+        ObjectRetrievalResource xml2 = new ObjectRetrievalResource(XML2_STREAM, null);
+
+        when(storageService.getObject(xml1Id)).thenReturn(xml1);
+        when(storageService.getObject(xml2Id)).thenReturn(xml2);
     }
 
     @Test
     @Ignore
     public void getAll() throws DeletedStateException, StillProcessingStateException, RollbackStateException, StorageException, FailedStateException {
-        AipDto aip = archivalService.get(SIP_ID, Optional.of(true));
+        AipRetrievalResource aip = archivalService.get(SIP_ID, Optional.of(true));
 
-        assertThat(aip.getSip(), equalTo(new ArchivalObjectDto(SIP_ID, new FileContentDto(SIP_STREAM), sipHash)));
+        assertThat(aip.getSip(), equalTo(SIP_STREAM));
 
-        List<XmlDto> xmls = aip.getXmls();
-        assertThat(xmls, hasSize(2));
+        Map<Integer, InputStream> xmls = aip.getXmls();
+        assertThat(xmls.values(), hasSize(2));
 
-        XmlDto xmlRef1 = xmls.stream().filter(xml -> xml.getId().equals(XML1_ID)).collect(Collectors.toList()).get(0);
-        assertThat(xmlRef1.getVersion(), is(1));
-        assertThat(xmlRef1.getChecksum(), equalTo(xml1Hash));
-        assertThat(xmlRef1.getInputStream(), equalTo(XML1_STREAM));
+        InputStream inputStream1 = aip.getXmls().get(2);
+        assertThat(inputStream1, notNullValue());
+        assertThat(inputStream1, equalTo(XML1_STREAM));
 
-        XmlDto xmlRef2 = xmls.stream().filter(xml -> xml.getId().equals(XML2_ID)).collect(Collectors.toList()).get(0);
-        assertThat(xmlRef2.getVersion(), is(2));
-        assertThat(xmlRef2.getChecksum(), equalTo(xml2Hash));
-        assertThat(xmlRef2.getInputStream(), equalTo(XML2_STREAM));
+        InputStream inputStream2 = aip.getXmls().get(2);
+        assertThat(inputStream2, notNullValue());
+        assertThat(inputStream2, equalTo(XML2_STREAM));
     }
 
     @Test
     @Ignore
     public void getLatest() throws
-            RollbackStateException, DeletedStateException, StorageException, StillProcessingStateException, FailedStateException {
-        AipDto aip = archivalService.get(SIP_ID, Optional.of(false));
+            RollbackStateException, DeletedStateException, StorageException, StillProcessingStateException, FailedStateException, IOException {
+        AipRetrievalResource aip = archivalService.get(SIP_ID, Optional.of(false));
 
-        assertThat(aip.getSip(), equalTo(new ArchivalObjectDto(SIP_ID, new FileContentDto(SIP_STREAM), sipHash)));
+        assertThat(aip.getSip(), is(SIP_STREAM));
 
-        List<XmlDto> xmls = aip.getXmls();
-        assertThat(xmls, hasSize(1));
+        Map<Integer, InputStream> xmls = aip.getXmls();
+        assertThat(xmls.values(), hasSize(1));
 
-        XmlDto xmlRef = xmls.stream().filter(xml -> xml.getId().equals(XML2_ID)).collect(Collectors.toList()).get(0);
-        assertThat(xmlRef.getVersion(), is(2));
-        assertThat(xmlRef.getChecksum(), equalTo(xml2Hash));
-        assertThat(xmlRef.getInputStream(), equalTo(XML2_STREAM));
+        InputStream inputStream = aip.getXmls().get(2);
+        assertThat(inputStream, notNullValue());
+        assertThat(inputStream, equalTo(XML2_STREAM));
     }
 
     @Test
@@ -193,8 +196,8 @@ public class ArchivalServiceTest extends DbTest {
     public void getXml() throws
             StorageException, FailedStateException, RollbackStateException, StillProcessingStateException {
         Optional<Integer> version = Optional.empty();
-        XmlDto xml = archivalService.getXml(SIP_ID, version);
-        assertThat(xml.getVersion(), is(2));
+        ArchivalObjectDto xml = archivalService.getXml(SIP_ID, version);
+        assertThat(extractXmlVersion(xml.getId()), is(2));
     }
 
     @Test
@@ -202,12 +205,12 @@ public class ArchivalServiceTest extends DbTest {
     public void getXmlVersionSpecified() throws
             StorageException, FailedStateException, RollbackStateException, StillProcessingStateException {
         Optional<Integer> version1 = Optional.of(1);
-        XmlDto xml = archivalService.getXml(SIP_ID, version1);
-        assertThat(xml.getVersion(), is(1));
+        ArchivalObjectDto xml = archivalService.getXml(SIP_ID, version1);
+        assertThat(extractXmlVersion(xml.getId()), is(1));
 
         Optional<Integer> version2 = Optional.of(2);
-        XmlDto xml2 = archivalService.getXml(SIP_ID, version2);
-        assertThat(xml2.getVersion(), is(2));
+        ArchivalObjectDto xml2 = archivalService.getXml(SIP_ID, version2);
+        assertThat(extractXmlVersion(xml.getId()), is(2));
     }
 
     @Test
@@ -231,7 +234,7 @@ public class ArchivalServiceTest extends DbTest {
 
     @Test
     public void store() throws InvalidChecksumException {
-        AipDto aipDto = new AipDto(SIP2_ID, SIP_STREAM, sipHash, XML1_STREAM, xml1Hash);
+        AipDto aipDto = new AipDto(SIP2_ID, SIP_STREAM, sipHash, toXmlId(SIP2_ID, 1), XML1_STREAM, xml1Hash);
         archivalService.store(aipDto);
 
         AipSip aipSip = archivalDbService.getAip(SIP2_ID);
@@ -254,8 +257,8 @@ public class ArchivalServiceTest extends DbTest {
                 .findFirst()
                 .get();
 
-        XmlDto xmlRef = new XmlDto(latestAipXml.getId(), new FileContentDto(XML1_STREAM), xml1Hash, 1);
-        verify(async).updateXml(eq(SIP_ID), eq(xmlRef));
+        ArchivalObjectDto xmlRef = new ArchivalObjectDto(toXmlId(SIP_ID, 3), XML1_STREAM, xml1Hash);
+        verify(async).updateObject(eq(xmlRef));
     }
 
     @Test

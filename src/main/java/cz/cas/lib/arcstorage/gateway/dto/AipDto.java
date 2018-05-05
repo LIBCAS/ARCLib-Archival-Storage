@@ -10,8 +10,12 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * DTO for transfer of AIP object with its file content together with AIP XML objects and their content.
- * Contains XML version in addition to other attributes of {@link ArchivalObjectDto}.
+ * DTO for transfer of AIP object.
+ * <p>
+ * As opposite to {@link AipRetrievalResource} which only contains input streams and is used to transfer data from storage,
+ * this DTO contains also checksums and is used to transfer data TO storage layer or to enrich data from storage layer on the
+ * service layer.
+ * </p>
  */
 @NoArgsConstructor
 public class AipDto {
@@ -27,15 +31,14 @@ public class AipDto {
      * List with DTOs of XML objects related to this AIP. THIS MAY NOT CONTAIN ALL XMLS AND ORDER IS NOT GUARANTEED.
      * This is DTO. XMLs presence and order is dependent on how the list is filled by application logic.
      */
-    private List<XmlDto> xmls = new ArrayList<>();
+    private List<ArchivalObjectDto> xmls = new ArrayList<>();
 
     /**
-     * Constructor used when transferring this DTO between service layer and storage layer.
-     * The service layer XML ID is not important in this case and is set to null.
+     * Constructor used when transferring this DTO from service layer to storage layer.
      */
-    public AipDto(String sipId, InputStream sipStream, Checksum sipChecksum, InputStream aipXmlStream, Checksum xmlChecksum) {
-        sip = new ArchivalObjectDto(sipId, new FileContentDto(sipStream), sipChecksum);
-        xmls.add(new XmlDto(new FileContentDto(aipXmlStream), xmlChecksum, 1));
+    public AipDto(String sipId, InputStream sipStream, Checksum sipChecksum, String xmlId, InputStream aipXmlStream, Checksum xmlChecksum) {
+        sip = new ArchivalObjectDto(sipId, sipStream, sipChecksum);
+        xmls.add(new ArchivalObjectDto(xmlId, aipXmlStream, xmlChecksum));
     }
 
     /**
@@ -43,26 +46,26 @@ public class AipDto {
      * Used for example when there is a need to send the same AIP to multiple storages where every storage needs own instance of AIP input streams.
      */
     public AipDto(AipDto aipDto, InputStream sipIs, InputStream xmlIs) {
-        sip = new ArchivalObjectDto(aipDto.getSip().getId(), new FileContentDto(sipIs), aipDto.getSip().getChecksum());
-        xmls.add(new XmlDto(aipDto.getXml().getId(), new FileContentDto(xmlIs), aipDto.getXml().getChecksum(), aipDto.getXml().getVersion()));
+        sip = new ArchivalObjectDto(aipDto.getSip().getId(), sipIs, aipDto.getSip().getChecksum());
+        xmls.add(new ArchivalObjectDto(aipDto.getXml().getId(), xmlIs, aipDto.getXml().getChecksum()));
     }
 
-    public List<XmlDto> getXmls() {
+    public List<ArchivalObjectDto> getXmls() {
         return Collections.unmodifiableList(xmls);
     }
 
-    public XmlDto getXml(int index) {
+    public ArchivalObjectDto getXml(int index) {
         return xmls.get(index);
     }
 
     /**
      * Used when the aip has single XML i.e. it is just under process related to creation.
      */
-    public XmlDto getXml() {
+    public ArchivalObjectDto getXml() {
         return xmls.get(0);
     }
 
-    public void addXml(XmlDto xml) {
+    public void addXml(ArchivalObjectDto xml) {
         xmls.add(xml);
     }
 }

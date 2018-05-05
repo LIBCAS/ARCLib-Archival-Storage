@@ -10,7 +10,7 @@ import org.hibernate.annotations.BatchSize;
 import javax.persistence.*;
 
 /**
- * XML database entity. Its id is used only on the service layer and is neither accessible over API nor projected to storage.
+ * XML database entity.
  */
 @Getter
 @Setter
@@ -34,16 +34,6 @@ public class AipXml extends ArchivalObject {
      */
     public AipXml(String id, Checksum checksum, AipSip sip, int version, ObjectState state) {
         super(id, checksum);
-        this.sip = sip;
-        this.version = version;
-        this.state = state;
-    }
-
-    /**
-     * Creates entity with generated id.
-     */
-    public AipXml(Checksum checksum, AipSip sip, int version, ObjectState state) {
-        super(checksum);
         this.sip = sip;
         this.version = version;
         this.state = state;

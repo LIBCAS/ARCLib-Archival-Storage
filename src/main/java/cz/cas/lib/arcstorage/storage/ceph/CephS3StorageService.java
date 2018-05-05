@@ -23,16 +23,15 @@ import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.input.NullInputStream;
 
-import java.io.BufferedInputStream;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 
 @Slf4j
 public class CephS3StorageService implements StorageService {
@@ -62,9 +61,9 @@ public class CephS3StorageService implements StorageService {
     public void storeAip(AipDto aipDto, AtomicBoolean rollback) throws StorageException {
         AmazonS3 s3 = connect();
         ArchivalObjectDto sip = aipDto.getSip();
-        XmlDto xml = aipDto.getXml();
+        ArchivalObjectDto xml = aipDto.getXml();
         storeFile(s3, sip.getId(), sip.getInputStream(), sip.getChecksum(), rollback);
-        storeFile(s3, toXmlId(sip.getId(), xml.getVersion()), xml.getInputStream(), xml.getChecksum(), rollback);
+        storeFile(s3, xml.getId(), xml.getInputStream(), xml.getChecksum(), rollback);
     }
 
     /**
@@ -73,34 +72,35 @@ public class CephS3StorageService implements StorageService {
      * @param sipId
      * @param xmlVersions specifies which XML versions should be retrieved, typically all or the latest only
      * @return
-     * @throws StorageException
+     * @throws FileDoesNotExistException
      */
     @Override
-    public List<FileContentDto> getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException {
+    public AipRetrievalResource getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException {
         AmazonS3 s3 = connect();
-        List<FileContentDto> list = new ArrayList<>();
         checkFileExists(s3, sipId);
-        list.add(new FileContentDto(s3.getObject(storageConfig.getLocation(), sipId).getObjectContent()));
+        AipRetrievalResource aip = new AipRetrievalResource(new ClosableS3(s3));
+        aip.setSip(s3.getObject(storageConfig.getLocation(), sipId).getObjectContent());
         for (Integer xmlVersion : xmlVersions) {
             String xmlId = toXmlId(sipId, xmlVersion);
             checkFileExists(s3, xmlId);
-            list.add(new FileContentDto(s3.getObject(storageConfig.getLocation(), xmlId).getObjectContent()));
+            aip.addXml(xmlVersion, s3.getObject(storageConfig.getLocation(), xmlId).getObjectContent());
         }
-        return list;
+        return aip;
     }
 
     @Override
-    public void storeXml(String sipId, XmlDto xmlRef, AtomicBoolean rollback) throws StorageException {
+    public void storeObject(ArchivalObjectDto archivalObject, AtomicBoolean rollback) throws StorageException {
         AmazonS3 s3 = connect();
-        storeFile(s3, toXmlId(sipId, xmlRef.getVersion()), xmlRef.getInputStream(), xmlRef.getChecksum(), rollback);
+        storeFile(s3, archivalObject.getId(), archivalObject.getInputStream(), archivalObject.getChecksum(), rollback);
     }
 
     @Override
-    public FileContentDto getXml(String sipId, int version) throws FileDoesNotExistException {
+    public ObjectRetrievalResource getObject(String id) throws FileDoesNotExistException {
         AmazonS3 s3 = connect();
-        String xmlId = toXmlId(sipId, version);
-        checkFileExists(s3, xmlId);
-        return new FileContentDto(s3.getObject(storageConfig.getLocation(), xmlId).getObjectContent());
+        checkFileExists(s3, id);
+        return new ObjectRetrievalResource(
+                s3.getObject(storageConfig.getLocation(), id).getObjectContent(),
+                new ClosableS3(s3));
     }
 
     @Override
@@ -140,9 +140,9 @@ public class CephS3StorageService implements StorageService {
     }
 
     @Override
-    public void rollbackXml(String sipId, int version) throws StorageException {
+    public void rollbackObject(String id) throws StorageException {
         AmazonS3 s3 = connect();
-        rollbackFile(s3, toXmlId(sipId, version));
+        rollbackFile(s3, id);
     }
 
     @Override
@@ -315,5 +315,19 @@ public class CephS3StorageService implements StorageService {
 
     String toMetadataObjectId(String objId) {
         return objId + ".meta";
+    }
+
+    private class ClosableS3 implements Closeable {
+
+        private AmazonS3 s3;
+
+        public ClosableS3(AmazonS3 s3) {
+            this.s3 = s3;
+        }
+
+        @Override
+        public void close() throws IOException {
+            s3.shutdown();
+        }
     }
 }

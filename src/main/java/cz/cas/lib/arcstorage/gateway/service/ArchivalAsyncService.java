@@ -3,8 +3,7 @@ package cz.cas.lib.arcstorage.gateway.service;
 
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.gateway.dto.AipDto;
-import cz.cas.lib.arcstorage.gateway.dto.FileContentDto;
-import cz.cas.lib.arcstorage.gateway.dto.XmlDto;
+import cz.cas.lib.arcstorage.gateway.dto.ArchivalObjectDto;
 import cz.cas.lib.arcstorage.gateway.exception.CantReadException;
 import cz.cas.lib.arcstorage.gateway.exception.CantWriteException;
 import cz.cas.lib.arcstorage.gateway.exception.InvalidChecksumException;
@@ -135,11 +134,11 @@ public class ArchivalAsyncService {
     }
 
     @Async
-    public void updateXml(String sipId, XmlDto xml) {
+    public void updateObject(ArchivalObjectDto archivalObject) {
         String op = "AIP storage ";
-        Path tmpXmlPath = tmpFolder.resolve(xml.getId());
+        Path tmpXmlPath = tmpFolder.resolve(archivalObject.getId());
         try {
-            Files.copy(xml.getInputStream(), tmpXmlPath, StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(archivalObject.getInputStream(), tmpXmlPath, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             throw new CantWriteException(tmpXmlPath.toString(), e);
         }
@@ -149,10 +148,11 @@ public class ArchivalAsyncService {
         for (StorageService a : adapters) {
             CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                         try (BufferedInputStream xmlStream = new BufferedInputStream(new FileInputStream(tmpXmlPath.toFile()))) {
-                            a.storeXml(sipId, new XmlDto(xml, new FileContentDto(xmlStream)), rollback);
-                            log.info(strSX(a.getStorageConfig().getName(), xml.getId()) + op + "success");
+                            ArchivalObjectDto archivalObjectCpy = new ArchivalObjectDto(archivalObject.getId(), xmlStream, archivalObject.getChecksum());
+                            a.storeObject(archivalObjectCpy, rollback);
+                            log.info(strSX(a.getStorageConfig().getName(), archivalObject.getId()) + op + "success");
                         } catch (StorageException e) {
-                            log.warn(strSX(a.getStorageConfig().getName(), xml.getId()) + op + "error");
+                            log.warn(strSX(a.getStorageConfig().getName(), archivalObject.getId()) + op + "error");
                             throw new GeneralException(e);
                         } catch (IOException e) {
                             throw new CantReadException(tmpXmlPath.toString(), e);
@@ -179,8 +179,8 @@ public class ArchivalAsyncService {
         }
 
         if (!rollback.get()) {
-            archivalDbService.finishXmlProcess(xml.getId());
-            log.info(strX(xml.getId()) + op + "success on all storages");
+            archivalDbService.finishXmlProcess(archivalObject.getId());
+            log.info(strX(archivalObject.getId()) + op + "success on all storages");
             return;
         }
         log.info(op + "Archival storage error. Starting rollback.");
@@ -188,10 +188,10 @@ public class ArchivalAsyncService {
         for (StorageService a : adapters) {
             CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                 try {
-                    a.rollbackXml(xml.getId(), xml.getVersion());
-                    log.warn(strSX(a.getStorageConfig().getName(), xml.getId()) + "rollbacked");
+                    a.rollbackObject(archivalObject.getId());
+                    log.warn(strSX(a.getStorageConfig().getName(), archivalObject.getId()) + "rollbacked");
                 } catch (StorageException e) {
-                    log.error(strSX(a.getStorageConfig().getName(), xml.getId()) + "rollback process error");
+                    log.error(strSX(a.getStorageConfig().getName(), archivalObject.getId()) + "rollback process error");
                     throw new GeneralException(e);
                 }
             }, executor);
@@ -199,14 +199,14 @@ public class ArchivalAsyncService {
         }
         try {
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[futures.size()])).get();
-            archivalDbService.rollbackXml(xml.getId());
-            log.info(strX(xml.getId()) + "rollback successful on all storages.");
+            archivalDbService.rollbackXml(archivalObject.getId());
+            log.info(strX(archivalObject.getId()) + "rollback successful on all storages.");
         } catch (InterruptedException e) {
-            archivalDbService.setXmlFailed(xml.getId());
+            archivalDbService.setXmlFailed(archivalObject.getId());
             log.error("Main thread has been interrupted during rollback.");
         } catch (ExecutionException e) {
-            archivalDbService.setXmlFailed(xml.getId());
-            log.error(strX(xml.getId()) + "rollback failed on some storages.");
+            archivalDbService.setXmlFailed(archivalObject.getId());
+            log.error(strX(archivalObject.getId()) + "rollback failed on some storages.");
         }
     }
 

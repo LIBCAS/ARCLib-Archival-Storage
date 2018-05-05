@@ -14,7 +14,6 @@ import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -26,9 +25,10 @@ import static cz.cas.lib.arcstorage.util.Utils.bytesToHexString;
  * <ul>
  * <li>initial MD5 storageChecksum of file</li>
  * <li>creation time of file</li>
- * <li>state of file matching {@link ObjectState} or {@link XmlState}, except FAILED state which signalizes fail of storage and thus is not retrievable (thus files marked as FAILED in database may not exist on storage or have PROCESSING state on storage)</li>
- * <li>for XML its version and ID of SIP</li>
+ * <li>state of file matching {@link ObjectState}, except FAILED state which signalizes fail of storage and thus is not retrievable (thus files marked as FAILED in database may not exist on storage or have PROCESSING state on storage)</li>
+ * <li>for AIP XML its version and ID of SIP</li>
  * </ul>
+ * When accessing AIP XML separately (e.g. AIP XML update, AIP XML retrieval) it is treated as general object.
  */
 
 public interface StorageService {
@@ -56,7 +56,7 @@ public interface StorageService {
     void storeAip(AipDto aipDto, AtomicBoolean rollback) throws StorageException;
 
     /**
-     * Retrieves reference to Aip files. Caller is responsible for calling {@link FileContentDto#freeSources()} once the stream is not needed anymore.
+     * Retrieves reference to Aip files. Caller is responsible for calling {@link AipRetrievalResource#close()} once the stream is not needed anymore.
      *
      * @param sipId
      * @param xmlVersions specifies which XML versions should be retrieved, typically all or the latest only
@@ -64,10 +64,10 @@ public interface StorageService {
      * @throws StorageException
      * @throws cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException
      */
-    List<FileContentDto> getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException, StorageException;
+    AipRetrievalResource getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException, StorageException;
 
     /**
-     * Stores XML files into storage.
+     * Stores object into storage.
      * <p>
      * If rollback is set to true by another thread, this method instance must stop computation as soon as possible.
      * In this case, throwing exception is optional and is better to avoid, so that the log does not contain exceptions from all threads even if just the first one which set rollback to true is known to be the error one.
@@ -82,18 +82,17 @@ public interface StorageService {
      * This operation may take a while and therefore sets file state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set state to PROCESSING before calling this method and to desired state after the method is done.
      * </p>
      */
-    void storeXml(String sipId, XmlDto xmlRef, AtomicBoolean rollback) throws StorageException;
+    void storeObject(ArchivalObjectDto objectDto, AtomicBoolean rollback) throws StorageException;
 
     /**
-     * Retrieves reference to AipXml file. Caller is responsible for calling {@link FileContentDto#freeSources()} once the stream is not needed anymore.
+     * Retrieves reference to object. Caller is responsible for calling {@link ObjectRetrievalResource#close()} once the stream is not needed anymore.
      *
-     * @param sipId
-     * @param version
+     * @param id object id
      * @return file stream
      * @throws StorageException
      * @throws cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException
      */
-    FileContentDto getXml(String sipId, int version) throws FileDoesNotExistException, StorageException;
+    ObjectRetrievalResource getObject(String id) throws FileDoesNotExistException, StorageException;
 
     /**
      * Stores SIP file into storage.
@@ -146,7 +145,7 @@ public interface StorageService {
     void rollbackAip(String sipId) throws StorageException;
 
     /**
-     * Rollbacks XML file from storage. Used only in case of cleaning process after storage/application failure.
+     * Rollbacks object from storage. Used only in case of cleaning process after storage/application failure.
      * <p>
      * In any case (file not found / already rollbacked / file which was never actually stored / inconsistent ...) this method has to set ROLLBACKED state in metadata and delete the file (if exists).
      * </p>
@@ -154,11 +153,10 @@ public interface StorageService {
      * This operation may take a while and therefore sets file state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set state to PROCESSING before calling this method and to desired state after the method is done.
      * </p>
      *
-     * @param sipId
-     * @param version
+     * @param id object id
      * @throws StorageException
      */
-    void rollbackXml(String sipId, int version) throws StorageException;
+    void rollbackObject(String id) throws StorageException;
 
     /**
      * Retrieves information about AIP such as its state etc. and also info about SIP and XMLs fixity.
@@ -246,9 +244,4 @@ public interface StorageService {
             return new Checksum(checksumType, bytesToHexString(complete.digest()));
         }
     }
-
-    default String toXmlId(String sipId, int version) {
-        return sipId + "_xml_" + version;
-    }
-
 }

@@ -35,7 +35,6 @@ import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-import static cz.cas.lib.arcstorage.util.Utils.asList;
 import static cz.cas.lib.arcstorage.util.Utils.asMap;
 import static helper.ThrowableAssertion.assertThrown;
 import static java.lang.String.valueOf;
@@ -213,27 +212,33 @@ public class AipApiTest extends DbTest implements ApiTest {
         when(storageProvider.createAdapter(s2)).thenReturn(zfsStorageService);
         when(storageProvider.createAdapter(s3)).thenReturn(cephS3StorageService);
 
-        FileContentDto sipContentDto = new FileContentDto(sipContent, sipContent.getChannel());
-        FileContentDto xml1ContentDto = new FileContentDto(xml1InputStream, xml1InputStream.getChannel());
-        FileContentDto xml2ContentDto = new FileContentDto(xml2InputStream, xml2InputStream.getChannel());
+        AipRetrievalResource aip1 = new AipRetrievalResource(sipContent.getChannel());
+        aip1.setSip(sipContent);
+        aip1.addXml(1, xml1InputStream);
+        aip1.addXml(2, xml2InputStream);
+        when(fsStorageService.getAip(SIP_ID, 1, 2)).thenReturn(aip1);
+        when(zfsStorageService.getAip(SIP_ID, 1, 2)).thenReturn(aip1);
+        when(cephS3StorageService.getAip(SIP_ID, 1, 2)).thenReturn(aip1);
 
-        List<FileContentDto> fileContentDtos1 = asList(sipContentDto, xml1ContentDto, xml2ContentDto);
-        when(fsStorageService.getAip(SIP_ID, 1, 2)).thenReturn(fileContentDtos1);
-        when(zfsStorageService.getAip(SIP_ID, 1, 2)).thenReturn(fileContentDtos1);
-        when(cephS3StorageService.getAip(SIP_ID, 1, 2)).thenReturn(fileContentDtos1);
+        AipRetrievalResource aip2 = new AipRetrievalResource(sipContent.getChannel());
+        aip2.setSip(sipContent);
+        aip2.addXml(2, xml2InputStream);
+        when(fsStorageService.getAip(SIP_ID, 2)).thenReturn(aip2);
+        when(zfsStorageService.getAip(SIP_ID, 2)).thenReturn(aip2);
+        when(cephS3StorageService.getAip(SIP_ID, 2)).thenReturn(aip2);
 
-        List<FileContentDto> fileContentDtos2 = asList(sipContentDto, xml2ContentDto);
-        when(fsStorageService.getAip(SIP_ID, 2)).thenReturn(fileContentDtos2);
-        when(zfsStorageService.getAip(SIP_ID, 2)).thenReturn(fileContentDtos2);
-        when(cephS3StorageService.getAip(SIP_ID, 2)).thenReturn(fileContentDtos2);
+        String xml1Id = toXmlId(SIP_ID, 1);
+        ObjectRetrievalResource xml1res = new ObjectRetrievalResource(xml1InputStream, xml1InputStream.getChannel());
+        String xmll2Id = toXmlId(SIP_ID, 2);
+        ObjectRetrievalResource xml2res = new ObjectRetrievalResource(xml2InputStream, xml2InputStream.getChannel());
 
-        when(fsStorageService.getXml(SIP_ID, 1)).thenReturn(xml1ContentDto);
-        when(zfsStorageService.getXml(SIP_ID, 1)).thenReturn(xml1ContentDto);
-        when(cephS3StorageService.getXml(SIP_ID, 1)).thenReturn(xml1ContentDto);
+        when(fsStorageService.getObject(xml1Id)).thenReturn(xml1res);
+        when(zfsStorageService.getObject(xml1Id)).thenReturn(xml1res);
+        when(cephS3StorageService.getObject(xml1Id)).thenReturn(xml1res);
 
-        when(fsStorageService.getXml(SIP_ID, 2)).thenReturn(xml2ContentDto);
-        when(zfsStorageService.getXml(SIP_ID, 2)).thenReturn(xml2ContentDto);
-        when(cephS3StorageService.getXml(SIP_ID, 2)).thenReturn(xml2ContentDto);
+        when(fsStorageService.getObject(xmll2Id)).thenReturn(xml2res);
+        when(zfsStorageService.getObject(xmll2Id)).thenReturn(xml2res);
+        when(cephS3StorageService.getObject(xmll2Id)).thenReturn(xml2res);
     }
 
     /**

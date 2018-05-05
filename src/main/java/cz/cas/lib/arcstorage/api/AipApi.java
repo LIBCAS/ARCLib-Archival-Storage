@@ -25,6 +25,7 @@ import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 import static cz.cas.lib.arcstorage.util.Utils.checkChecksumFormat;
 import static cz.cas.lib.arcstorage.util.Utils.checkUUID;
 
@@ -47,21 +48,19 @@ public class AipApi {
             throws IOException, RollbackStateException, DeletedStateException, StorageException, StillProcessingStateException, FailedStateException {
         checkUUID(sipId);
 
-        AipDto aip = archivalService.get(sipId, all);
+        AipRetrievalResource aipRetrievalResource = archivalService.get(sipId, all);
         response.setContentType("application/zip");
         response.setStatus(200);
-        response.addHeader("Content-Disposition", "attachment; filename=aip_" + aip.getSip().getId());
+        response.addHeader("Content-Disposition", "attachment; filename=aip_" + sipId);
 
         try (ZipOutputStream zipOut = new ZipOutputStream(new BufferedOutputStream(response.getOutputStream()))) {
-            zipOut.putNextEntry(new ZipEntry(aip.getSip().getId()));
-            IOUtils.copyLarge(new BufferedInputStream(aip.getSip().getInputStream()), zipOut);
+            zipOut.putNextEntry(new ZipEntry(sipId));
+            IOUtils.copyLarge(new BufferedInputStream(aipRetrievalResource.getSip()), zipOut);
             zipOut.closeEntry();
-            aip.getSip().freeSources();
-            for (XmlDto xml : aip.getXmls()) {
-                zipOut.putNextEntry(new ZipEntry(String.format("%s_xml_%d", sipId, xml.getVersion())));
-                IOUtils.copyLarge(new BufferedInputStream(xml.getInputStream()), zipOut);
+            for (Integer xmlVersion : aipRetrievalResource.getXmls().keySet()) {
+                zipOut.putNextEntry(new ZipEntry(toXmlId(sipId, xmlVersion)));
+                IOUtils.copyLarge(new BufferedInputStream(aipRetrievalResource.getXmls().get(xmlVersion)), zipOut);
                 zipOut.closeEntry();
-                xml.freeSources();
             }
         }
     }
@@ -77,12 +76,11 @@ public class AipApi {
             Optional<Integer> version, HttpServletResponse response) throws StorageException, StillProcessingStateException,
             RollbackStateException, IOException, FailedStateException {
         checkUUID(sipId);
-        XmlDto xml = archivalService.getXml(sipId, version);
+        ArchivalObjectDto xml = archivalService.getXml(sipId, version);
         response.setContentType("application/xml");
         response.setStatus(200);
-        response.addHeader("Content-Disposition", "attachment; filename=" + sipId + "_xml_" + xml.getVersion());
+        response.addHeader("Content-Disposition", "attachment; filename=" + xml.getId());
         IOUtils.copyLarge(xml.getInputStream(), response.getOutputStream());
-        xml.freeSources();
     }
 
     /**
@@ -118,7 +116,7 @@ public class AipApi {
         Checksum aipXmlChecksum = new Checksum(aipXmlChecksumType, aipXmlChecksumValue);
         checkChecksumFormat(aipXmlChecksum);
 
-        AipDto aipDto = new AipDto(sipId, sip.getInputStream(), sipChecksum, aipXml.getInputStream(), aipXmlChecksum);
+        AipDto aipDto = new AipDto(sipId, sip.getInputStream(), sipChecksum, toXmlId(sipId, 1), aipXml.getInputStream(), aipXmlChecksum);
         archivalService.store(aipDto);
         return sipId;
     }

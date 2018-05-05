@@ -3,19 +3,22 @@ package cz.cas.lib.arcstorage.gateway.dto;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.io.InputStream;
+
 /**
  * DTO for archive file containing its id, checksum and input stream. Used directly as DTO for SIP object with its content.
  */
 @Setter
 @Getter
-public class ArchivalObjectDto extends FileContentDto {
+public class ArchivalObjectDto {
     private String id;
     private Checksum checksum;
+    private InputStream inputStream;
 
-    public ArchivalObjectDto(String id, FileContentDto fileContentDto, Checksum checksum) {
-        super(fileContentDto.getInputStream(), fileContentDto.getChannels());
+    public ArchivalObjectDto(String id, InputStream inputStream, Checksum checksum) {
         this.id = id;
         this.checksum = checksum;
+        this.inputStream = inputStream;
     }
 
     @Override

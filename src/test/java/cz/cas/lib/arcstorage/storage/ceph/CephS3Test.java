@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 import static helper.ThrowableAssertion.assertThrown;
 import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.assertThat;
@@ -162,8 +163,8 @@ public class CephS3Test implements StorageServiceTest {
     @Test
     public void storeAipOk() throws Exception {
         String sipId = testName.getMethodName();
-        String xmlId = service.toXmlId(sipId, 1);
-        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        String xmlId = toXmlId(sipId, 1);
+        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, xmlId, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback);
 
@@ -183,7 +184,7 @@ public class CephS3Test implements StorageServiceTest {
     @Test
     public void storeAipSetsRollback() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto(sipId, getSipStream(), null, getXmlStream(), null);
+        AipDto aip = new AipDto(sipId, getSipStream(), null, toXmlId(sipId, 1), getXmlStream(), null);
         AtomicBoolean rollback = new AtomicBoolean(false);
         assertThrown(() -> service.storeAip(aip, rollback)).isInstanceOf(GeneralException.class);
         assertThat(rollback.get(), is(true));
@@ -193,8 +194,8 @@ public class CephS3Test implements StorageServiceTest {
     public void storeXmlOk() throws Exception {
         String sipId = testName.getMethodName();
         AtomicBoolean rollback = new AtomicBoolean(false);
-        String xmlId = service.toXmlId(sipId, 99);
-        service.storeXml(sipId, new XmlDto(new FileContentDto(getXmlStream()), SIP_CHECKSUM, 99), rollback);
+        String xmlId = toXmlId(sipId, 99);
+        service.storeObject(new ArchivalObjectDto(xmlId, getXmlStream(), SIP_CHECKSUM), rollback);
 
         AmazonS3 s3 = service.connect();
         S3Object xmlObj = s3.getObject(bucketName, xmlId);
@@ -208,28 +209,28 @@ public class CephS3Test implements StorageServiceTest {
     @Test
     public void getAipWithMoreXmlsOk() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, toXmlId(sipId, 1), getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback);
-        service.storeXml(sipId, new XmlDto(new FileContentDto(new ByteArrayInputStream("blob".getBytes())), SIP_CHECKSUM, 2), rollback);
+        service.storeObject(new ArchivalObjectDto(toXmlId(sipId, 2), new ByteArrayInputStream("blob".getBytes()), SIP_CHECKSUM), rollback);
 
-        List<FileContentDto> files = service.getAip(sipId, 2, 1);
-        assertThat(streamToString(files.get(0).getInputStream()), is(SIP_CONTENT));
-        assertThat(streamToString(files.get(1).getInputStream()), is("blob"));
-        assertThat(streamToString(files.get(2).getInputStream()), is(XML_CONTENT));
+        AipRetrievalResource aip1 = service.getAip(sipId, 2, 1);
+        assertThat(streamToString(aip1.getSip()), is(SIP_CONTENT));
+        assertThat(streamToString(aip1.getXmls().get(2)), is("blob"));
+        assertThat(streamToString(aip1.getXmls().get(1)), is(XML_CONTENT));
     }
 
     @Test
     public void getAipWithSpecificXmlOk() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, toXmlId(sipId, 1), getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback);
-        service.storeXml(sipId, new XmlDto(new FileContentDto(new ByteArrayInputStream("blob".getBytes())), SIP_CHECKSUM, 99), rollback);
+        service.storeObject(new ArchivalObjectDto(toXmlId(sipId, 99), new ByteArrayInputStream("blob".getBytes()), SIP_CHECKSUM), rollback);
 
-        List<FileContentDto> files = service.getAip(sipId, 99);
-        assertThat(streamToString(files.get(0).getInputStream()), is(SIP_CONTENT));
-        assertThat(streamToString(files.get(1).getInputStream()), is("blob"));
+        AipRetrievalResource aip1 = service.getAip(sipId, 99);
+        assertThat(streamToString(aip1.getSip()), is(SIP_CONTENT));
+        assertThat(streamToString(aip1.getXmls().get(99)), is("blob"));
     }
 
     @Test
@@ -241,7 +242,7 @@ public class CephS3Test implements StorageServiceTest {
     @Test
     public void getAipMissingXml() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, toXmlId(sipId, 1), getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback);
         assertThrown(() -> service.getAip(sipId, 2)).isInstanceOf(FileDoesNotExistException.class);
@@ -250,25 +251,25 @@ public class CephS3Test implements StorageServiceTest {
     @Test
     public void getXmlOk() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, toXmlId(sipId, 1), getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback);
 
-        FileContentDto file = service.getXml(sipId, 1);
-        assertThat(streamToString(file.getInputStream()), is(XML_CONTENT));
+        ObjectRetrievalResource object = service.getObject(toXmlId(sipId, 1));
+        assertThat(streamToString(object.getInputStream()), is(XML_CONTENT));
     }
 
     @Test
     public void getXmlMissing() throws Exception {
         String sipId = testName.getMethodName();
-        assertThrown(() -> service.getXml(sipId, 1)).isInstanceOf(FileDoesNotExistException.class);
+        assertThrown(() -> service.getObject(toXmlId(sipId, 1))).isInstanceOf(FileDoesNotExistException.class);
     }
 
     @Test
     public void deleteSipMultipleTimesOk() throws Exception {
         String sipId = testName.getMethodName();
-        String xmlId = service.toXmlId(sipId, 1);
-        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        String xmlId = toXmlId(sipId, 1);
+        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, xmlId, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback);
 
@@ -296,7 +297,7 @@ public class CephS3Test implements StorageServiceTest {
     @Test
     public void removeSipMultipleTimesOk() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, toXmlId(sipId, 1), getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback);
 
@@ -319,10 +320,10 @@ public class CephS3Test implements StorageServiceTest {
     @Test
     public void getAipInfoOk() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, toXmlId(sipId, 1), getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback);
-        service.storeXml(sipId, new XmlDto(new FileContentDto(new ByteArrayInputStream("blob".getBytes())), new Checksum(ChecksumType.MD5, "ee26908bf9629eeb4b37dac350f4754a"), 2), rollback);
+        service.storeObject(new ArchivalObjectDto(toXmlId(sipId, 2), new ByteArrayInputStream("blob".getBytes()), new Checksum(ChecksumType.MD5, "ee26908bf9629eeb4b37dac350f4754a")), rollback);
 
         Map<Integer, Checksum> map = new HashMap<>();
         map.put(1, XML_CHECKSUM);
@@ -361,7 +362,7 @@ public class CephS3Test implements StorageServiceTest {
     @Test
     public void getAipInfoMissingXml() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, toXmlId(sipId, 1), getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback);
 
@@ -373,7 +374,7 @@ public class CephS3Test implements StorageServiceTest {
     @Test
     public void getAipInfoDeletedSip() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, toXmlId(sipId, 1), getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback);
         service.deleteSip(sipId);
@@ -455,8 +456,8 @@ public class CephS3Test implements StorageServiceTest {
     @Test
     public void rollbackAipOk() throws Exception {
         String sipId = testName.getMethodName();
-        String xmlId = service.toXmlId(sipId, 1);
-        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        String xmlId = toXmlId(sipId, 1);
+        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, xmlId, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback);
 
@@ -476,12 +477,12 @@ public class CephS3Test implements StorageServiceTest {
     @Test
     public void rollbackXmlOk() throws Exception {
         String sipId = testName.getMethodName();
-        String xmlId = service.toXmlId(sipId, 1);
-        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        String xmlId = toXmlId(sipId, 1);
+        AipDto aip = new AipDto(sipId, getSipStream(), SIP_CHECKSUM, xmlId, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback);
 
-        service.rollbackXml(sipId, 1);
+        service.rollbackObject(toXmlId(sipId, 1));
 
         AmazonS3 s3 = service.connect();
         S3Object sipObj = s3.getObject(bucketName, sipId);

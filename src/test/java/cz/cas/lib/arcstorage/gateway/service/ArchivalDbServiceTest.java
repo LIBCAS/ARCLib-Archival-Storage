@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 import static helper.ThrowableAssertion.assertThrown;
 import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.assertThat;
@@ -83,7 +84,8 @@ public class ArchivalDbServiceTest extends DbTest {
 
     @Test
     public void registerAipCreation() {
-        String xmlId = service.registerAipCreation(name.getMethodName(), sipChecksum, aipXmlChecksum);
+        String xmlId = toXmlId(name.getMethodName(), 1);
+        service.registerAipCreation(name.getMethodName(), sipChecksum, xmlId, aipXmlChecksum);
         assertThat(sipStore.find(name.getMethodName()).getState(), equalTo(ObjectState.PROCESSING));
         assertThat(xmlStore.find(xmlId).getState(), equalTo(ObjectState.PROCESSING));
         assertThat(xmlStore.find(xmlId).getVersion(), is(1));
@@ -93,7 +95,8 @@ public class ArchivalDbServiceTest extends DbTest {
 
     @Test
     public void finishAipCreation() {
-        String xmlId = service.registerAipCreation(name.getMethodName(), sipChecksum, aipXmlChecksum);
+        String xmlId = toXmlId(name.getMethodName(), 1);
+        service.registerAipCreation(name.getMethodName(), sipChecksum, xmlId, aipXmlChecksum);
         service.finishAipCreation(name.getMethodName(), xmlId);
         assertThat(sipStore.find(name.getMethodName()).getState(), equalTo(ObjectState.ARCHIVED));
         assertThat(xmlStore.find(xmlId).getState(), equalTo(ObjectState.ARCHIVED));
@@ -179,14 +182,14 @@ public class ArchivalDbServiceTest extends DbTest {
         sipStore.save(sip2);
         sipStore.save(sip3);
 
-        AipXml aipXml1 = new AipXml(aipXmlChecksum, sip2, 1, ObjectState.FAILED);
+        AipXml aipXml1 = new AipXml("id1", aipXmlChecksum, sip2, 1, ObjectState.FAILED);
         xmlStore.save(aipXml1);
-        AipXml aipXml2 = new AipXml(aipXmlChecksum, sip2, 1, ObjectState.PROCESSING);
+        AipXml aipXml2 = new AipXml("id2", aipXmlChecksum, sip2, 1, ObjectState.PROCESSING);
         xmlStore.save(aipXml2);
 
-        AipXml aipXm3 = new AipXml(aipXmlChecksum, sip3, 1, ObjectState.FAILED);
+        AipXml aipXm3 = new AipXml("id3", aipXmlChecksum, sip3, 1, ObjectState.FAILED);
         xmlStore.save(aipXm3);
-        AipXml aipXml4 = new AipXml(aipXmlChecksum, sip3, 1, ObjectState.PROCESSING);
+        AipXml aipXml4 = new AipXml("id4", aipXmlChecksum, sip3, 1, ObjectState.PROCESSING);
         xmlStore.save(aipXml4);
 
         flushCache();
@@ -205,9 +208,11 @@ public class ArchivalDbServiceTest extends DbTest {
         sipStore.save(sip2);
         sipStore.save(sip3);
 
-        AipXml aipXml1 = new AipXml(aipXmlChecksum, sip2, 1, ObjectState.FAILED);
+        String s2xmlId = toXmlId(sip2.getId(), 1);
+        String s3xmlId = toXmlId(sip3.getId(), 1);
+        AipXml aipXml1 = new AipXml(s2xmlId, aipXmlChecksum, sip2, 1, ObjectState.FAILED);
         xmlStore.save(aipXml1);
-        AipXml aipXml2 = new AipXml(aipXmlChecksum, sip3, 1, ObjectState.PROCESSING);
+        AipXml aipXml2 = new AipXml(s3xmlId, aipXmlChecksum, sip3, 1, ObjectState.PROCESSING);
         xmlStore.save(aipXml2);
 
         flushCache();
@@ -244,17 +249,17 @@ public class ArchivalDbServiceTest extends DbTest {
 
     @Test
     public void alreadyExistsTest() {
-        assertThrown(() -> service.registerAipCreation(SIP_ID, sipChecksum, aipXmlChecksum))
+        assertThrown(() -> service.registerAipCreation(SIP_ID, sipChecksum, S, aipXmlChecksum))
                 .isInstanceOf(ConflictObject.class);
     }
 
     @Test
     public void nullTest() {
-        assertThrown(() -> service.registerAipCreation(null, sipChecksum, aipXmlChecksum))
+        assertThrown(() -> service.registerAipCreation(null, sipChecksum, S, aipXmlChecksum))
                 .isInstanceOf(BadArgument.class);
-        assertThrown(() -> service.registerAipCreation(S, null, aipXmlChecksum))
+        assertThrown(() -> service.registerAipCreation(S, null, S, aipXmlChecksum))
                 .isInstanceOf(BadArgument.class);
-        assertThrown(() -> service.registerAipCreation("blah", sipChecksum, null))
+        assertThrown(() -> service.registerAipCreation("blah", sipChecksum, S, null))
                 .isInstanceOf(BadArgument.class);
         assertThrown(() -> service.registerXmlUpdate(null, aipXmlChecksum)).isInstanceOf(BadArgument.class);
         assertThrown(() -> service.registerXmlUpdate(S, null)).isInstanceOf(BadArgument.class);

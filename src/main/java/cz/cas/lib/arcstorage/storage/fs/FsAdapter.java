@@ -5,7 +5,6 @@ import cz.cas.lib.arcstorage.gateway.dto.*;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -30,18 +29,18 @@ public interface FsAdapter extends StorageService {
     }
 
     @Override
-    default List<FileContentDto> getAip(String sipId, Integer... xmlVersions) throws StorageException {
+    default AipRetrievalResource getAip(String sipId, Integer... xmlVersions) throws StorageException {
         return getFsProcessor().getAip(sipId, xmlVersions);
     }
 
     @Override
-    default void storeXml(String sipId, XmlDto xmlRef, AtomicBoolean rollback) throws StorageException {
-        getFsProcessor().storeXml(sipId, xmlRef, rollback);
+    default void storeObject(ArchivalObjectDto archivalObjectDto, AtomicBoolean rollback) throws StorageException {
+        getFsProcessor().storeObject(archivalObjectDto, rollback);
     }
 
     @Override
-    default FileContentDto getXml(String sipId, int version) throws StorageException {
-        return getFsProcessor().getXml(sipId, version);
+    default ObjectRetrievalResource getObject(String id) throws StorageException {
+        return getFsProcessor().getObject(id);
     }
 
     @Override
@@ -65,8 +64,8 @@ public interface FsAdapter extends StorageService {
     }
 
     @Override
-    default void rollbackXml(String sipId, int version) throws StorageException {
-        getFsProcessor().rollbackXml(sipId, version);
+    default void rollbackObject(String sipId) throws StorageException {
+        getFsProcessor().rollbackObject(sipId);
     }
 
     @Override

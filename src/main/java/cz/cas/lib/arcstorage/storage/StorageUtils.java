@@ -7,13 +7,12 @@ import cz.cas.lib.arcstorage.gateway.dto.Checksum;
 import cz.cas.lib.arcstorage.gateway.exception.InvalidChecksumException;
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.BufferedInputStream;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static cz.cas.lib.arcstorage.util.Utils.bytesToHexString;
 import static cz.cas.lib.arcstorage.util.Utils.notNull;
@@ -40,6 +39,35 @@ public class StorageUtils {
                 }
             } while (numRead != -1);
             return new Checksum(checksumType, bytesToHexString(complete.digest()));
+        } catch (IOException e) {
+            log.error("unable to compute hash", e);
+            throw new GeneralException("unable to compute hash", e);
+        }
+    }
+
+    /**
+     * Reads inputstream, writes it to ouptutstream and computes checksum of the stream during the copy process.
+     *
+     * @param inputStream  stream to be copied
+     * @param outputStream stream to which should be the input copied
+     * @param checksumType type of checksum to compute
+     * @return computed checksum
+     */
+    public static Checksum copyStreamAndComputeChecksum(InputStream inputStream, OutputStream outputStream, ChecksumType checksumType) {
+        MessageDigest checksum = checksumComputationPrecheck(inputStream, checksumType);
+
+        try (BufferedInputStream bis = new BufferedInputStream(inputStream);
+             BufferedOutputStream bos = new BufferedOutputStream(outputStream)) {
+            byte[] buffer = new byte[8192];
+            int numRead;
+            do {
+                numRead = bis.read(buffer);
+                if (numRead > 0) {
+                    checksum.update(buffer, 0, numRead);
+                    bos.write(buffer, 0, numRead);
+                }
+            } while (numRead != -1);
+            return new Checksum(checksumType, bytesToHexString(checksum.digest()));
         } catch (IOException e) {
             log.error("unable to compute hash", e);
             throw new GeneralException("unable to compute hash", e);
@@ -75,5 +103,16 @@ public class StorageUtils {
                 throw new InvalidChecksumException(tmpSipPath, computedChecksum, checksum);
             }
         }
+    }
+
+    public static String toXmlId(String sipId, int version) {
+        return sipId + "_xml_" + version;
+    }
+
+    public static int extractXmlVersion(String xmlId) {
+        Matcher matcher = Pattern.compile("\\w+_xml_(\\d+)").matcher(xmlId);
+        if (!matcher.find())
+            throw new GeneralException("trying to extract XML version from string which is not valid XML id");
+        return Integer.parseInt(matcher.group(1));
     }
 }
