@@ -1,15 +1,14 @@
 package cz.cas.lib.arcstorage.service;
 
 
-import cz.cas.lib.arcstorage.exception.GeneralException;
+import cz.cas.lib.arcstorage.domain.store.Transactional;
 import cz.cas.lib.arcstorage.dto.AipDto;
 import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
+import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.service.exception.CantReadException;
 import cz.cas.lib.arcstorage.service.exception.CantWriteException;
-import cz.cas.lib.arcstorage.service.exception.InvalidChecksumException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
-import cz.cas.lib.arcstorage.domain.store.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
@@ -19,6 +18,7 @@ import javax.inject.Inject;
 import java.io.BufferedInputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -30,7 +30,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static cz.cas.lib.arcstorage.storage.StorageUtils.validateChecksum;
 import static cz.cas.lib.arcstorage.util.Utils.*;
 
 @Service
@@ -43,35 +42,22 @@ public class ArchivalAsyncService {
 
     @Async
     @Transactional
-    public void store(AipDto aip, List<StorageService> storageServices) throws InvalidChecksumException {
+    public void store(AipDto aip, Path tmpSipPath, List<StorageService> storageServices) {
         String op = "AIP storage ";
-        Path tmpXmlPath = tmpFolder.resolve(aip.getXml().getId());
-        Path tmpSipPath = tmpFolder.resolve(aip.getSip().getId());
-        try {
-            Files.copy(aip.getXml().getInputStream(), tmpXmlPath, StandardCopyOption.REPLACE_EXISTING);
-            validateChecksum(aip.getXml().getChecksum(), tmpXmlPath);
-        } catch (IOException e) {
-            throw new CantWriteException(tmpXmlPath.toString(), e);
-        }
-        try {
-            Files.copy(aip.getSip().getInputStream(), tmpSipPath, StandardCopyOption.REPLACE_EXISTING);
-            validateChecksum(aip.getSip().getChecksum(), tmpSipPath);
-        } catch (IOException e) {
-            throw new CantWriteException(tmpSipPath.toString(), e);
-        }
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         AtomicBoolean rollback = new AtomicBoolean(false);
         for (StorageService a : storageServices) {
             CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                         try (BufferedInputStream sipStream = new BufferedInputStream(new FileInputStream(tmpSipPath.toFile()));
-                             BufferedInputStream xmlStream = new BufferedInputStream(new FileInputStream(tmpXmlPath.toFile()))) {
+                             InputStream xmlStream = (aip.getXml().getInputStream())) {
                             a.storeAip(new AipDto(aip, sipStream, xmlStream), rollback);
                             log.info(strSA(a.getStorageConfig().getName(), aip.getSip().getId()) + op + "success");
                         } catch (StorageException e) {
                             log.warn(strSA(a.getStorageConfig().getName(), aip.getSip().getId()) + op + "error: " + e);
                             throw new GeneralException(e);
                         } catch (IOException e) {
-                            throw new CantReadException(tmpSipPath.toString() + " or " + tmpXmlPath.toString(), e);
+                            throw new CantReadException("SIP tmp file at path " + tmpSipPath.toString() +
+                                    " or stream of XML " + aip.getXml().getId(), e);
                         }
                     }, executor
             );
@@ -88,10 +74,9 @@ public class ArchivalAsyncService {
             log.error(op + "some storage has encountered problem");
         } finally {
             try {
-                Files.delete(tmpXmlPath);
                 Files.delete(tmpSipPath);
             } catch (IOException e) {
-                log.error("Could not delete temporary files " + tmpSipPath + " " + tmpXmlPath);
+                log.error("Could not delete temporary file " + tmpSipPath);
             }
         }
         if (!rollback.get()) {

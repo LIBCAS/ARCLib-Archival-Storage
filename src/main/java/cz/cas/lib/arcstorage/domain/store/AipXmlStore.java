@@ -2,8 +2,8 @@ package cz.cas.lib.arcstorage.domain.store;
 
 import cz.cas.lib.arcstorage.domain.entity.AipSip;
 import cz.cas.lib.arcstorage.domain.entity.AipXml;
+import cz.cas.lib.arcstorage.domain.entity.QAipXml;
 import cz.cas.lib.arcstorage.dto.ObjectState;
-import cz.cas.lib.arcstorage.domain.QAipXml;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;

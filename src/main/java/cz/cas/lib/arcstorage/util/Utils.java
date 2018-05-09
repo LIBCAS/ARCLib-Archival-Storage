@@ -9,13 +9,11 @@ import cz.cas.lib.arcstorage.domain.entity.DomainObject;
 import cz.cas.lib.arcstorage.dto.Checksum;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.service.exception.ConfigParserException;
+import org.apache.commons.io.IOUtils;
 import org.springframework.aop.framework.Advised;
 import org.springframework.aop.support.AopUtils;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.Serializable;
+import java.io.*;
 import java.math.BigDecimal;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -447,5 +445,11 @@ public class Utils {
         } catch (Exception e) {
             throw new BadRequestException(id + " is not valid UUID");
         }
+    }
+
+    public static byte[] inputStreamToBytes(InputStream ios) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        IOUtils.copy(ios, baos);
+        return baos.toByteArray();
     }
 }

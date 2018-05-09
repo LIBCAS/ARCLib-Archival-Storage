@@ -1,6 +1,6 @@
 package cz.cas.lib.arcstorage.domain.store;
 
-import cz.cas.lib.arcstorage.domain.QStorageConfig;
+import cz.cas.lib.arcstorage.domain.entity.QStorageConfig;
 import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;

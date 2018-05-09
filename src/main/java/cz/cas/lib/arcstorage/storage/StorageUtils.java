@@ -1,9 +1,9 @@
 package cz.cas.lib.arcstorage.storage;
 
-import cz.cas.lib.arcstorage.dto.ChecksumType;
 import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
-import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.dto.Checksum;
+import cz.cas.lib.arcstorage.dto.ChecksumType;
+import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.service.exception.InvalidChecksumException;
 import lombok.extern.slf4j.Slf4j;
 
@@ -100,8 +100,15 @@ public class StorageUtils {
         try (BufferedInputStream fis = new BufferedInputStream(new FileInputStream(tmpSipPath.toString()))) {
             Checksum computedChecksum = StorageUtils.computeChecksum(fis, checksum.getType());
             if (!checksum.equals(computedChecksum)) {
-                throw new InvalidChecksumException(tmpSipPath, computedChecksum, checksum);
+                throw new InvalidChecksumException(computedChecksum, checksum);
             }
+        }
+    }
+
+    public static void validateChecksum(Checksum checksum, InputStream inputStream) throws InvalidChecksumException {
+        Checksum computedChecksum = StorageUtils.computeChecksum(inputStream, checksum.getType());
+        if (!checksum.equals(computedChecksum)) {
+            throw new InvalidChecksumException(computedChecksum, checksum);
         }
     }
 

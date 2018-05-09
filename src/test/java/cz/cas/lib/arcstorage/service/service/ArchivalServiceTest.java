@@ -21,6 +21,8 @@ import cz.cas.lib.arcstorage.service.exception.state.StillProcessingStateExcepti
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import helper.DbTest;
+import org.apache.commons.io.FileUtils;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -28,8 +30,11 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.extractXmlVersion;
@@ -49,20 +54,21 @@ public class ArchivalServiceTest extends DbTest {
     private static final StorageConfigStore storageConfigStore = new StorageConfigStore();
     private static final ArchivalDbService archivalDbService = new ArchivalDbService();
 
-
     private static final String SIP_ID = "SIPtestID";
     private static final String SIP2_ID = "testSipId";
 
     private static final String XML1_ID = "XML1testID";
     private static final String XML2_ID = "XML2testID";
-    private static final String SIP_HASH = "SIPhash";
-    private static final String XML1_HASH = "XML1hash";
+    private static final String SIP_HASH = "101b295a91f771d96e1987ff501b034c";
+    private static final String XML1_HASH = "f09e5f27526a0ed7ec5b2d9d5c0b53cf";
     private static final String XML2_HASH = "XML2hash";
     private static final String STORAGE_CONFIG = "{\"adapterType\": \"S3\", \"userKey\": \"key\", \"userSecret\": \"secret\", \"region\": \"region\"}";
 
     private static final InputStream SIP_STREAM = new ByteArrayInputStream(SIP_ID.getBytes(StandardCharsets.UTF_8));
     private static final InputStream XML1_STREAM = new ByteArrayInputStream(XML1_ID.getBytes(StandardCharsets.UTF_8));
     private static final InputStream XML2_STREAM = new ByteArrayInputStream(XML2_ID.getBytes(StandardCharsets.UTF_8));
+
+    private static final Path tmpFolder = Paths.get("tmp");
 
     @Mock
     private StorageProvider storageProvider;
@@ -97,6 +103,7 @@ public class ArchivalServiceTest extends DbTest {
         archivalService.setAsyncService(async);
         archivalService.setStorageConfigStore(storageConfigStore);
         archivalService.setStorageProvider(storageProvider);
+        archivalService.setTmpFolder(tmpFolder.toString());
 
         sipHash = new Checksum();
         sipHash.setType(ChecksumType.MD5);
@@ -160,6 +167,11 @@ public class ArchivalServiceTest extends DbTest {
 
         when(storageService.getObject(xml1Id)).thenReturn(xml1);
         when(storageService.getObject(xml2Id)).thenReturn(xml2);
+    }
+
+    @AfterClass
+    public static void tearDown() throws IOException {
+        FileUtils.cleanDirectory(tmpFolder.toFile());
     }
 
     @Test
@@ -236,13 +248,13 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void store() throws InvalidChecksumException, StorageNotReachableException {
+    public void store() throws InvalidChecksumException, StorageNotReachableException, IOException {
         AipDto aipDto = new AipDto(SIP2_ID, SIP_STREAM, sipHash, toXmlId(SIP2_ID, 1), XML1_STREAM, xml1Hash);
         archivalService.store(aipDto);
 
         AipSip aipSip = archivalDbService.getAip(SIP2_ID);
         assertThat(aipSip, notNullValue());
-        verify(async).store(eq(aipDto), anyList());
+        verify(async).store(eq(aipDto), anyObject(), anyList());
     }
 
     @Test

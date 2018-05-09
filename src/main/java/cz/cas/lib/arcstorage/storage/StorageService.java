@@ -1,10 +1,8 @@
 package cz.cas.lib.arcstorage.storage;
 
-import cz.cas.lib.arcstorage.dto.ChecksumType;
-import cz.cas.lib.arcstorage.dto.ObjectState;
 import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
-import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.dto.*;
+import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
 import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
 import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
@@ -195,11 +193,10 @@ public interface StorageService {
      * @param expectedChecksum
      * @param rollback
      * @return
-     * @throws FileCorruptedAfterStoreException if checksums does not match
-     * @throws IOStorageException               in case of any {@link IOException}
-     * @throws GeneralException                 in case of any unexpected error
+     * @throws IOStorageException in case of any {@link IOException}
+     * @throws GeneralException   in case of any unexpected error
      */
-    default boolean verifyChecksum(InputStream fileStream, Checksum expectedChecksum, AtomicBoolean rollback) throws FileCorruptedAfterStoreException, IOStorageException {
+    default boolean verifyChecksum(InputStream fileStream, Checksum expectedChecksum, AtomicBoolean rollback) throws IOStorageException {
         try {
             Checksum checksum = null;
             checksum = computeChecksumRollbackAware(fileStream, expectedChecksum.getType(), rollback);

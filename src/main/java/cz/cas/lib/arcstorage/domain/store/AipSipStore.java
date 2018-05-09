@@ -1,8 +1,8 @@
 package cz.cas.lib.arcstorage.domain.store;
 
 import cz.cas.lib.arcstorage.domain.entity.AipSip;
+import cz.cas.lib.arcstorage.domain.entity.QAipSip;
 import cz.cas.lib.arcstorage.dto.ObjectState;
-import cz.cas.lib.arcstorage.domain.QAipSip;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
