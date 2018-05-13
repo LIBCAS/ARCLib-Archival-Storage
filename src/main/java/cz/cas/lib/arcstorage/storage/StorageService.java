@@ -85,7 +85,7 @@ public interface StorageService {
     /**
      * Retrieves reference to object. Caller is responsible for calling {@link ObjectRetrievalResource#close()} once the stream is not needed anymore.
      *
-     * @param id object id
+     * @param id object storage id
      * @return file stream
      * @throws StorageException
      * @throws cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException
@@ -105,7 +105,7 @@ public interface StorageService {
      * @return Object containing MD5 checksums computed from stored files.
      * @throws IOException
      */
-    void storeSip(ArchivalObjectDto aipRef, AtomicBoolean rollback) throws StorageException;
+    void storeSip(SipDto sipRef, AtomicBoolean rollback) throws StorageException;
 
     /**
      * Deletes SIP file from storage. Must not fail if SIP package is already physically deleted.
@@ -151,7 +151,7 @@ public interface StorageService {
      * This operation may take a while and therefore sets file state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set state to PROCESSING before calling this method and to desired state after the method is done.
      * </p>
      *
-     * @param id object id
+     * @param id object storageId
      * @throws StorageException
      */
     void rollbackObject(String id) throws StorageException;

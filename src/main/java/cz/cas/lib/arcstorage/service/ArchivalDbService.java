@@ -2,9 +2,9 @@ package cz.cas.lib.arcstorage.service;
 
 import cz.cas.lib.arcstorage.domain.entity.AipSip;
 import cz.cas.lib.arcstorage.domain.entity.AipXml;
-import cz.cas.lib.arcstorage.domain.store.AipSipStore;
-import cz.cas.lib.arcstorage.domain.store.AipXmlStore;
-import cz.cas.lib.arcstorage.domain.store.Transactional;
+import cz.cas.lib.arcstorage.domain.entity.ArchivalObject;
+import cz.cas.lib.arcstorage.domain.entity.ObjectType;
+import cz.cas.lib.arcstorage.domain.store.*;
 import cz.cas.lib.arcstorage.dto.Checksum;
 import cz.cas.lib.arcstorage.dto.ObjectState;
 import cz.cas.lib.arcstorage.exception.ConflictObject;
@@ -19,8 +19,9 @@ import org.springframework.transaction.annotation.Propagation;
 
 import javax.inject.Inject;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
-import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 import static cz.cas.lib.arcstorage.util.Utils.notNull;
 
 
@@ -34,25 +35,20 @@ public class ArchivalDbService {
 
     private AipSipStore aipSipStore;
     private AipXmlStore aipXmlStore;
+    private ArchivalObjectStore archivalObjectStore;
 
     /**
      * Registers that AIP creation process has started. Stores AIP records to database and sets their state to <i>processing</i>.
-     *
-     * @param sipId
-     * @param sipChecksum
-     * @param xmlId
-     * @param xmlChecksum
      */
     @org.springframework.transaction.annotation.Transactional(propagation = Propagation.REQUIRES_NEW)
-    public String registerAipCreation(String sipId, Checksum sipChecksum, String xmlId, Checksum xmlChecksum) {
-        AipSip sip = aipSipStore.find(sipId);
-        if (sip != null)
-            throw new ConflictObject(sip);
-        sip = new AipSip(sipId, sipChecksum, ObjectState.PROCESSING);
-        AipXml xml = new AipXml(xmlId, xmlChecksum, new AipSip(sipId), 1, ObjectState.PROCESSING);
+    public void registerAipCreation(String sipId, Checksum sipChecksum, String xmlId, Checksum xmlChecksum) {
+        AipSip existingSip = aipSipStore.find(sipId);
+        if (existingSip != null && !existingSip.getState().equals(ObjectState.ROLLED_BACK) && !existingSip.getState().equals(ObjectState.FAILED))
+            throw new ConflictObject(existingSip);
+        AipSip sip = new AipSip(sipId, sipChecksum, ObjectState.PROCESSING);
+        AipXml xml = new AipXml(xmlId, xmlChecksum, sip, 1, ObjectState.PROCESSING);
         aipSipStore.save(sip);
         aipXmlStore.save(xml);
-        return xml.getId();
     }
 
     /**
@@ -62,10 +58,8 @@ public class ArchivalDbService {
      * @param xmlId
      */
     public void finishAipCreation(String sipId, String xmlId) {
-        AipSip sip = aipSipStore.find(sipId);
-        sip.setState(ObjectState.ARCHIVED);
-        aipSipStore.save(sip);
-        finishXmlProcess(xmlId);
+        setObjectState(sipId, ObjectType.SIP, ObjectState.ARCHIVED);
+        setObjectState(xmlId, ObjectType.XML, ObjectState.ARCHIVED);
     }
 
     /**
@@ -75,11 +69,24 @@ public class ArchivalDbService {
      * @param xmlChecksum
      * @return created XML entity filled ID and version
      */
-    public AipXml registerXmlUpdate(String sipId, Checksum xmlChecksum) {
-        int xmlVersion = aipXmlStore.getNextXmlVersionNumber(sipId);
-        AipXml newVersion = new AipXml(toXmlId(sipId, xmlVersion), xmlChecksum, new AipSip(sipId), xmlVersion, ObjectState.PROCESSING);
-        aipXmlStore.save(newVersion);
-        return newVersion;
+    @org.springframework.transaction.annotation.Transactional(propagation = Propagation.REQUIRES_NEW)
+    public AipXml registerXmlUpdate(String sipId, Checksum xmlChecksum, Optional<Integer> version) {
+        if (version.isPresent()) {
+            AipXml existingXml = aipXmlStore.findBySipAndVersion(sipId, version.get());
+            if (existingXml != null && !existingXml.getState().equals(ObjectState.ROLLED_BACK) && !existingXml.getState().equals(ObjectState.FAILED))
+                throw new ConflictObject(existingXml);
+            if (existingXml == null)
+                existingXml = new AipXml(UUID.randomUUID().toString(), xmlChecksum, new AipSip(sipId), version.get(), ObjectState.PROCESSING);
+            else
+                existingXml.setState(ObjectState.PROCESSING);
+            aipXmlStore.save(existingXml);
+            return existingXml;
+        } else {
+            int xmlVersion = aipXmlStore.getNextXmlVersionNumber(sipId);
+            AipXml newVersion = new AipXml(UUID.randomUUID().toString(), xmlChecksum, new AipSip(sipId), xmlVersion, ObjectState.PROCESSING);
+            aipXmlStore.save(newVersion);
+            return newVersion;
+        }
     }
 
     /**
@@ -108,25 +115,26 @@ public class ArchivalDbService {
     }
 
     /**
-     * Registers that AIP SIP deletion process has ended.
-     *
-     * @param sipId
+     * Sets state of object.
      */
-    public void finishSipDeletion(String sipId) {
-        AipSip sip = aipSipStore.find(sipId);
-        sip.setState(ObjectState.DELETED);
-        aipSipStore.save(sip);
-    }
-
-    /**
-     * Registers that process which used AIP XML file has ended.
-     *
-     * @param xmlId
-     */
-    public void finishXmlProcess(String xmlId) {
-        AipXml xml = aipXmlStore.find(xmlId);
-        xml.setState(ObjectState.ARCHIVED);
-        aipXmlStore.save(xml);
+    public void setObjectState(String databaseId, ObjectType objectType, ObjectState state) {
+        DomainStore store;
+        switch (objectType) {
+            case SIP:
+                store = aipSipStore;
+                break;
+            case XML:
+                store = aipXmlStore;
+                break;
+            case OBJECT:
+                store = archivalObjectStore;
+                break;
+            default:
+                throw new IllegalArgumentException("null object type");
+        }
+        ArchivalObject object = (ArchivalObject) store.find(databaseId);
+        object.setState(state);
+        store.save(object);
     }
 
     /**
@@ -135,7 +143,7 @@ public class ArchivalDbService {
      * @param sipId
      * @param xmlId
      */
-    public void setSipFailed(String sipId, String xmlId) {
+    public void setAipFailed(String sipId, String xmlId) {
         AipSip sip = aipSipStore.find(sipId);
         notNull(sip, () -> {
             log.warn("Could not find AIP: " + sipId);
@@ -152,22 +160,6 @@ public class ArchivalDbService {
         xml.setState(ObjectState.FAILED);
         aipXmlStore.save(xml);
     }
-
-    /**
-     * Called when the update and also rollback processes of AIP XML failed.
-     *
-     * @param xmlId
-     */
-    public void setXmlFailed(String xmlId) {
-        AipXml xml = aipXmlStore.find(xmlId);
-        notNull(xml, () -> {
-            log.warn("Could not find XML: " + xmlId);
-            return new MissingObject(AipXml.class, xmlId);
-        });
-        xml.setState(ObjectState.FAILED);
-        aipXmlStore.save(xml);
-    }
-
 
     /**
      * Logically removes SIP i.e. sets its state to {@link ObjectState#REMOVED} in the database.
@@ -217,22 +209,9 @@ public class ArchivalDbService {
      *
      * @param id
      */
-    public void rollbackSip(String id, String xmlId) {
-        AipSip sip = aipSipStore.find(id);
-        sip.setState(ObjectState.ROLLED_BACK);
-        aipSipStore.save(sip);
-        rollbackXml(xmlId);
-    }
-
-    /**
-     * Rollback XML. Used when the XML update process or AIP creation process fails.
-     *
-     * @param id
-     */
-    public void rollbackXml(String id) {
-        AipXml xml = aipXmlStore.find(id);
-        xml.setState(ObjectState.ROLLED_BACK);
-        aipXmlStore.save(xml);
+    public void rollbackAip(String id, String xmlId) {
+        setObjectState(id, ObjectType.SIP, ObjectState.ROLLED_BACK);
+        setObjectState(xmlId, ObjectType.XML, ObjectState.ROLLED_BACK);
     }
 
     /**
@@ -252,6 +231,11 @@ public class ArchivalDbService {
     public void rollbackUnfinishedFilesRecords() {
         aipSipStore.rollbackUnfinishedSipsRecords();
         aipXmlStore.rollbackUnfinishedXmlsRecords();
+    }
+
+    @Inject
+    public void setArchivalObjectStore(ArchivalObjectStore archivalObjectStore) {
+        this.archivalObjectStore = archivalObjectStore;
     }
 
     @Inject

@@ -1,10 +1,8 @@
 package cz.cas.lib.arcstorage.storage.fs;
 
-import cz.cas.lib.arcstorage.dto.ChecksumType;
-import cz.cas.lib.arcstorage.dto.ObjectState;
 import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
-import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.dto.*;
+import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.StorageUtils;
 import cz.cas.lib.arcstorage.storage.exception.*;
@@ -122,7 +120,7 @@ public class RemoteFsProcessor implements StorageService {
             ssh.connect(storageConfig.getHost(), storageConfig.getPort());
             listenForRollbackToKillSession(ssh, rollback);
             ssh.authPublickey("arcstorage", keyFilePath);
-            String objId = archivalObjectDto.getId();
+            String objId = archivalObjectDto.getStorageId();
             try (SFTPClient sftp = ssh.newSFTPClient()) {
                 storeFile(sftp, getFolderPath(objId), objId, S, archivalObjectDto.getInputStream(), archivalObjectDto.getChecksum(), rollback);
             }
@@ -163,14 +161,14 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public void storeSip(ArchivalObjectDto aipRef, AtomicBoolean rollback) throws StorageException {
+    public void storeSip(SipDto sipRef, AtomicBoolean rollback) throws StorageException {
         try (SSHClient ssh = new SSHClient()) {
             ssh.addHostKeyVerifier(new PromiscuousVerifier());
             ssh.connect(storageConfig.getHost(), storageConfig.getPort());
             listenForRollbackToKillSession(ssh, rollback);
             ssh.authPublickey("arcstorage", keyFilePath);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
-                storeFile(sftp, getFolderPath(aipRef.getId()), aipRef.getId(), S, aipRef.getInputStream(), aipRef.getChecksum(), rollback);
+                storeFile(sftp, getFolderPath(sipRef.getId()), sipRef.getId(), S, sipRef.getInputStream(), sipRef.getChecksum(), rollback);
             }
         } catch (IOException e) {
             rollback.set(true);
@@ -315,7 +313,7 @@ public class RemoteFsProcessor implements StorageService {
      * </p>
      *
      * @param folder   path to new file folder
-     * @param id       id of new file
+     * @param id       storageId of new file
      * @param S        platform separator i.e. / or \
      * @param stream   new file stream
      * @param checksum sipStorageChecksum of the file

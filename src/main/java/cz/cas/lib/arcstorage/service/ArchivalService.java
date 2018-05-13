@@ -2,6 +2,7 @@ package cz.cas.lib.arcstorage.service;
 
 import cz.cas.lib.arcstorage.domain.entity.AipSip;
 import cz.cas.lib.arcstorage.domain.entity.AipXml;
+import cz.cas.lib.arcstorage.domain.entity.ObjectType;
 import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
 import cz.cas.lib.arcstorage.domain.store.StorageConfigStore;
 import cz.cas.lib.arcstorage.domain.store.Transactional;
@@ -137,7 +138,7 @@ public class ArchivalService {
             throw e;
         }
         log.info("XML version: " + requestedXml.getVersion() + " of AIP: " + sipId + " has been successfully retrieved.");
-        return new ArchivalObjectDto(requestedXml.getId(), xmlRef, requestedXml.getChecksum());
+        return new ArchivalObjectDto(requestedXml.getId(), toXmlId(sipId, requestedXml.getVersion()), xmlRef, requestedXml.getChecksum());
     }
 
     /**
@@ -157,24 +158,21 @@ public class ArchivalService {
     @Transactional
     public void store(AipDto aip) throws InvalidChecksumException, StorageNotReachableException, IOException {
         List<StorageService> reachableAdapters = storageProvider.createReachableAdapters();
-        archivalDbService.registerAipCreation(aip.getSip().getId(), aip.getSip().getChecksum(), aip.getXml().getId(),
-                aip.getXml().getChecksum());
-
         //validate checksum of XML
+        byte[] xmlContent;
         try (BufferedInputStream ios = new BufferedInputStream(aip.getXml().getInputStream())) {
-            byte[] bytes = inputStreamToBytes(ios);
-            validateChecksum(aip.getXml().getChecksum(), new ByteArrayInputStream(bytes));
-            aip.getXml().setInputStream(new ByteArrayInputStream(bytes));
+            xmlContent = inputStreamToBytes(ios);
+            validateChecksum(aip.getXml().getChecksum(), new ByteArrayInputStream(xmlContent));
+            aip.getXml().setInputStream(new ByteArrayInputStream(xmlContent));
         }
-
         //copy SIP to tmp file and validate its checksum
         Path tmpSipPath = tmpFolder.resolve(aip.getSip().getId());
         try (BufferedInputStream ios = new BufferedInputStream(aip.getSip().getInputStream())) {
             Files.copy(ios, tmpSipPath, StandardCopyOption.REPLACE_EXISTING);
             validateChecksum(aip.getSip().getChecksum(), tmpSipPath);
         }
-
-        async.store(aip, tmpSipPath, reachableAdapters);
+        archivalDbService.registerAipCreation(aip.getSip().getId(), aip.getSip().getChecksum(), aip.getXml().getDatabaseId(), aip.getXml().getChecksum());
+        async.store(aip, tmpSipPath, xmlContent, reachableAdapters);
     }
 
     /**
@@ -186,10 +184,17 @@ public class ArchivalService {
      * @param xml      Stream of xml file
      * @param checksum
      */
-    public void updateXml(String sipId, InputStream xml, Checksum checksum) throws StorageNotReachableException {
+    @Transactional
+    public void updateXml(String sipId, InputStream xml, Checksum checksum, Optional<Integer> version) throws StorageNotReachableException, IOException, InvalidChecksumException {
         List<StorageService> reachableAdapters = storageProvider.createReachableAdapters();
-        AipXml xmlEntity = archivalDbService.registerXmlUpdate(sipId, checksum);
-        async.updateObject(new ArchivalObjectDto(toXmlId(sipId, xmlEntity.getVersion()), xml, checksum), reachableAdapters);
+        byte[] bytes;
+        try (BufferedInputStream ios = new BufferedInputStream(xml)) {
+            bytes = inputStreamToBytes(ios);
+            validateChecksum(checksum, new ByteArrayInputStream(bytes));
+            xml = new ByteArrayInputStream(bytes);
+        }
+        AipXml xmlEntity = archivalDbService.registerXmlUpdate(sipId, checksum, version);
+        async.putObject(new ArchivalObjectDto(xmlEntity.getId(), toXmlId(sipId, xmlEntity.getVersion()), xml, checksum), ObjectType.XML, new ByteArrayHolder(bytes), reachableAdapters);
     }
 
     /**
@@ -532,7 +537,7 @@ public class ArchivalService {
             //repair sip at the storage
             if (invalidChecksumResult.invalidChecksumSip != null) {
                 InputStream sipInputStream = result.getAipFromStorage().getSip();
-                ArchivalObjectDto sipRef = new ArchivalObjectDto(sipEntity.getId(), sipInputStream, sipEntity.getChecksum());
+                SipDto sipRef = new SipDto(sipEntity.getId(), sipInputStream, sipEntity.getChecksum());
                 try {
                     usedStorageService.storeSip(sipRef, new AtomicBoolean(false));
                     log.info("SIP " + sipEntity.getId() + " has been successfully recovered at storage" +
@@ -546,8 +551,8 @@ public class ArchivalService {
             //repair xmls at the storage
             for (AipXml invalidChecksumXml : invalidChecksumResult.invalidChecksumXmls) {
                 InputStream xmlInputStream = result.getAipFromStorage().getXmls().get(invalidChecksumXml.getVersion());
-                String xmlId = toXmlId(sipEntity.getId(), invalidChecksumXml.getVersion());
-                ArchivalObjectDto xmlDto = new ArchivalObjectDto(xmlId, xmlInputStream, invalidChecksumXml.getChecksum());
+                String xmlStorageId = toXmlId(sipEntity.getId(), invalidChecksumXml.getVersion());
+                ArchivalObjectDto xmlDto = new ArchivalObjectDto(invalidChecksumXml.getId(), xmlStorageId, xmlInputStream, invalidChecksumXml.getChecksum());
                 try {
                     usedStorageService.storeObject(xmlDto, new AtomicBoolean(false));
                     log.info("XML: " + invalidChecksumXml.getId() + " has been successfully recovered at storage" +
@@ -595,8 +600,8 @@ public class ArchivalService {
 
         for (StorageService storageService : invalidChecksumStorages) {
             //repair xml at the given storage
-            String xmlId = toXmlId(xmlEntity.getSip().getId(), xmlEntity.getVersion());
-            ArchivalObjectDto xmlDto = new ArchivalObjectDto(xmlId, xmlInputStream, xmlEntity.getChecksum());
+            String xmlStorageId = toXmlId(xmlEntity.getSip().getId(), xmlEntity.getVersion());
+            ArchivalObjectDto xmlDto = new ArchivalObjectDto(xmlEntity.getId(), xmlStorageId, xmlInputStream, xmlEntity.getChecksum());
             try {
                 storageService.storeObject(xmlDto, new AtomicBoolean(false));
                 log.info("XML: " + xmlEntity.getId() + " has been successfully recovered at storage" +

@@ -2,13 +2,14 @@ package cz.cas.lib.arcstorage.domain.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import cz.cas.lib.arcstorage.dto.ObjectState;
 import cz.cas.lib.arcstorage.dto.Checksum;
-import lombok.Getter;
+import cz.cas.lib.arcstorage.dto.ObjectState;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
-import javax.persistence.*;
+import javax.persistence.Entity;
+import javax.persistence.FetchType;
+import javax.persistence.OneToMany;
+import javax.persistence.Table;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -32,25 +33,14 @@ public class AipSip extends ArchivalObject {
     @OneToMany(mappedBy = "sip", fetch = FetchType.EAGER)
     private List<AipXml> xmls = new ArrayList<>();
 
-    @Setter
-    @Getter
-    @Enumerated(EnumType.STRING)
-    private ObjectState state;
 
     public AipSip(String id) {
         this.id = id;
     }
 
     public AipSip(String id, Checksum checksum, ObjectState state) {
-        super(id, checksum);
-        this.state = state;
-    }
-
-    public AipSip(String id, Checksum checksum, ObjectState state, AipXml... xmls) {
-        this(id, checksum, state);
-        for (AipXml xml : xmls) {
-            addXml(xml);
-        }
+        super(checksum, state);
+        this.id = id;
     }
 
     private void addXml(AipXml aipXml) {

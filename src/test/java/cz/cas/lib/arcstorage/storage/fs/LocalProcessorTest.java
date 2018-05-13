@@ -2,6 +2,7 @@ package cz.cas.lib.arcstorage.storage.fs;
 
 import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.File;
@@ -9,7 +10,6 @@ import java.io.IOException;
 
 import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertThat;
-
 
 public class LocalProcessorTest {
     private LocalFsProcessor service = new LocalFsProcessor(config);

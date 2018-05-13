@@ -27,16 +27,13 @@ public class AipXml extends ArchivalObject {
     private AipSip sip;
     private int version;
 
-    @Enumerated(EnumType.STRING)
-    private ObjectState state;
-
     /**
      * Creates entity with assigned id.
      */
     public AipXml(String id, Checksum checksum, AipSip sip, int version, ObjectState state) {
-        super(id, checksum);
+        super(checksum, state);
+        this.id=id;
         this.sip = sip;
         this.version = version;
-        this.state = state;
     }
 }

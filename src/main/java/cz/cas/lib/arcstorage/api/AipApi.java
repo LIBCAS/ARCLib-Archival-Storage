@@ -88,7 +88,7 @@ public class AipApi {
         ArchivalObjectDto xml = archivalService.getXml(sipId, version);
         response.setContentType("application/xml");
         response.setStatus(200);
-        response.addHeader("Content-Disposition", "attachment; filename=" + xml.getId());
+        response.addHeader("Content-Disposition", "attachment; filename=" + xml.getStorageId());
         IOUtils.copyLarge(xml.getInputStream(), response.getOutputStream());
     }
 
@@ -125,7 +125,7 @@ public class AipApi {
         Checksum aipXmlChecksum = new Checksum(aipXmlChecksumType, aipXmlChecksumValue);
         checkChecksumFormat(aipXmlChecksum);
 
-        AipDto aipDto = new AipDto(sipId, sip.getInputStream(), sipChecksum, toXmlId(sipId, 1), aipXml.getInputStream(), aipXmlChecksum);
+        AipDto aipDto = new AipDto(sipId, sip.getInputStream(), sipChecksum, aipXml.getInputStream(), aipXmlChecksum);
         archivalService.store(aipDto);
         return sipId;
     }
@@ -147,12 +147,13 @@ public class AipApi {
     @RequestMapping(value = "/{sipId}/update", method = RequestMethod.POST)
     public void updateXml(@PathVariable("sipId") String sipId, @RequestParam("xml") MultipartFile xml,
                           @RequestParam("checksumValue") String checksumValue,
-                          @RequestParam("checksumType") ChecksumType checksumType) throws IOException, StorageNotReachableException, BadRequestException {
+                          @RequestParam("checksumType") ChecksumType checksumType,
+                          @RequestParam("version") Optional<Integer> version) throws IOException, StorageNotReachableException, BadRequestException, InvalidChecksumException {
         checkUUID(sipId);
         Checksum checksum = new Checksum(checksumType, checksumValue);
         checkChecksumFormat(checksum);
 
-        archivalService.updateXml(sipId, xml.getInputStream(), checksum);
+        archivalService.updateXml(sipId, xml.getInputStream(), checksum, version);
     }
 
     /**
@@ -190,7 +191,7 @@ public class AipApi {
     }
 
     /**
-     * Retrieves information about AIP containing state, id, XMLs ...
+     * Retrieves information about AIP containing state, whether is consistent etc...
      *
      * @param sipId
      * @throws StillProcessingStateException

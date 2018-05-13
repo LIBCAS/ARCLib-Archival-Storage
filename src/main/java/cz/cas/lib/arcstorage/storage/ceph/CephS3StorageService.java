@@ -9,11 +9,9 @@ import com.amazonaws.client.builder.AwsClientBuilder;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.*;
-import cz.cas.lib.arcstorage.dto.ChecksumType;
-import cz.cas.lib.arcstorage.dto.ObjectState;
 import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
-import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.dto.*;
+import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.StorageUtils;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
@@ -60,10 +58,10 @@ public class CephS3StorageService implements StorageService {
     @Override
     public void storeAip(AipDto aipDto, AtomicBoolean rollback) throws StorageException {
         AmazonS3 s3 = connect();
-        ArchivalObjectDto sip = aipDto.getSip();
+        SipDto sip = aipDto.getSip();
         ArchivalObjectDto xml = aipDto.getXml();
         storeFile(s3, sip.getId(), sip.getInputStream(), sip.getChecksum(), rollback);
-        storeFile(s3, xml.getId(), xml.getInputStream(), xml.getChecksum(), rollback);
+        storeFile(s3, xml.getStorageId(), xml.getInputStream(), xml.getChecksum(), rollback);
     }
 
     /**
@@ -91,7 +89,7 @@ public class CephS3StorageService implements StorageService {
     @Override
     public void storeObject(ArchivalObjectDto archivalObject, AtomicBoolean rollback) throws StorageException {
         AmazonS3 s3 = connect();
-        storeFile(s3, archivalObject.getId(), archivalObject.getInputStream(), archivalObject.getChecksum(), rollback);
+        storeFile(s3, archivalObject.getStorageId(), archivalObject.getInputStream(), archivalObject.getChecksum(), rollback);
     }
 
     @Override
@@ -104,9 +102,9 @@ public class CephS3StorageService implements StorageService {
     }
 
     @Override
-    public void storeSip(ArchivalObjectDto aipRef, AtomicBoolean rollback) throws StorageException {
+    public void storeSip(SipDto sipRef, AtomicBoolean rollback) throws StorageException {
         AmazonS3 s3 = connect();
-        storeFile(s3, aipRef.getId(), aipRef.getInputStream(), aipRef.getChecksum(), rollback);
+        storeFile(s3, sipRef.getId(), sipRef.getInputStream(), sipRef.getChecksum(), rollback);
     }
 
     @Override
@@ -203,7 +201,7 @@ public class CephS3StorageService implements StorageService {
      * </p>
      *
      * @param s3       connection
-     * @param id       id of new file
+     * @param id       storageId of new file
      * @param stream   new file stream
      * @param checksum sipStorageChecksum of the file, this is only added to metadata and not used for fixity comparison, fixity is compared per each chunk during upload
      * @param rollback rollback flag to be periodically checked
@@ -310,7 +308,7 @@ public class CephS3StorageService implements StorageService {
     private void checkFileExists(AmazonS3 s3, String id) throws FileDoesNotExistException {
         boolean exist = s3.doesObjectExist(storageConfig.getLocation(), id);
         if (!exist)
-            throw new FileDoesNotExistException("bucket: " + storageConfig.getLocation() + " id: " + id);
+            throw new FileDoesNotExistException("bucket: " + storageConfig.getLocation() + " storageId: " + id);
     }
 
     String toMetadataObjectId(String objId) {

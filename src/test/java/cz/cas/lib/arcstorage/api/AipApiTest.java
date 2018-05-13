@@ -36,12 +36,14 @@ import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+import static cz.cas.lib.arcstorage.util.Utils.asList;
 import static cz.cas.lib.arcstorage.util.Utils.asMap;
 import static java.lang.String.valueOf;
 import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.assertThat;
 import static org.mockito.Matchers.anyObject;
 import static org.mockito.Matchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -145,10 +147,8 @@ public class AipApiTest extends DbTest implements ApiTest {
         sip = new AipSip(SIP_ID, new Checksum(ChecksumType.MD5, SIP_HASH), ObjectState.ARCHIVED);
 
         aipXml1 = new AipXml(XML1_ID, new Checksum(ChecksumType.MD5, XML1_HASH), sip, 1, ObjectState.ARCHIVED);
-        aipXml1.setConsistent(true);
 
         aipXml2 = new AipXml(XML2_ID, new Checksum(ChecksumType.MD5, XML2_HASH), sip, 2, ObjectState.ARCHIVED);
-        aipXml2.setConsistent(true);
 
         xmlStore.setEntityManager(getEm());
         xmlStore.setQueryFactory(new JPAQueryFactory(getEm()));
@@ -446,26 +446,32 @@ public class AipApiTest extends DbTest implements ApiTest {
                 .andExpect(status().is(500));
     }
 
-    /**
-     * Send get XML request and while it is being processed:
-     * send requests for XML data and verifies 423 "LOCKED" state
-     * send request for AIP state and verifies XML is in state PROCESSING
-     *
-     * @throws Exception
-     */
     @Test
-    public void getDuringXmlUpdate() throws Exception {
+    public void getDuringXmlUpdateWhichFailsInTheEnd() throws Exception {
+        doAnswer(invocation -> {
+            Thread.sleep(500);
+            throw new IllegalStateException("whatever exception");
+        }).when(cephS3StorageService).storeObject(anyObject(), anyObject());
+        when(storageProvider.createReachableAdapters()).thenReturn(asList(cephS3StorageService));
+
+        AipSip aipSip = sipStore.find(SIP_ID);
+        int countOfXmlVersions = aipSip.getXmls().size();
+
         MockMultipartFile xmlFile = new MockMultipartFile(
                 "xml", "xml", "text/plain", XML2_ID.getBytes());
         mvc(api)
                 .perform(MockMvcRequestBuilders.fileUpload(BASE + "/{sipId}/update", SIP_ID).file(xmlFile)
                         .param("checksumType", ChecksumType.MD5.toString())
-                        .param("checksumValue", SIP_HASH)
+                        .param("checksumValue", XML2_HASH)
                         .contentType(MediaType.APPLICATION_JSON)
                 )
                 .andExpect(status().isOk());
-        AipSip aipSip = sipStore.find(SIP_ID);
-        assertThat(aipSip.getXml(2).getState(), is(ObjectState.PROCESSING));
+        aipSip = sipStore.find(SIP_ID);
+        assertThat(aipSip.getXmls().size(), is(countOfXmlVersions + 1));
+        assertThat(aipSip.getLatestXml().getState(), is(ObjectState.PROCESSING));
+        Thread.sleep(1000);
+        aipSip = sipStore.find(SIP_ID);
+        assertThat(aipSip.getLatestXml().getState(), is(ObjectState.ROLLED_BACK));
     }
 
     /**
@@ -556,7 +562,7 @@ public class AipApiTest extends DbTest implements ApiTest {
      * @throws Exception
      */
     @Test
-    public void invalidMD5() throws Exception {
+    public void badFormatMD5() throws Exception {
         MockMultipartFile xmlFile = new MockMultipartFile(
                 "xml", "xml", "text/plain", XML2_ID.getBytes());
         mvc(api)
@@ -574,7 +580,7 @@ public class AipApiTest extends DbTest implements ApiTest {
      * @throws Exception
      */
     @Test
-    public void invalidID() throws Exception {
+    public void badFormatID() throws Exception {
         mvc(api)
                 .perform(MockMvcRequestBuilders.delete(BASE + "/{sipId}/hard", "invalidid"))
                 .andExpect(status().is(400));

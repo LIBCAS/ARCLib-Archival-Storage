@@ -1,10 +1,11 @@
 package cz.cas.lib.arcstorage.service.service;
 
-import com.querydsl.jpa.impl.JPAQueryFactory;
 import cz.cas.lib.arcstorage.domain.entity.AipSip;
 import cz.cas.lib.arcstorage.domain.entity.AipXml;
+import cz.cas.lib.arcstorage.domain.entity.ObjectType;
 import cz.cas.lib.arcstorage.domain.store.AipSipStore;
 import cz.cas.lib.arcstorage.domain.store.AipXmlStore;
+import cz.cas.lib.arcstorage.domain.store.ArchivalObjectStore;
 import cz.cas.lib.arcstorage.domain.store.Transactional;
 import cz.cas.lib.arcstorage.dto.Checksum;
 import cz.cas.lib.arcstorage.dto.ChecksumType;
@@ -26,6 +27,7 @@ import org.junit.rules.TestName;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
@@ -40,6 +42,7 @@ public class ArchivalDbServiceTest extends DbTest {
 
     private static final AipXmlStore xmlStore = new AipXmlStore();
     private static final AipSipStore sipStore = new AipSipStore();
+    private static final ArchivalObjectStore archivalObjectStore = new ArchivalObjectStore();
     private static final ArchivalDbService service = new ArchivalDbService();
 
     private static final String SIP_ID = "SIPtestID";
@@ -62,14 +65,11 @@ public class ArchivalDbServiceTest extends DbTest {
         aipXmlChecksum.setType(ChecksumType.MD5);
         aipXmlChecksum.setHash("aipXmlMd5Checksum");
 
-        xmlStore.setEntityManager(getEm());
-        xmlStore.setQueryFactory(new JPAQueryFactory(getEm()));
-
-        sipStore.setEntityManager(getEm());
-        sipStore.setQueryFactory(new JPAQueryFactory(getEm()));
+        initializeStores(xmlStore, sipStore, archivalObjectStore);
 
         service.setAipSipStore(sipStore);
         service.setAipXmlStore(xmlStore);
+        service.setArchivalObjectStore(archivalObjectStore);
 
         sip = new AipSip(SIP_ID, sipChecksum, ObjectState.ARCHIVED);
         sipStore.save(sip);
@@ -104,22 +104,23 @@ public class ArchivalDbServiceTest extends DbTest {
 
     @Test
     public void setSipFailed() {
-        service.setSipFailed(SIP_ID, XML1_ID);
+        service.setAipFailed(SIP_ID, XML1_ID);
         assertThat(sipStore.find(SIP_ID).getState(), equalTo(ObjectState.FAILED));
         assertThat(xmlStore.find(XML1_ID).getState(), equalTo(ObjectState.FAILED));
     }
 
     @Test
     public void setXmlFailed() {
-        service.setXmlFailed(XML1_ID);
+        service.setObjectState(XML1_ID, ObjectType.XML, ObjectState.FAILED);
         assertThat(xmlStore.find(XML1_ID).getState(), equalTo(ObjectState.FAILED));
     }
 
     @Test
     public void registerXmlUpdate() {
-        AipXml xmlEntity = service.registerXmlUpdate(SIP_ID, aipXmlChecksum);
+        AipXml xmlEntity = service.registerXmlUpdate(SIP_ID, aipXmlChecksum, Optional.empty());
         assertThat(xmlStore.find(xmlEntity.getId()).getState(), equalTo(ObjectState.PROCESSING));
         assertThat(sipStore.find(SIP_ID).getState(), equalTo(ObjectState.ARCHIVED));
+        assertThat(xmlEntity.getVersion(), is(3));
     }
 
     @Test
@@ -131,7 +132,7 @@ public class ArchivalDbServiceTest extends DbTest {
     @Test
     public void finishSipDeletion() throws StillProcessingStateException, RollbackStateException, FailedStateException {
         service.registerSipDeletion(SIP_ID);
-        service.finishSipDeletion(SIP_ID);
+        service.setObjectState(SIP_ID, ObjectType.SIP, ObjectState.DELETED);
         assertThat(sipStore.find(SIP_ID).getState(), equalTo(ObjectState.DELETED));
     }
 
@@ -140,7 +141,7 @@ public class ArchivalDbServiceTest extends DbTest {
         AipXml xml = xmlStore.find(XML1_ID);
         xml.setState(ObjectState.PROCESSING);
         xmlStore.save(xml);
-        service.finishXmlProcess(XML1_ID);
+        service.setObjectState(XML1_ID, ObjectType.XML, ObjectState.ARCHIVED);
         assertThat(xmlStore.find(XML1_ID).getState(), not(equalTo(ObjectState.PROCESSING)));
     }
 
@@ -164,7 +165,7 @@ public class ArchivalDbServiceTest extends DbTest {
 
     @Test
     public void rollBackSip() {
-        service.rollbackSip(SIP_ID, XML1_ID);
+        service.rollbackAip(SIP_ID, XML1_ID);
         AipSip aip = service.getAip(SIP_ID);
         AipXml xml = xmlStore.find(XML1_ID);
         assertThat(xml.getState(), equalTo(ObjectState.ROLLED_BACK));
@@ -234,7 +235,7 @@ public class ArchivalDbServiceTest extends DbTest {
 
     @Test
     public void rollBackXml() {
-        service.rollbackXml(XML1_ID);
+        service.setObjectState(XML1_ID, ObjectType.XML, ObjectState.ROLLED_BACK);
         AipXml xml = xmlStore.find(XML1_ID);
         assertThat(xml.getState(), equalTo(ObjectState.ROLLED_BACK));
     }
@@ -242,15 +243,37 @@ public class ArchivalDbServiceTest extends DbTest {
     @Test
     public void notFoundTest() {
         assertThrown(() -> service.registerSipDeletion(S)).isInstanceOf(MissingObject.class);
-        assertThrown(() -> service.registerXmlUpdate(XML1_ID, aipXmlChecksum)).isInstanceOf(MissingObject.class);
+        assertThrown(() -> service.registerXmlUpdate(XML1_ID, aipXmlChecksum, Optional.empty())).isInstanceOf(MissingObject.class);
         assertThrown(() -> service.getAip(S)).isInstanceOf(MissingObject.class);
         assertThrown(() -> service.removeSip(S)).isInstanceOf(MissingObject.class);
     }
 
     @Test
-    public void alreadyExistsTest() {
-        assertThrown(() -> service.registerAipCreation(SIP_ID, sipChecksum, S, aipXmlChecksum))
+    public void sipCanBeOverwritten() {
+        service.setObjectState(SIP_ID, ObjectType.SIP, ObjectState.FAILED);
+        service.registerAipCreation(SIP_ID, sipChecksum, XML1_ID, aipXmlChecksum);
+        AipSip aipSip = sipStore.find(SIP_ID);
+        assertThat(aipSip.getState(), equalTo(ObjectState.PROCESSING));
+    }
+
+    @Test
+    public void sipCantBeOverwritten() {
+        assertThrown(() -> service.registerAipCreation(SIP_ID, sipChecksum, XML1_ID, aipXmlChecksum))
                 .isInstanceOf(ConflictObject.class);
+    }
+
+    @Test
+    public void xmlCantBeOverwritten() {
+        assertThrown(() -> service.registerXmlUpdate(SIP_ID, aipXmlChecksum, Optional.of(1)))
+                .isInstanceOf(ConflictObject.class);
+    }
+
+    @Test
+    public void xmlCanBeOverwritten() {
+        xmlStore.save(new AipXml(XML1_ID, aipXmlChecksum, sip, 3, ObjectState.FAILED));
+        service.registerXmlUpdate(SIP_ID, aipXmlChecksum, Optional.of(3));
+        AipXml retrieved = xmlStore.findBySipAndVersion(SIP_ID, 3);
+        assertThat(retrieved.getState(), is(ObjectState.PROCESSING));
     }
 
     @Test

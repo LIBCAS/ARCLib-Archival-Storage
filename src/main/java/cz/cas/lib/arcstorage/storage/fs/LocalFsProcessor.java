@@ -81,7 +81,7 @@ public class LocalFsProcessor implements StorageService {
 
     @Override
     public void storeObject(ArchivalObjectDto objectDto, AtomicBoolean rollback) throws StorageException {
-        String id = objectDto.getId();
+        String id = objectDto.getStorageId();
         storeFile(getFolderPath(id), id, objectDto.getInputStream(), objectDto.getChecksum(), rollback);
     }
 
@@ -95,8 +95,8 @@ public class LocalFsProcessor implements StorageService {
     }
 
     @Override
-    public void storeSip(ArchivalObjectDto aipRef, AtomicBoolean rollback) throws StorageException {
-        storeFile(getFolderPath(aipRef.getId()), aipRef.getId(), aipRef.getInputStream(), aipRef.getChecksum(), rollback);
+    public void storeSip(SipDto sipRef, AtomicBoolean rollback) throws StorageException {
+        storeFile(getFolderPath(sipRef.getId()), sipRef.getId(), sipRef.getInputStream(), sipRef.getChecksum(), rollback);
     }
 
     @Override
@@ -193,7 +193,7 @@ public class LocalFsProcessor implements StorageService {
      * </p>
      *
      * @param folder   path to new file
-     * @param id       id of new file
+     * @param id       storageId of new file
      * @param stream   new file stream
      * @param checksum sipStorageChecksum of the file
      * @param rollback rollback flag to be periodically checked

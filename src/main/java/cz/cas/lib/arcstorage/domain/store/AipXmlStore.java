@@ -17,6 +17,13 @@ public class AipXmlStore extends DomainStore<AipXml, QAipXml> {
         super(AipXml.class, QAipXml.class);
     }
 
+    public AipXml findBySipAndVersion(String sipId, int xmlVersion) {
+        QAipXml xml = qObject();
+        AipXml aipXml = query().select(xml).where(xml.sip.id.eq(sipId)).where(xml.version.eq(xmlVersion)).fetchOne();
+        detachAll();
+        return aipXml;
+    }
+
     public int getNextXmlVersionNumber(String sipId) {
         QAipXml xml = qObject();
         Integer lastVersion = query().select(xml.version.max()).where(xml.sip.id.eq(sipId)).fetchFirst();
@@ -24,6 +31,7 @@ public class AipXmlStore extends DomainStore<AipXml, QAipXml> {
             log.warn("Could not find any XML version of AIP: " + sipId);
             throw new MissingObject(AipSip.class, sipId);
         }
+        detachAll();
         return 1 + lastVersion;
     }
 
@@ -32,7 +40,9 @@ public class AipXmlStore extends DomainStore<AipXml, QAipXml> {
      */
     public List<AipXml> findUnfinishedXmls() {
         QAipXml xml = qObject();
-        return (List<AipXml>) query().where(xml.state.in(ObjectState.PROCESSING, ObjectState.FAILED)).where(xml.sip.state.eq(ObjectState.PROCESSING).not()).fetch();
+        List<AipXml> xmls = (List<AipXml>) query().where(xml.state.in(ObjectState.PROCESSING, ObjectState.FAILED)).where(xml.sip.state.eq(ObjectState.PROCESSING).not()).fetch();
+        detachAll();
+        return xmls;
     }
 
     public void rollbackUnfinishedXmlsRecords() {

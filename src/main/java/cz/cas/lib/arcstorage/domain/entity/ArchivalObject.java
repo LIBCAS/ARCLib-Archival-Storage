@@ -1,8 +1,9 @@
 package cz.cas.lib.arcstorage.domain.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import cz.cas.lib.arcstorage.dto.Checksum;
 import cz.cas.lib.arcstorage.domain.store.InstantGenerator;
+import cz.cas.lib.arcstorage.dto.Checksum;
+import cz.cas.lib.arcstorage.dto.ObjectState;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -17,9 +18,11 @@ import java.time.Instant;
  */
 @Getter
 @Setter
-@MappedSuperclass
 @NoArgsConstructor
-public abstract class ArchivalObject extends DomainObject {
+@Inheritance(strategy=InheritanceType.TABLE_PER_CLASS)
+@Entity
+@Table(name = "arcstorage_object")
+public class ArchivalObject extends DomainObject {
     @Column(updatable = false, nullable = false)
     @JsonIgnore
     @AttributeOverrides({
@@ -27,18 +30,16 @@ public abstract class ArchivalObject extends DomainObject {
             @AttributeOverride(name = "hash", column = @Column(name = "checksumHash"))
     })
     protected Checksum checksum;
+
     @Column(updatable = false)
     @GeneratorType(type = InstantGenerator.class, when = GenerationTime.INSERT)
     protected Instant created;
-    @Transient
-    boolean consistent;
 
-    public ArchivalObject(String id, Checksum checksum) {
-        this.id = id;
-        this.checksum = checksum;
-    }
+    @Enumerated(EnumType.STRING)
+    private ObjectState state;
 
-    public ArchivalObject(Checksum checksum) {
+    public ArchivalObject(Checksum checksum, ObjectState state) {
         this.checksum = checksum;
+        this.state = state;
     }
 }
