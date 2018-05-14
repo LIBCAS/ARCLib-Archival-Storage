@@ -15,20 +15,20 @@ import javax.persistence.Enumerated;
 public class Checksum {
     @Enumerated(EnumType.STRING)
     private ChecksumType type;
-    private String hash;
+    private String value;
 
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Checksum checksum = (Checksum) o;
-        return getType() == checksum.getType() && getHash().equalsIgnoreCase(checksum.getHash());
+        return getType() == checksum.getType() && getValue().equalsIgnoreCase(checksum.getValue());
     }
 
     @Override
     public int hashCode() {
         int result = getType().hashCode();
-        result = 31 * result + getHash().hashCode();
+        result = 31 * result + getValue().hashCode();
         return result;
     }
 
@@ -36,7 +36,7 @@ public class Checksum {
     public String toString() {
         return "Checksum{" +
                 "type=" + type +
-                ", hash='" + hash + '\'' +
+                ", value='" + value + '\'' +
                 '}';
     }
 }

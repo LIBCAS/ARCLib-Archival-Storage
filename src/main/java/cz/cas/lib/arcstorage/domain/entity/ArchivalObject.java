@@ -19,7 +19,7 @@ import java.time.Instant;
 @Getter
 @Setter
 @NoArgsConstructor
-@Inheritance(strategy=InheritanceType.TABLE_PER_CLASS)
+@Inheritance(strategy = InheritanceType.TABLE_PER_CLASS)
 @Entity
 @Table(name = "arcstorage_object")
 public class ArchivalObject extends DomainObject {
@@ -27,7 +27,7 @@ public class ArchivalObject extends DomainObject {
     @JsonIgnore
     @AttributeOverrides({
             @AttributeOverride(name = "type", column = @Column(name = "checksumType")),
-            @AttributeOverride(name = "hash", column = @Column(name = "checksumHash"))
+            @AttributeOverride(name = "value", column = @Column(name = "checksumValue"))
     })
     protected Checksum checksum;
 

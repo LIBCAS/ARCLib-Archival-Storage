@@ -1,6 +1,6 @@
 package cz.cas.lib.arcstorage.storage.fs;
 
-import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
+import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.storage.StorageService;
@@ -29,21 +29,21 @@ import static cz.cas.lib.arcstorage.util.Utils.strSX;
 public class LocalFsProcessor implements StorageService {
 
     @Getter
-    private StorageConfig storageConfig;
+    private Storage storage;
 
-    public LocalFsProcessor(StorageConfig storageConfig) {
-        this.storageConfig = storageConfig;
+    public LocalFsProcessor(Storage storage) {
+        this.storage = storage;
     }
 
     @Override
     public boolean testConnection() {
         try {
-            Path path = Paths.get(storageConfig.getLocation());
+            Path path = Paths.get(storage.getLocation());
             if (Files.isWritable(path) && Files.isReadable(path))
                 return true;
             return false;
         } catch (Exception e) {
-            log.error(storageConfig.getName() + " unable to connect: " + e.getClass() + " " + e.getMessage());
+            log.error(storage.getName() + " unable to connect: " + e.getClass() + " " + e.getMessage());
             return false;
         }
     }
@@ -74,7 +74,7 @@ public class LocalFsProcessor implements StorageService {
                     log.error("could not close input stream: " + ex.getMessage());
                 }
             }
-            throw new FileDoesNotExistException(strSF(storageConfig.getName(), fileToOpen));
+            throw new FileDoesNotExistException(strSF(storage.getName(), fileToOpen));
         }
         return aip;
     }
@@ -90,7 +90,7 @@ public class LocalFsProcessor implements StorageService {
         try {
             return new ObjectRetrievalResource(new FileInputStream(getFolderPath(id).resolve(id).toFile()), null);
         } catch (FileNotFoundException e) {
-            throw new FileDoesNotExistException(strSX(storageConfig.getName(), id));
+            throw new FileDoesNotExistException(strSX(storage.getName(), id));
         }
     }
 
@@ -148,7 +148,7 @@ public class LocalFsProcessor implements StorageService {
     @Override
     public AipStateInfoDto getAipInfo(String sipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions) throws StorageException {
         Path folder = getFolderPath(sipId);
-        AipStateInfoDto info = new AipStateInfoDto(storageConfig.getName(), storageConfig.getStorageType(), objectState, sipChecksum);
+        AipStateInfoDto info = new AipStateInfoDto(storage.getName(), storage.getStorageType(), objectState, sipChecksum);
         if (objectState == ObjectState.ARCHIVED || objectState == ObjectState.REMOVED) {
             try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(folder.resolve(sipId).toFile()))) {
                 Checksum storageSipChecksum = StorageUtils.computeChecksum(bis, sipChecksum.getType());
@@ -197,7 +197,7 @@ public class LocalFsProcessor implements StorageService {
      * @param stream   new file stream
      * @param checksum sipStorageChecksum of the file
      * @param rollback rollback flag to be periodically checked
-     * @throws FileCorruptedAfterStoreException if fixity does not match after store
+     * @throws FileCorruptedAfterStoreException if fixity does not match after save
      * @throws IOStorageException               in case of any {@link IOException}
      * @throws GeneralException                 in case of any unexpected error
      */
@@ -207,7 +207,7 @@ public class LocalFsProcessor implements StorageService {
         try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(folder.resolve(id).toFile()))) {
             Files.createDirectories(folder);
             setState(folder, id, ObjectState.PROCESSING);
-            Files.copy(new ByteArrayInputStream(checksum.getHash().getBytes()), folder.resolve(id + "." + checksum.getType()));
+            Files.copy(new ByteArrayInputStream(checksum.getValue().getBytes()), folder.resolve(id + "." + checksum.getType()));
 
             byte[] buffer = new byte[8192];
             int read = stream.read(buffer);
@@ -251,7 +251,7 @@ public class LocalFsProcessor implements StorageService {
     }
 
     private Path getFolderPath(String fileName) {
-        return Paths.get(storageConfig.getLocation()).resolve(fileName.substring(0, 2)).resolve(fileName.substring(2, 4)).resolve(fileName.substring(4, 6));
+        return Paths.get(storage.getLocation()).resolve(fileName.substring(0, 2)).resolve(fileName.substring(2, 4)).resolve(fileName.substring(4, 6));
     }
 
     private void setState(Path folder, String fileId, ObjectState state) throws IOException {

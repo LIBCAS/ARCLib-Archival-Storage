@@ -111,7 +111,7 @@ public class AipApi {
      * @return SIP ID of created AIP
      * @throws IOException
      */
-    @RequestMapping(value = "/store", method = RequestMethod.POST)
+    @RequestMapping(value = "/save", method = RequestMethod.POST)
     public String save(@RequestParam("sip") MultipartFile sip, @RequestParam("aipXml") MultipartFile aipXml,
                        @RequestParam("sipChecksumValue") String sipChecksumValue, @RequestParam("sipChecksumType") ChecksumType sipChecksumType,
                        @RequestParam("aipXmlChecksumValue") String aipXmlChecksumValue,
@@ -126,7 +126,7 @@ public class AipApi {
         checkChecksumFormat(aipXmlChecksum);
 
         AipDto aipDto = new AipDto(sipId, sip.getInputStream(), sipChecksum, aipXml.getInputStream(), aipXmlChecksum);
-        archivalService.store(aipDto);
+        archivalService.save(aipDto);
         return sipId;
     }
 
@@ -145,15 +145,15 @@ public class AipApi {
      * @param checksumType  XML checksum type
      */
     @RequestMapping(value = "/{sipId}/update", method = RequestMethod.POST)
-    public void updateXml(@PathVariable("sipId") String sipId, @RequestParam("xml") MultipartFile xml,
-                          @RequestParam("checksumValue") String checksumValue,
-                          @RequestParam("checksumType") ChecksumType checksumType,
-                          @RequestParam("version") Optional<Integer> version) throws IOException, StorageNotReachableException, BadRequestException, InvalidChecksumException {
+    public void saveXml(@PathVariable("sipId") String sipId, @RequestParam("xml") MultipartFile xml,
+                        @RequestParam("checksumValue") String checksumValue,
+                        @RequestParam("checksumType") ChecksumType checksumType,
+                        @RequestParam("version") Optional<Integer> version) throws IOException, StorageNotReachableException, BadRequestException, InvalidChecksumException {
         checkUUID(sipId);
         Checksum checksum = new Checksum(checksumType, checksumValue);
         checkChecksumFormat(checksum);
 
-        archivalService.updateXml(sipId, xml.getInputStream(), checksum, version);
+        archivalService.saveXml(sipId, xml.getInputStream(), checksum, version);
     }
 
     /**

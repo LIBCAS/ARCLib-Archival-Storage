@@ -1,6 +1,6 @@
 package cz.cas.lib.arcstorage.storage;
 
-import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
+import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
@@ -19,7 +19,7 @@ import static cz.cas.lib.arcstorage.storage.StorageUtils.checksumComputationPrec
 import static cz.cas.lib.arcstorage.util.Utils.bytesToHexString;
 
 /**
- * Implementation <b>must</b> store files in that way that later it is possible to retrieve:
+ * Implementation <b>must</b> save files in that way that later it is possible to retrieve:
  * <ul>
  * <li>initial MD5 sipStorageChecksum of file</li>
  * <li>creation time of file</li>
@@ -31,7 +31,7 @@ import static cz.cas.lib.arcstorage.util.Utils.bytesToHexString;
 
 public interface StorageService {
 
-    StorageConfig getStorageConfig();
+    Storage getStorage();
 
     /**
      * Stores Aip files into storage.
@@ -131,7 +131,7 @@ public interface StorageService {
     /**
      * Rollbacks AIP and its first XML file from storage. Used only in case of cleaning process after storage/application failure.
      * <p>
-     * In any case (file not found / already rolled back / file which was never actually stored / inconsistent ...) this method has to set ROLLED_BACK state in metadata and delete the file (if exists).
+     * In any case (file not found / already rolled back / file which was never actually stored / inconsistent ...) this method has to set ROLLED_BACK state in metadata and deleteAip the file (if exists).
      * </p>
      * <p>
      * This operation may take a while and therefore sets file state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set state to PROCESSING before calling this method and to desired state after the method is done.
@@ -145,7 +145,7 @@ public interface StorageService {
     /**
      * Rollbacks object from storage. Used only in case of cleaning process after storage/application failure.
      * <p>
-     * In any case (file not found / already rolled back / file which was never actually stored / inconsistent ...) this method has to set ROLLED_BACK state in metadata and delete the file (if exists).
+     * In any case (file not found / already rolled back / file which was never actually stored / inconsistent ...) this method has to set ROLLED_BACK state in metadata and deleteAip the file (if exists).
      * </p>
      * <p>
      * This operation may take a while and therefore sets file state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set state to PROCESSING before calling this method and to desired state after the method is done.
@@ -202,7 +202,7 @@ public interface StorageService {
             checksum = computeChecksumRollbackAware(fileStream, expectedChecksum.getType(), rollback);
             if (checksum == null)
                 return false;
-            if (!checksum.getHash().equalsIgnoreCase(expectedChecksum.getHash())) {
+            if (!checksum.getValue().equalsIgnoreCase(expectedChecksum.getValue())) {
                 rollback.set(true);
                 throw new FileCorruptedAfterStoreException(checksum, expectedChecksum);
             }

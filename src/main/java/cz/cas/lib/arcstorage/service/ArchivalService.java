@@ -3,8 +3,6 @@ package cz.cas.lib.arcstorage.service;
 import cz.cas.lib.arcstorage.domain.entity.AipSip;
 import cz.cas.lib.arcstorage.domain.entity.AipXml;
 import cz.cas.lib.arcstorage.domain.entity.ObjectType;
-import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
-import cz.cas.lib.arcstorage.domain.store.StorageConfigStore;
 import cz.cas.lib.arcstorage.domain.store.Transactional;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.GeneralException;
@@ -46,7 +44,6 @@ public class ArchivalService {
 
     private ArchivalAsyncService async;
     private ArchivalDbService archivalDbService;
-    private StorageConfigStore storageConfigStore;
     private StorageProvider storageProvider;
     private Path tmpFolder;
 
@@ -156,7 +153,7 @@ public class ArchivalService {
      * @throws IOException
      */
     @Transactional
-    public void store(AipDto aip) throws InvalidChecksumException, StorageNotReachableException, IOException {
+    public void save(AipDto aip) throws InvalidChecksumException, StorageNotReachableException, IOException {
         List<StorageService> reachableAdapters = storageProvider.createReachableAdapters();
         //validate checksum of XML
         byte[] xmlContent;
@@ -172,20 +169,20 @@ public class ArchivalService {
             validateChecksum(aip.getSip().getChecksum(), tmpSipPath);
         }
         archivalDbService.registerAipCreation(aip.getSip().getId(), aip.getSip().getChecksum(), aip.getXml().getDatabaseId(), aip.getXml().getChecksum());
-        async.store(aip, tmpSipPath, xmlContent, reachableAdapters);
+        async.saveAip(aip, tmpSipPath, xmlContent, reachableAdapters);
     }
 
     /**
      * Stores ARCLib AIP XML into Archival Storage.
      * <p>
-     * If MD5 hash of file after upload does not match MD5 hash provided in request, the database is cleared and exception is thrown.
+     * If MD5 value of file after upload does not match MD5 value provided in request, the database is cleared and exception is thrown.
      *
      * @param sipId    Id of SIP to which XML belongs
      * @param xml      Stream of xml file
      * @param checksum
      */
     @Transactional
-    public void updateXml(String sipId, InputStream xml, Checksum checksum, Optional<Integer> version) throws StorageNotReachableException, IOException, InvalidChecksumException {
+    public void saveXml(String sipId, InputStream xml, Checksum checksum, Optional<Integer> version) throws StorageNotReachableException, IOException, InvalidChecksumException {
         List<StorageService> reachableAdapters = storageProvider.createReachableAdapters();
         byte[] bytes;
         try (BufferedInputStream ios = new BufferedInputStream(xml)) {
@@ -194,7 +191,7 @@ public class ArchivalService {
             xml = new ByteArrayInputStream(bytes);
         }
         AipXml xmlEntity = archivalDbService.registerXmlUpdate(sipId, checksum, version);
-        async.putObject(new ArchivalObjectDto(xmlEntity.getId(), toXmlId(sipId, xmlEntity.getVersion()), xml, checksum), ObjectType.XML, new ByteArrayHolder(bytes), reachableAdapters);
+        async.saveObject(new ArchivalObjectDto(xmlEntity.getId(), toXmlId(sipId, xmlEntity.getVersion()), xml, checksum), ObjectType.XML, new ByteArrayHolder(bytes), reachableAdapters);
     }
 
     /**
@@ -210,7 +207,7 @@ public class ArchivalService {
             StorageException, FailedStateException, StorageNotReachableException {
         List<StorageService> reachableAdapters = storageProvider.createReachableAdapters();
         archivalDbService.registerSipDeletion(sipId);
-        async.delete(sipId, reachableAdapters);
+        async.deleteAip(sipId, reachableAdapters);
     }
 
     /**
@@ -227,7 +224,7 @@ public class ArchivalService {
             RollbackStateException, StorageException, FailedStateException, StorageNotReachableException {
         List<StorageService> reachableAdapters = storageProvider.createReachableAdapters();
         archivalDbService.removeSip(sipId);
-        async.remove(sipId, reachableAdapters);
+        async.removeAip(sipId, reachableAdapters);
     }
 
     /**
@@ -244,25 +241,23 @@ public class ArchivalService {
         AipSip aip = archivalDbService.getAip(sipId);
         if (aip.getState() == ObjectState.PROCESSING)
             throw new StillProcessingStateException(aip);
-        Collection<StorageConfig> allStorageConfigs = storageConfigStore.findAll();
-        List<AipStateInfoDto> aipStates = allStorageConfigs.stream().map(
-                config -> {
-                    StorageService adapter = storageProvider.createAdapter(config);
-                    if (adapter == null) {
-                        return new AipStateInfoDto(config.getName(), config.getStorageType());
+        List<AipStateInfoDto> result = storageProvider.createAllAdapters().stream().map(
+                adapter -> {
+                    if (!adapter.getStorage().isReachable()) {
+                        return new AipStateInfoDto(adapter.getStorage().getName(), adapter.getStorage().getStorageType(), aip.getState());
                     } else {
                         try {
                             return adapter.getAipInfo(sipId, aip.getChecksum(), aip.getState(),
                                     aip.getXmls().stream()
                                             .collect(Collectors.toMap(xml -> xml.getVersion(), xml -> xml.getChecksum())));
                         } catch (StorageException e) {
-                            return new AipStateInfoDto(config.getName(), config.getStorageType());
+                            return new AipStateInfoDto(adapter.getStorage().getName(), adapter.getStorage().getStorageType(),aip.getState());
                         }
                     }
                 }
         ).collect(Collectors.toList());
         log.info(String.format("Info about AIP: %s has been successfully retrieved.", sipId));
-        return aipStates;
+        return result;
     }
 
     /**
@@ -272,19 +267,18 @@ public class ArchivalService {
      */
     public List<StorageStateDto> getStorageState() {
         List<StorageStateDto> storageStateDtos = new ArrayList<>();
-        Collection<StorageConfig> allConfigs = storageConfigStore.findAll();
-        allConfigs.stream().forEach(c -> {
-            try {
-                StorageService service = storageProvider.createAdapter(c);
-                if (service == null) {
-                    c.setReachable(false);
-                    storageStateDtos.add(new StorageStateDto(c, null));
-                } else
-                    storageStateDtos.add(service.getStorageState());
-            } catch (StorageException e) {
-                throw new GeneralException(e);
-            }
-        });
+        storageProvider.createAllAdapters().stream().forEach(
+                adapter -> {
+                    try {
+                        if (!adapter.getStorage().isReachable()) {
+                            adapter.getStorage().setReachable(false);
+                            storageStateDtos.add(new StorageStateDto(adapter.getStorage(), null));
+                        } else
+                            storageStateDtos.add(adapter.getStorageState());
+                    } catch (StorageException e) {
+                        throw new GeneralException(e);
+                    }
+                });
         return storageStateDtos;
     }
 
@@ -295,7 +289,7 @@ public class ArchivalService {
      * @throws StorageNotReachableException if any storage is unreachable before the process starts
      * @throws StorageException             if any storage fails to rollback
      */
-    public void cleanUp() throws StorageNotReachableException, StorageException {
+    public void cleanup() throws StorageNotReachableException {
         int xmlCounter = 0;
         List<AipSip> unfinishedSips = new ArrayList<>();
         List<AipXml> unfinishedXmls = new ArrayList<>();
@@ -305,10 +299,21 @@ public class ArchivalService {
             for (AipSip sip : unfinishedSips) {
                 if (sip.getXmls().size() > 1)
                     log.warn("Found more than one XML of SIP package with id " + sip.getId() + " which was in PROCESSING state. SIP and its first XML will be rolled back.");
-                storageService.rollbackAip(sip.getId());
+                try {
+                    storageService.rollbackAip(sip.getId());
+                } catch (StorageException e) {
+                    log.error("cleanup of sip " + sip.getId() + " failed: " + e.getMessage());
+                    archivalDbService.setObjectState(sip.getId(), ObjectType.SIP, ObjectState.FAILED);
+                }
             }
-            for (AipXml xml : unfinishedXmls)
-                storageService.rollbackObject(toXmlId(xml.getSip().getId(), xml.getVersion()));
+            for (AipXml xml : unfinishedXmls) {
+                try {
+                    storageService.rollbackObject(toXmlId(xml.getSip().getId(), xml.getVersion()));
+                } catch (StorageException e) {
+                    log.error("cleanup of xml " + xml.getId() + " failed: " + e.getMessage());
+                    archivalDbService.setObjectState(xml.getId(), ObjectType.XML, ObjectState.FAILED);
+                }
+            }
         }
         archivalDbService.rollbackUnfinishedFilesRecords();
         log.info("Successfully rolled back " + unfinishedSips.size() + " SIPs and " + xmlCounter + unfinishedXmls.size() + " XMLs");
@@ -327,11 +332,11 @@ public class ArchivalService {
      */
     private AipRetrievalResource retrieveAip(AipSip sipEntity, List<AipXml> xmls) throws FileCorruptedAtAllStoragesException {
         TreeMap<Integer, List<StorageService>> storageServicesByPriorities = getStorageServicesByPriorities();
-        List<StorageService> highestPriorityStorageConfigs = storageServicesByPriorities.pollFirstEntry().getValue();
+        List<StorageService> highestPriorityStorages = storageServicesByPriorities.pollFirstEntry().getValue();
 
-        //shuffle to ensure randomness in selection of the storage config
-        shuffle(highestPriorityStorageConfigs);
-        StorageService storageServiceChosen = highestPriorityStorageConfigs.get(0);
+        //shuffle to ensure randomness in selection of the storage
+        shuffle(highestPriorityStorages);
+        StorageService storageServiceChosen = highestPriorityStorages.get(0);
 
         AipRetrievalResource aip;
         try {
@@ -361,11 +366,11 @@ public class ArchivalService {
      */
     private InputStream retrieveXml(AipXml aipXml) throws FileCorruptedAtAllStoragesException {
         TreeMap<Integer, List<StorageService>> storageServicesByPriorities = getStorageServicesByPriorities();
-        List<StorageService> highestPriorityStorageConfigs = storageServicesByPriorities.pollFirstEntry().getValue();
+        List<StorageService> highestPriorityStorages = storageServicesByPriorities.pollFirstEntry().getValue();
 
-        //shuffle to ensure randomness in selection of the storage config
-        shuffle(highestPriorityStorageConfigs);
-        StorageService storageServiceChosen = highestPriorityStorageConfigs.get(0);
+        //shuffle to ensure randomness in selection of the storage
+        shuffle(highestPriorityStorages);
+        StorageService storageServiceChosen = highestPriorityStorages.get(0);
 
         InputStream xmlRef;
         try {
@@ -397,7 +402,7 @@ public class ArchivalService {
      */
     private AipRetrievalResult retrieveAipFromStorage(AipSip sipEntity, List<AipXml> xmls, StorageService storageService)
             throws StorageException {
-        String storageName = storageService.getStorageConfig().getName();
+        String storageName = storageService.getStorage().getName();
         log.info("Storage: " + storageName + " chosen to retrieve AIP: " + sipEntity.getId());
 
         AipRetrievalResource aipFromStorage = storageService.getAip(sipEntity.getId(), xmls.stream()
@@ -458,7 +463,7 @@ public class ArchivalService {
      */
     private InputStream retrieveXmlFromStorage(AipXml xmlEntity, StorageService storageService)
             throws StorageException {
-        String storageName = storageService.getStorageConfig().getName();
+        String storageName = storageService.getStorage().getName();
         log.info("Storage: " + storageName + " chosen to retrieve AIP: " + xmlEntity.getId());
 
         ObjectRetrievalResource xmlFromStorage = storageService.getObject(toXmlId(xmlEntity.getSip().getId(), xmlEntity.getVersion()));
@@ -541,10 +546,10 @@ public class ArchivalService {
                 try {
                     usedStorageService.storeSip(sipRef, new AtomicBoolean(false));
                     log.info("SIP " + sipEntity.getId() + " has been successfully recovered at storage" +
-                            usedStorageService.getStorageConfig().getName());
+                            usedStorageService.getStorage().getName());
                 } catch (StorageException e) {
                     log.error("SIP " + sipEntity.getId() + " has failed to be recovered at storage" +
-                            usedStorageService.getStorageConfig().getName());
+                            usedStorageService.getStorage().getName());
                 }
             }
 
@@ -556,10 +561,10 @@ public class ArchivalService {
                 try {
                     usedStorageService.storeObject(xmlDto, new AtomicBoolean(false));
                     log.info("XML: " + invalidChecksumXml.getId() + " has been successfully recovered at storage" +
-                            usedStorageService.getStorageConfig().getName());
+                            usedStorageService.getStorage().getName());
                 } catch (StorageException e) {
                     log.error("XML: " + invalidChecksumXml.getId() + " has failed to be recovered at storage" +
-                            usedStorageService.getStorageConfig().getName());
+                            usedStorageService.getStorage().getName());
                 }
             }
         }
@@ -605,10 +610,10 @@ public class ArchivalService {
             try {
                 storageService.storeObject(xmlDto, new AtomicBoolean(false));
                 log.info("XML: " + xmlEntity.getId() + " has been successfully recovered at storage" +
-                        storageService.getStorageConfig().getName());
+                        storageService.getStorage().getName());
             } catch (StorageException e) {
                 log.error("XML: " + xmlEntity.getId() + " has failed to be recovered at storage" +
-                        storageService.getStorageConfig().getName());
+                        storageService.getStorage().getName());
             }
         }
         return xmlInputStream;
@@ -620,16 +625,14 @@ public class ArchivalService {
      * @return
      */
     private TreeMap<Integer, List<StorageService>> getStorageServicesByPriorities() {
-        //sorted map of storage configs where the keys are the priorities and the values are the lists of configs
+        //sorted map where the keys are the priorities and the values are the lists of storage services
         TreeMap<Integer, List<StorageService>> storageServicesByPriorities = new TreeMap<>(Collections.reverseOrder());
-
-        storageConfigStore.findAll().forEach(storageConfig -> {
-            StorageService storageService = storageProvider.createAdapter(storageConfig);
-            if (storageService != null) {
-                List<StorageService> storageServices = storageServicesByPriorities.get(storageConfig.getPriority());
+        storageProvider.createAllAdapters().forEach(adapter -> {
+            if (adapter.getStorage().isReachable()) {
+                List<StorageService> storageServices = storageServicesByPriorities.get(adapter.getStorage().getPriority());
                 if (storageServices == null) storageServices = new ArrayList<>();
-                storageServices.add(storageService);
-                storageServicesByPriorities.put(storageConfig.getPriority(), storageServices);
+                storageServices.add(adapter);
+                storageServicesByPriorities.put(adapter.getStorage().getPriority(), storageServices);
             }
         });
         return storageServicesByPriorities;
@@ -666,11 +669,6 @@ public class ArchivalService {
     @Inject
     public void setAsyncService(ArchivalAsyncService async) {
         this.async = async;
-    }
-
-    @Inject
-    public void setStorageConfigStore(StorageConfigStore storageConfigStore) {
-        this.storageConfigStore = storageConfigStore;
     }
 
     @Inject

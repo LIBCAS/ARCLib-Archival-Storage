@@ -1,12 +1,12 @@
 package cz.cas.lib.arcstorage.storage.fs;
 
+import cz.cas.lib.arcstorage.domain.entity.Storage;
+import cz.cas.lib.arcstorage.domain.store.Transactional;
 import cz.cas.lib.arcstorage.dto.ChecksumType;
 import cz.cas.lib.arcstorage.dto.ObjectState;
-import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
 import cz.cas.lib.arcstorage.dto.StorageStateDto;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
-import cz.cas.lib.arcstorage.domain.store.Transactional;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
@@ -32,7 +32,7 @@ import static cz.cas.lib.arcstorage.storage.StorageUtils.isLocalhost;
 public class ZfsStorageService implements FsAdapter {
 
     @Getter
-    private StorageConfig storageConfig;
+    private Storage storage;
     @Getter
     private StorageService fsProcessor;
     private String keyFilePath;
@@ -42,28 +42,28 @@ public class ZfsStorageService implements FsAdapter {
     /**
      * Creates a new ZFS storage service.
      *
-     * @param storageConfig storage config
-     * @param pool          ZFS zpool
-     * @param dataset       specific dataset of a zpool
-     * @param keyFilePath   path to private key used for authentication to remote server
+     * @param storage     storage
+     * @param pool        ZFS zpool
+     * @param dataset     specific dataset of a zpool
+     * @param keyFilePath path to private key used for authentication to remote server
      */
-    public ZfsStorageService(StorageConfig storageConfig, String pool, String dataset, String keyFilePath) {
+    public ZfsStorageService(Storage storage, String pool, String dataset, String keyFilePath) {
         this.pool = pool;
         this.dataset = dataset;
         this.keyFilePath = keyFilePath;
-        this.storageConfig = storageConfig;
-        String separator = storageConfig.getLocation().startsWith("/") ? "/" : "\\";
-        if (isLocalhost(storageConfig))
-            this.fsProcessor = new LocalFsProcessor(storageConfig);
+        this.storage = storage;
+        String separator = storage.getLocation().startsWith("/") ? "/" : "\\";
+        if (isLocalhost(storage))
+            this.fsProcessor = new LocalFsProcessor(storage);
         else
-            this.fsProcessor = new RemoteFsProcessor(storageConfig, separator, keyFilePath);
+            this.fsProcessor = new RemoteFsProcessor(storage, separator, keyFilePath);
     }
 
     @Override
     public StorageStateDto getStorageState() throws StorageException {
         throw new UnsupportedOperationException();
 //        List<String> lines;
-//        if (isLocalhost(storageConfig)) {
+//        if (isLocalhost(storage)) {
 //            Utils.Pair<Integer, List<String>> processResult = executeProcessCustomResultHandle("zfs", "list");
 //            lines = processResult.getR();
 //            if (!processResult.getL().equals(0))
@@ -71,7 +71,7 @@ public class ZfsStorageService implements FsAdapter {
 //        } else {
 //            try (SSHClient ssh = new SSHClient()) {
 //                ssh.addHostKeyVerifier(new PromiscuousVerifier());
-//                ssh.connect(storageConfig.getHost(), storageConfig.getPort());
+//                ssh.connect(storage.getHost(), storage.getPort());
 //                ssh.authPublickey("arcstorage", keyFilePath);
 //                try (Session s = ssh.startSession()) {
 //                    lines = Arrays.asList(IOUtils.toString(s.exec("sudo zfs list").getInputStream(), Charset.defaultCharset()).split(System.lineSeparator()));
@@ -96,6 +96,6 @@ public class ZfsStorageService implements FsAdapter {
 //                storageStateData.put(dataset + " available", m.group(3));
 //            }
 //        }
-//        return new StorageStateDto(storageConfig, storageStateData);
+//        return new StorageStateDto(storage, storageStateData);
     }
 }

@@ -5,7 +5,7 @@ import com.amazonaws.services.s3.model.AmazonS3Exception;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.Owner;
 import com.amazonaws.services.s3.model.S3Object;
-import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
+import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.storage.StorageServiceTest;
@@ -14,7 +14,6 @@ import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
 import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
 import org.apache.commons.io.IOUtils;
 import org.junit.BeforeClass;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TestName;
@@ -33,8 +32,8 @@ import static org.junit.Assert.assertThat;
 
 public class CephS3Test implements StorageServiceTest {
 
-    private CephS3StorageService service = new CephS3StorageService(config, "BLZBGL9ZDD23WD0GL8V8", "pPYbINKQxEBLdxhzbycUI00UmTD4uaHjDel1IPui", null);
-    private static StorageConfig config = new StorageConfig();
+    private CephS3StorageService service = new CephS3StorageService(storage, "BLZBGL9ZDD23WD0GL8V8", "pPYbINKQxEBLdxhzbycUI00UmTD4uaHjDel1IPui", null);
+    private static Storage storage = new Storage();
     private static String bucketName;
     private static final String SIP_CONTENT = "blah";
     private static final Checksum SIP_CHECKSUM = new Checksum(ChecksumType.MD5, "6F1ED002AB5595859014EBF0951522D9");
@@ -46,15 +45,15 @@ public class CephS3Test implements StorageServiceTest {
 
     @BeforeClass
     public static void beforeClass() {
-        config.setHost("192.168.10.60");
-        config.setName("ceph s3");
-        config.setPort(7480);
-        config.setPriority(1);
-        config.setStorageType(StorageType.CEPH);
-        config.setLocation("arclib.bucket1");
-        config.setConfig("{\"adapterType\":\"S3\",\"userKey\":\"BLZBGL9ZDD23WD0GL8V8\",\"userSecret\":\"pPYbINKQxEBLdxhzbycUI00UmTD4uaHjDel1IPui\"}");
-        config.setReachable(true);
-        bucketName = config.getLocation();
+        storage.setHost("192.168.10.60");
+        storage.setName("ceph s3");
+        storage.setPort(7480);
+        storage.setPriority(1);
+        storage.setStorageType(StorageType.CEPH);
+        storage.setLocation("arclib.bucket1");
+        storage.setConfig("{\"adapterType\":\"S3\",\"userKey\":\"BLZBGL9ZDD23WD0GL8V8\",\"userSecret\":\"pPYbINKQxEBLdxhzbycUI00UmTD4uaHjDel1IPui\"}");
+        storage.setReachable(true);
+        bucketName = storage.getLocation();
     }
 
     /**
@@ -72,14 +71,14 @@ public class CephS3Test implements StorageServiceTest {
             service.storeFile(s3, fileId, bos, checksum, new AtomicBoolean(false));
         }
 
-        S3Object object = s3.getObject(service.getStorageConfig().getLocation(), fileId);
+        S3Object object = s3.getObject(service.getStorage().getLocation(), fileId);
         Checksum checksumOfStoredFile = StorageUtils.computeChecksum(object.getObjectContent(), ChecksumType.MD5);
         assertThat(checksum, is(checksumOfStoredFile));
 
-        ObjectMetadata objectMetadata = s3.getObjectMetadata(service.getStorageConfig().getLocation(), service.toMetadataObjectId(fileId));
+        ObjectMetadata objectMetadata = s3.getObjectMetadata(service.getStorage().getLocation(), service.toMetadataObjectId(fileId));
         Map<String, String> userMetadata = objectMetadata.getUserMetadata();
         assertThat(userMetadata.get(CephS3StorageService.STATE_KEY), is(ObjectState.ARCHIVED.toString()));
-        assertThat(userMetadata.get(checksum.getType().toString()), is(checksum.getHash()));
+        assertThat(userMetadata.get(checksum.getType().toString()), is(checksum.getValue()));
         assertThat(userMetadata.get(CephS3StorageService.CREATED_KEY), not(isEmptyOrNullString()));
     }
 
@@ -94,14 +93,14 @@ public class CephS3Test implements StorageServiceTest {
 
         service.storeFile(s3, fileId, getSipStream(), SIP_CHECKSUM, new AtomicBoolean(false));
 
-        S3Object object = s3.getObject(service.getStorageConfig().getLocation(), fileId);
+        S3Object object = s3.getObject(service.getStorage().getLocation(), fileId);
         Checksum checksumOfStoredFile = StorageUtils.computeChecksum(object.getObjectContent(), ChecksumType.MD5);
         assertThat(SIP_CHECKSUM, is(checksumOfStoredFile));
 
-        ObjectMetadata objectMetadata = s3.getObjectMetadata(service.getStorageConfig().getLocation(), service.toMetadataObjectId(fileId));
+        ObjectMetadata objectMetadata = s3.getObjectMetadata(service.getStorage().getLocation(), service.toMetadataObjectId(fileId));
         Map<String, String> userMetadata = objectMetadata.getUserMetadata();
         assertThat(userMetadata.get(CephS3StorageService.STATE_KEY), is(ObjectState.ARCHIVED.toString()));
-        assertThat(userMetadata.get(SIP_CHECKSUM.getType().toString()), is(SIP_CHECKSUM.getHash()));
+        assertThat(userMetadata.get(SIP_CHECKSUM.getType().toString()), is(SIP_CHECKSUM.getValue()));
         assertThat(userMetadata.get(CephS3StorageService.CREATED_KEY), not(isEmptyOrNullString()));
     }
 
@@ -130,7 +129,7 @@ public class CephS3Test implements StorageServiceTest {
             service.storeFile(s3, fileId, bos, SIP_CHECKSUM, rollback);
         }
 
-        ObjectMetadata objectMetadata = s3.getObjectMetadata(service.getStorageConfig().getLocation(), service.toMetadataObjectId(fileId));
+        ObjectMetadata objectMetadata = s3.getObjectMetadata(service.getStorage().getLocation(), service.toMetadataObjectId(fileId));
         Map<String, String> userMetadata = objectMetadata.getUserMetadata();
         assertThat(userMetadata.get(CephS3StorageService.STATE_KEY), is(ObjectState.PROCESSING.toString()));
     }
@@ -143,7 +142,7 @@ public class CephS3Test implements StorageServiceTest {
 
         String fileId = testName.getMethodName();
 
-        CephS3StorageService service = new TestStorageService(config, "BLZBGL9ZDD23WD0GL8V8", "pPYbINKQxEBLdxhzbycUI00UmTD4uaHjDel1IPui", null);
+        CephS3StorageService service = new TestStorageService(storage, "BLZBGL9ZDD23WD0GL8V8", "pPYbINKQxEBLdxhzbycUI00UmTD4uaHjDel1IPui", null);
         AmazonS3 s3 = service.connect();
 
         AtomicBoolean rollback = new AtomicBoolean(false);
@@ -333,7 +332,7 @@ public class CephS3Test implements StorageServiceTest {
         assertThat(aipInfo.getSipStorageChecksum(), is(SIP_CHECKSUM));
         assertThat(aipInfo.getSipDatabaseChecksum(), is(SIP_CHECKSUM));
         assertThat(aipInfo.getStorageType(), is(StorageType.CEPH));
-        assertThat(aipInfo.getStorageName(), is(config.getName()));
+        assertThat(aipInfo.getStorageName(), is(storage.getName()));
         assertThat(aipInfo.isConsistent(), is(true));
 
         List<XmlStateInfoDto> xmlsStates = aipInfo.getXmlsState();
@@ -418,7 +417,7 @@ public class CephS3Test implements StorageServiceTest {
             service.storeFile(s3, fileId, bos, SIP_CHECKSUM, rollback);
         }
 
-        ObjectMetadata objectMetadata = s3.getObjectMetadata(service.getStorageConfig().getLocation(), service.toMetadataObjectId(fileId));
+        ObjectMetadata objectMetadata = s3.getObjectMetadata(service.getStorage().getLocation(), service.toMetadataObjectId(fileId));
         Map<String, String> userMetadata = objectMetadata.getUserMetadata();
         assertThat(userMetadata.get(CephS3StorageService.STATE_KEY), is(ObjectState.PROCESSING.toString()));
 //actual test
@@ -500,7 +499,7 @@ public class CephS3Test implements StorageServiceTest {
      */
     @Test
     public void testConnection() {
-        CephS3StorageService badService = new TestStorageService(config, "blah", "blah", "blah");
+        CephS3StorageService badService = new TestStorageService(storage, "blah", "blah", "blah");
         assertThat(badService.testConnection(), is(false));
         assertThat(service.testConnection(), is(true));
         AmazonS3 s3 = service.connect();
@@ -513,12 +512,12 @@ public class CephS3Test implements StorageServiceTest {
 //    @Test
 //    public void createBucket(){
 //        AmazonS3 s3 = service.connect();
-//        s3.createBucket(config.getLocation());
+//        s3.createBucket(storage.getLocation());
 //    }
 
     private static final class TestStorageService extends CephS3StorageService {
-        public TestStorageService(StorageConfig storageConfig, String userAccessKey, String userSecretKey, String region) {
-            super(storageConfig, userAccessKey, userSecretKey, region);
+        public TestStorageService(Storage storage, String userAccessKey, String userSecretKey, String region) {
+            super(storage, userAccessKey, userSecretKey, region);
         }
 
         @Override

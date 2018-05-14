@@ -1,7 +1,7 @@
 package cz.cas.lib.arcstorage.storage.fs;
 
 import cz.cas.lib.arcstorage.dto.ObjectState;
-import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
+import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.dto.ChecksumType;
 import cz.cas.lib.arcstorage.dto.StorageStateDto;
 import cz.cas.lib.arcstorage.storage.StorageService;
@@ -47,51 +47,51 @@ import static cz.cas.lib.arcstorage.storage.StorageUtils.isLocalhost;
 public class FsStorageService implements FsAdapter {
 
     @Getter
-    private StorageConfig storageConfig;
+    private Storage storage;
     @Getter
     private StorageService fsProcessor;
     private String keyFilePath;
 
-    public FsStorageService(StorageConfig storageConfig, String keyFilePath) {
-        this.storageConfig = storageConfig;
+    public FsStorageService(Storage storage, String keyFilePath) {
+        this.storage = storage;
         this.keyFilePath = keyFilePath;
-        String separator = storageConfig.getLocation().startsWith("/") ? "/" : "\\";
-        if (isLocalhost(storageConfig))
-            this.fsProcessor = new LocalFsProcessor(storageConfig);
+        String separator = storage.getLocation().startsWith("/") ? "/" : "\\";
+        if (isLocalhost(storage))
+            this.fsProcessor = new LocalFsProcessor(storage);
         else
-            this.fsProcessor = new RemoteFsProcessor(storageConfig, separator, keyFilePath);
+            this.fsProcessor = new RemoteFsProcessor(storage, separator, keyFilePath);
     }
 
     @Override
     public StorageStateDto getStorageState() throws StorageException {
-        if (isLocalhost(storageConfig)) {
-            File anchor = new File(storageConfig.getLocation());
+        if (isLocalhost(storage)) {
+            File anchor = new File(storage.getLocation());
             long capacity = anchor.getTotalSpace();
             long free = anchor.getFreeSpace();
             Map<String, String> storageStateData = new HashMap<>();
             storageStateData.put("used", (capacity - free) / 1000000 + "MB");
             storageStateData.put("available", free / 1000000 + "MB");
-            return new StorageStateDto(storageConfig, storageStateData);
+            return new StorageStateDto(storage, storageStateData);
         }
         String[] dfResult;
         try (SSHClient ssh = new SSHClient()) {
             ssh.addHostKeyVerifier(new PromiscuousVerifier());
-            ssh.connect(storageConfig.getHost(), storageConfig.getPort());
+            ssh.connect(storage.getHost(), storage.getPort());
             ssh.authPublickey("arcstorage", keyFilePath);
             try (Session s = ssh.startSession()) {
-                dfResult = IOUtils.toString(s.exec("df -Ph " + storageConfig.getLocation()).getInputStream(), Charset.defaultCharset()).split("\\n");
+                dfResult = IOUtils.toString(s.exec("df -Ph " + storage.getLocation()).getInputStream(), Charset.defaultCharset()).split("\\n");
             }
         } catch (IOException e) {
             throw new SshException(e);
         }
         if (dfResult.length < 2)
-            throw new CmdOutputParsingException("df -Ph " + storageConfig.getLocation(), Arrays.asList(dfResult));
+            throw new CmdOutputParsingException("df -Ph " + storage.getLocation(), Arrays.asList(dfResult));
         Matcher m = Pattern.compile("\\S+\\s+\\S+\\s+(\\S+)\\s+(\\S+)").matcher(dfResult[1]);
         if (!m.find())
-            throw new CmdOutputParsingException("df -Ph " + storageConfig.getLocation(), Arrays.asList(dfResult));
+            throw new CmdOutputParsingException("df -Ph " + storage.getLocation(), Arrays.asList(dfResult));
         Map<String, String> storageStateData = new HashMap<>();
         storageStateData.put("used", m.group(1));
         storageStateData.put("available", m.group(2));
-        return new StorageStateDto(storageConfig, storageStateData);
+        return new StorageStateDto(storage, storageStateData);
     }
 }

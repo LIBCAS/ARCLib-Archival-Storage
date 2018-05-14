@@ -3,10 +3,10 @@ package cz.cas.lib.arcstorage.service.service;
 import cz.cas.lib.arcstorage.domain.entity.AipSip;
 import cz.cas.lib.arcstorage.domain.entity.AipXml;
 import cz.cas.lib.arcstorage.domain.entity.ObjectType;
-import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
+import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.domain.store.AipSipStore;
 import cz.cas.lib.arcstorage.domain.store.AipXmlStore;
-import cz.cas.lib.arcstorage.domain.store.StorageConfigStore;
+import cz.cas.lib.arcstorage.domain.store.StorageStore;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.service.ArchivalAsyncService;
@@ -45,6 +45,7 @@ import java.util.Optional;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.extractXmlVersion;
 import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
+import static cz.cas.lib.arcstorage.util.Utils.asList;
 import static helper.ThrowableAssertion.assertThrown;
 import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.assertThat;
@@ -58,7 +59,7 @@ public class ArchivalServiceTest extends DbTest {
     private static final ArchivalService archivalService = new ArchivalService();
     private static final AipSipStore aipSipStore = new AipSipStore();
     private static final AipXmlStore aipXmlStore = new AipXmlStore();
-    private static final StorageConfigStore storageConfigStore = new StorageConfigStore();
+    private static final StorageStore STORAGE_STORE = new StorageStore();
     private static final ArchivalDbService archivalDbService = new ArchivalDbService();
 
     private static final String SIP_ID = "SIPtestID";
@@ -103,14 +104,14 @@ public class ArchivalServiceTest extends DbTest {
     @Mock
     private ArchivalAsyncService async;
 
-    private StorageConfig storageConfig;
+    private Storage storage;
 
     @Before
     public void setup() throws StorageException, SQLException {
         clearDatabase();
         MockitoAnnotations.initMocks(this);
 
-        initializeStores(aipSipStore, aipXmlStore, storageConfigStore);
+        initializeStores(aipSipStore, aipXmlStore, STORAGE_STORE);
 
         archivalDbService.setAipSipStore(aipSipStore);
         archivalDbService.setAipXmlStore(aipXmlStore);
@@ -119,7 +120,6 @@ public class ArchivalServiceTest extends DbTest {
 
         archivalService.setArchivalDbService(archivalDbService);
         archivalService.setAsyncService(async);
-        archivalService.setStorageConfigStore(storageConfigStore);
         archivalService.setStorageProvider(storageProvider);
         archivalService.setTmpFolder(tmpFolder.toString());
 
@@ -129,13 +129,13 @@ public class ArchivalServiceTest extends DbTest {
         aipXmlStore.save(XML1);
         aipXmlStore.save(XML2);
 
-        storageConfig = new StorageConfig();
-        storageConfig.setPriority(1);
-        storageConfig.setName("test ceph storage");
-        storageConfig.setStorageType(StorageType.CEPH);
-        storageConfig.setConfig(STORAGE_CONFIG);
-        storageConfigStore.save(storageConfig);
-        when(storageService.getStorageConfig()).thenReturn(storageConfig);
+        storage = new Storage();
+        storage.setPriority(1);
+        storage.setName("test ceph storage");
+        storage.setStorageType(StorageType.CEPH);
+        storage.setConfig(STORAGE_CONFIG);
+        STORAGE_STORE.save(storage);
+        when(storageService.getStorage()).thenReturn(storage);
 
         AipRetrievalResource aip1 = new AipRetrievalResource(null);
         aip1.setSip(sipStream());
@@ -157,7 +157,7 @@ public class ArchivalServiceTest extends DbTest {
         when(storageService.getAip(SIP_ID, 2)).thenReturn(aip2);
         when(storageService.getAip(SIP_ID, 1, 2)).thenReturn(aip3);
 
-        when(storageProvider.createAdapter(anyObject())).thenReturn(storageService);
+        when(storageProvider.createAllAdapters()).thenReturn(asList(storageService));
 
         ObjectRetrievalResource xml1 = new ObjectRetrievalResource(xml1Stream(), null);
         ObjectRetrievalResource xml2 = new ObjectRetrievalResource(xml2Stream(), null);
@@ -247,13 +247,13 @@ public class ArchivalServiceTest extends DbTest {
     @Test
     public void store() throws InvalidChecksumException, StorageNotReachableException, IOException {
         AipDto aipDto = new AipDto(SIP2_ID, sipStream(), SIP_CHECKSUM, xml1Stream(), XML1_CHECKSUM);
-        archivalService.store(aipDto);
+        archivalService.save(aipDto);
 
         ArgumentCaptor<byte[]> xmlBytesCaptor = ArgumentCaptor.forClass(byte[].class);
 
         AipSip aipSip = archivalDbService.getAip(SIP2_ID);
         assertThat(aipSip, notNullValue());
-        verify(async).store(eq(aipDto), anyObject(), xmlBytesCaptor.capture(), anyList());
+        verify(async).saveAip(eq(aipDto), anyObject(), xmlBytesCaptor.capture(), anyList());
         String byteString = IOUtils.toString(xmlBytesCaptor.getValue());
         assertThat(byteString, containsString(IOUtils.toString(xml1Stream())));
     }
@@ -263,7 +263,7 @@ public class ArchivalServiceTest extends DbTest {
         Collection allXmls = aipXmlStore.findAll();
         assertThat(allXmls.size(), is(2));
 
-        archivalService.updateXml(SIP_ID, xml1Stream(), XML1_CHECKSUM, Optional.empty());
+        archivalService.saveXml(SIP_ID, xml1Stream(), XML1_CHECKSUM, Optional.empty());
 
         ArgumentCaptor<TmpSourceHolder> resourceHolderCaptor = ArgumentCaptor.forClass(TmpSourceHolder.class);
 
@@ -272,7 +272,7 @@ public class ArchivalServiceTest extends DbTest {
         AipXml newXml = aipXmlStore.findBySipAndVersion(SIP_ID, 3);
 
         ArchivalObjectDto xmlRef = new ArchivalObjectDto(newXml.getId(), toXmlId(SIP_ID, 3), null, XML1_CHECKSUM);
-        verify(async).putObject(eq(xmlRef), eq(ObjectType.XML), resourceHolderCaptor.capture(), anyList());
+        verify(async).saveObject(eq(xmlRef), eq(ObjectType.XML), resourceHolderCaptor.capture(), anyList());
         assertThat(resourceHolderCaptor.getValue(), instanceOf(ByteArrayHolder.class));
         assertTrue(IOUtils.contentEquals(resourceHolderCaptor.getValue().createInputStream(), xml1Stream()));
     }
@@ -280,7 +280,7 @@ public class ArchivalServiceTest extends DbTest {
     @Test
     public void getAipInfo() throws StillProcessingStateException, StorageException {
         when(storageService.getAipInfo(anyObject(), anyObject(), anyObject(), anyObject())).thenReturn(
-                new AipStateInfoDto("", StorageType.CEPH, ObjectState.ARCHIVED, anyObject()));
+                new AipStateInfoDto("", StorageType.CEPH, ObjectState.ARCHIVED, null));
 
         SIP.setState(ObjectState.ARCHIVED);
         aipSipStore.save(SIP);
@@ -331,7 +331,7 @@ public class ArchivalServiceTest extends DbTest {
 
         AipSip sip = archivalDbService.getAip(SIP_ID);
         assertThat(sip.getState(), is(ObjectState.PROCESSING));
-        verify(async).delete(eq(sip.getId()), anyList());
+        verify(async).deleteAip(eq(sip.getId()), anyList());
     }
 
     @Test
@@ -341,6 +341,6 @@ public class ArchivalServiceTest extends DbTest {
 
         AipSip sip = archivalDbService.getAip(SIP_ID);
         assertThat(sip.getState(), is(ObjectState.REMOVED));
-        verify(async).remove(eq(sip.getId()), anyList());
+        verify(async).removeAip(eq(sip.getId()), anyList());
     }
 }

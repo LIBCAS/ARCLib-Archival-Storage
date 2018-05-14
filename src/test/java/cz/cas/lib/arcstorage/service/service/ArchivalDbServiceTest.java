@@ -59,11 +59,11 @@ public class ArchivalDbServiceTest extends DbTest {
     public void before() {
         sipChecksum = new Checksum();
         sipChecksum.setType(ChecksumType.MD5);
-        sipChecksum.setHash("sipMd5Checksum");
+        sipChecksum.setValue("sipMd5Checksum");
 
         aipXmlChecksum = new Checksum();
         aipXmlChecksum.setType(ChecksumType.MD5);
-        aipXmlChecksum.setHash("aipXmlMd5Checksum");
+        aipXmlChecksum.setValue("aipXmlMd5Checksum");
 
         initializeStores(xmlStore, sipStore, archivalObjectStore);
 

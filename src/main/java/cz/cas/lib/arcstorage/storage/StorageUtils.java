@@ -1,6 +1,6 @@
 package cz.cas.lib.arcstorage.storage;
 
-import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
+import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.dto.Checksum;
 import cz.cas.lib.arcstorage.dto.ChecksumType;
 import cz.cas.lib.arcstorage.exception.GeneralException;
@@ -40,8 +40,8 @@ public class StorageUtils {
             } while (numRead != -1);
             return new Checksum(checksumType, bytesToHexString(complete.digest()));
         } catch (IOException e) {
-            log.error("unable to compute hash", e);
-            throw new GeneralException("unable to compute hash", e);
+            log.error("unable to compute value", e);
+            throw new GeneralException("unable to compute value", e);
         }
     }
 
@@ -69,8 +69,8 @@ public class StorageUtils {
             } while (numRead != -1);
             return new Checksum(checksumType, bytesToHexString(checksum.digest()));
         } catch (IOException e) {
-            log.error("unable to compute hash", e);
-            throw new GeneralException("unable to compute hash", e);
+            log.error("unable to compute value", e);
+            throw new GeneralException("unable to compute value", e);
         }
     }
 
@@ -92,8 +92,8 @@ public class StorageUtils {
         }
     }
 
-    public static boolean isLocalhost(StorageConfig config) {
-        return config.getHost().equals("localhost") || config.getHost().equals("127.0.0.1");
+    public static boolean isLocalhost(Storage storage) {
+        return storage.getHost().equals("localhost") || storage.getHost().equals("127.0.0.1");
     }
 
     public static void validateChecksum(Checksum checksum, Path tmpSipPath) throws IOException, InvalidChecksumException {

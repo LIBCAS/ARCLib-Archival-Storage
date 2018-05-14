@@ -2,16 +2,16 @@ package cz.cas.lib.arcstorage.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
-import cz.cas.lib.arcstorage.service.exception.ConfigParserException;
+import cz.cas.lib.arcstorage.domain.entity.Storage;
+import cz.cas.lib.arcstorage.domain.store.StorageStore;
 import cz.cas.lib.arcstorage.exception.GeneralException;
+import cz.cas.lib.arcstorage.service.exception.ConfigParserException;
 import cz.cas.lib.arcstorage.service.exception.StorageNotReachableException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.ceph.CephAdapterType;
 import cz.cas.lib.arcstorage.storage.ceph.CephS3StorageService;
 import cz.cas.lib.arcstorage.storage.fs.FsStorageService;
 import cz.cas.lib.arcstorage.storage.fs.ZfsStorageService;
-import cz.cas.lib.arcstorage.domain.store.StorageConfigStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -19,6 +19,7 @@ import javax.inject.Inject;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static cz.cas.lib.arcstorage.util.Utils.parseEnumFromConfig;
 
@@ -26,25 +27,26 @@ import static cz.cas.lib.arcstorage.util.Utils.parseEnumFromConfig;
 public class StorageProvider {
 
     private String keyFilePath;
-    private StorageConfigStore storageConfigStore;
+    private StorageStore storageStore;
 
     /**
-     * Returns storage service according to storage config. If the storage is not reachable, config is updated and null returned.
+     * Returns storage service according to the database object. The storage is tested for reachability and is updated if
+     * the reachability changes.
      *
-     * @param storageConfig
-     * @return storage service or null if the storage is not reachable
+     * @param storage
+     * @return storage service
      * @throws ConfigParserException
      */
-    public StorageService createAdapter(StorageConfig storageConfig) throws ConfigParserException {
+    private StorageService createAdapter(Storage storage) throws ConfigParserException {
         StorageService service;
         JsonNode root;
-        switch (storageConfig.getStorageType()) {
+        switch (storage.getStorageType()) {
             case FS:
-                service = new FsStorageService(storageConfig, keyFilePath);
+                service = new FsStorageService(storage, keyFilePath);
                 break;
             case ZFS:
                 try {
-                    root = new ObjectMapper().readTree(storageConfig.getConfig());
+                    root = new ObjectMapper().readTree(storage.getConfig());
                 } catch (IOException e) {
                     throw new ConfigParserException(e);
                 }
@@ -52,11 +54,11 @@ public class StorageProvider {
                 String dataset = root.at("/dataset").textValue();
                 if (pool == null || dataset == null)
                     throw new ConfigParserException("pool or dataset string missing in ZFS storage config");
-                service = new ZfsStorageService(storageConfig, pool, dataset, keyFilePath);
+                service = new ZfsStorageService(storage, pool, dataset, keyFilePath);
                 break;
             case CEPH:
                 try {
-                    root = new ObjectMapper().readTree(storageConfig.getConfig());
+                    root = new ObjectMapper().readTree(storage.getConfig());
                 } catch (IOException e) {
                     throw new ConfigParserException(e);
                 }
@@ -68,40 +70,41 @@ public class StorageProvider {
                         String region = root.at("/region").textValue();
                         if (userKey == null || userSecret == null)
                             throw new ConfigParserException("userKey or userSecret string missing in CEPH storage config");
-                        service = new CephS3StorageService(storageConfig, userKey, userSecret, region);
+                        service = new CephS3StorageService(storage, userKey, userSecret, region);
                         break;
                     case SWIFT:
                         throw new UnsupportedOperationException();
                     case LIBRADOS:
                         throw new UnsupportedOperationException();
                     default:
-                        throw new GeneralException("unknown storage type: " + storageConfig.getStorageType());
+                        throw new GeneralException("unknown storage type: " + storage.getStorageType());
                 }
                 break;
             default:
-                throw new GeneralException("unknown storage type: " + storageConfig.getStorageType());
+                throw new GeneralException("unknown storage type: " + storage.getStorageType());
         }
         boolean reachable = service.testConnection();
-        storageConfig.setReachable(reachable);
-        storageConfigStore.save(storageConfig);
-        if (!reachable)
-            return null;
+        if (reachable != storage.isReachable()) {
+            storage.setReachable(reachable);
+            storageStore.save(storage);
+        }
         return service;
     }
 
     /**
-     * Returns all storage services or throw exception if any of them is unreachable.
+     * Returns all storage services according to the database objects. All storages are tested for reachability and their
+     * reachablity flag is updated if changed.
      *
      * @return storage services for all storages
-     * @throws StorageNotReachableException
+     * @throws StorageNotReachableException if some storage is unreachable
      */
     public List<StorageService> createReachableAdapters() throws StorageNotReachableException {
         List<StorageService> storageServices = new ArrayList<>();
-        List<StorageConfig> unreachableStorages = new ArrayList<>();
-        for (StorageConfig storageConfig : storageConfigStore.findAll()) {
-            StorageService service = createAdapter(storageConfig);
-            if (service == null) {
-                unreachableStorages.add(storageConfig);
+        List<Storage> unreachableStorages = new ArrayList<>();
+        for (Storage storage : storageStore.findAll()) {
+            StorageService service = createAdapter(storage);
+            if (!service.getStorage().isReachable()) {
+                unreachableStorages.add(storage);
                 continue;
             }
             storageServices.add(service);
@@ -111,13 +114,24 @@ public class StorageProvider {
         return storageServices;
     }
 
+    /**
+     * Returns all storage services according to the database objects. All storages are tested for reachability and their
+     * reachablity flag is updated if changed.
+     *
+     * @return storage services
+     * @throws ConfigParserException
+     */
+    public List<StorageService> createAllAdapters() {
+        return storageStore.findAll().stream().map(this::createAdapter).collect(Collectors.toList());
+    }
+
     @Inject
     public void setKeyFilePath(@Value("${arcstorage.auth-key}") String keyFilePath) {
         this.keyFilePath = keyFilePath;
     }
 
     @Inject
-    public void setStorageConfigStore(StorageConfigStore storageConfigStore) {
-        this.storageConfigStore = storageConfigStore;
+    public void setStorageStore(StorageStore storageStore) {
+        this.storageStore = storageStore;
     }
 }

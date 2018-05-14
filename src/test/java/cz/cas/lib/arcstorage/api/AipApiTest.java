@@ -3,10 +3,10 @@ package cz.cas.lib.arcstorage.api;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import cz.cas.lib.arcstorage.domain.entity.AipSip;
 import cz.cas.lib.arcstorage.domain.entity.AipXml;
-import cz.cas.lib.arcstorage.domain.entity.StorageConfig;
+import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.domain.store.AipSipStore;
 import cz.cas.lib.arcstorage.domain.store.AipXmlStore;
-import cz.cas.lib.arcstorage.domain.store.StorageConfigStore;
+import cz.cas.lib.arcstorage.domain.store.StorageStore;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.service.StorageProvider;
 import cz.cas.lib.arcstorage.storage.ceph.CephS3StorageService;
@@ -45,7 +45,6 @@ import static org.mockito.Matchers.anyObject;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
@@ -67,7 +66,7 @@ public class AipApiTest extends DbTest implements ApiTest {
     @Inject
     private AipXmlStore xmlStore;
     @Inject
-    private StorageConfigStore storageConfigStore;
+    private StorageStore storageStore;
 
     @MockBean
     private FsStorageService fsStorageService;
@@ -96,14 +95,14 @@ public class AipApiTest extends DbTest implements ApiTest {
     private static AipSip sip;
     private static AipXml aipXml1;
     private static AipXml aipXml2;
-    private static StorageConfig s1;
-    private static StorageConfig s2;
-    private static StorageConfig s3;
+    private static Storage s1;
+    private static Storage s2;
+    private static Storage s3;
 
     @BeforeClass
     public static void setup() throws IOException {
 
-        s1 = new StorageConfig();
+        s1 = new Storage();
         s1.setHost("localhost");
         s1.setName("local fs");
         s1.setPriority(1);
@@ -111,7 +110,7 @@ public class AipApiTest extends DbTest implements ApiTest {
         s1.setLocation("localFsFolder");
         s1.setReachable(true);
 
-        s2 = new StorageConfig();
+        s2 = new Storage();
         s2.setHost("192.168.0.60");
         s2.setName("remote zfs");
         s2.setPort(22);
@@ -121,7 +120,7 @@ public class AipApiTest extends DbTest implements ApiTest {
         s2.setReachable(true);
         s2.setConfig("{\"pool\":\"\", \"dataset\":\"\"}");
 
-        s3 = new StorageConfig();
+        s3 = new Storage();
         s3.setHost("192.168.10.60");
         s3.setName("ceph s3");
         s3.setPort(7480);
@@ -161,17 +160,17 @@ public class AipApiTest extends DbTest implements ApiTest {
         xmlStore.save(aipXml1);
         xmlStore.save(aipXml2);
 
-        storageConfigStore.save(s2);
-        storageConfigStore.save(s1);
-        storageConfigStore.save(s3);
+        storageStore.save(s2);
+        storageStore.save(s1);
+        storageStore.save(s3);
 
         when(fsStorageService.testConnection()).thenReturn(true);
         when(zfsStorageService.testConnection()).thenReturn(true);
         when(cephS3StorageService.testConnection()).thenReturn(true);
 
-        when(fsStorageService.getStorageConfig()).thenReturn(s1);
-        when(zfsStorageService.getStorageConfig()).thenReturn(s2);
-        when(cephS3StorageService.getStorageConfig()).thenReturn(s3);
+        when(fsStorageService.getStorage()).thenReturn(s1);
+        when(zfsStorageService.getStorage()).thenReturn(s2);
+        when(cephS3StorageService.getStorage()).thenReturn(s3);
 
         StorageStateDto storageStateDto = new StorageStateDto(null, asMap("used", "1234",
                 "available", "2345"));
@@ -179,24 +178,22 @@ public class AipApiTest extends DbTest implements ApiTest {
         when(zfsStorageService.getStorageState()).thenReturn(storageStateDto);
         when(cephS3StorageService.getStorageState()).thenReturn(storageStateDto);
 
-        AipStateInfoDto aipStateInfoFsDto = new AipStateInfoDto(fsStorageService.getStorageConfig().getName(),
+        AipStateInfoDto aipStateInfoFsDto = new AipStateInfoDto(fsStorageService.getStorage().getName(),
                 StorageType.FS, sip.getState(), sip.getChecksum());
         when(fsStorageService.getAipInfo(anyString(), anyObject(), anyObject(), anyObject()))
                 .thenReturn(aipStateInfoFsDto);
 
-        AipStateInfoDto aipStateInfoZfsDto = new AipStateInfoDto(fsStorageService.getStorageConfig().getName(),
+        AipStateInfoDto aipStateInfoZfsDto = new AipStateInfoDto(fsStorageService.getStorage().getName(),
                 StorageType.ZFS, sip.getState(), sip.getChecksum());
         when(zfsStorageService.getAipInfo(anyString(), anyObject(), anyObject(), anyObject()))
                 .thenReturn(aipStateInfoZfsDto);
 
-        AipStateInfoDto aipStateInfoCephDto = new AipStateInfoDto(fsStorageService.getStorageConfig().getName(),
+        AipStateInfoDto aipStateInfoCephDto = new AipStateInfoDto(fsStorageService.getStorage().getName(),
                 StorageType.CEPH, sip.getState(), sip.getChecksum());
         when(cephS3StorageService.getAipInfo(anyString(), anyObject(), anyObject(), anyObject()))
                 .thenReturn(aipStateInfoCephDto);
 
-        when(storageProvider.createAdapter(s1)).thenReturn(fsStorageService);
-        when(storageProvider.createAdapter(s2)).thenReturn(zfsStorageService);
-        when(storageProvider.createAdapter(s3)).thenReturn(cephS3StorageService);
+        when(storageProvider.createAllAdapters()).thenReturn(asList(fsStorageService, zfsStorageService, cephS3StorageService));
 
         AipRetrievalResource aip1 = new AipRetrievalResource(sipContent.getChannel());
         aip1.setSip(sipContent);
@@ -315,7 +312,7 @@ public class AipApiTest extends DbTest implements ApiTest {
         int tmpFilesBeforeRetrieval = tmpFolder.toFile().listFiles().length;
         mvc(api)
                 .perform(MockMvcRequestBuilders
-                        .fileUpload(BASE + "/store").file(sipFile).file(xmlFile)
+                        .fileUpload(BASE + "/save").file(sipFile).file(xmlFile)
                         .param("sipChecksumValue", SIP_HASH)
                         .param("sipChecksumType", valueOf(ChecksumType.MD5))
                         .param("aipXmlChecksumValue", xmlHash)
@@ -350,7 +347,7 @@ public class AipApiTest extends DbTest implements ApiTest {
 
         String sipId = mvc(api)
                 .perform(MockMvcRequestBuilders
-                        .fileUpload(BASE + "/store").file(sipFile).file(xmlFile)
+                        .fileUpload(BASE + "/save").file(sipFile).file(xmlFile)
                         .param("sipChecksumValue", XML1_HASH)
                         .param("sipChecksumType", valueOf(ChecksumType.MD5))
                         .param("aipXmlChecksumValue", XML1_HASH)
@@ -475,7 +472,7 @@ public class AipApiTest extends DbTest implements ApiTest {
     }
 
     /**
-     * Sends AIP remove (soft delete) request then sends AIP state request and verifies state change.
+     * Sends AIP removeAip (soft deleteAip) request then sends AIP state request and verifies state change.
      *
      * @throws Exception
      */
@@ -499,16 +496,8 @@ public class AipApiTest extends DbTest implements ApiTest {
         assertThat(aipSip.getState(), is(ObjectState.DELETED));
     }
 
-    @Test
-    public void getAipState() throws Exception {
-        mvc(api)
-                .perform(get(BASE + "/{sipId}/state", SIP_ID))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.[0].objectState").value("ARCHIVED"));
-    }
-
     /**
-     * Send hard delete request on created AIP verifies its status code.
+     * Send hard deleteAip request on created AIP verifies its status code.
      * Also verifies that two XMLs of SIP does not have the same version number.
      * At the end send request for AIP data and verifies that 404 error status is retrieved.
      *
@@ -528,11 +517,6 @@ public class AipApiTest extends DbTest implements ApiTest {
                 .perform(MockMvcRequestBuilders.get(BASE + "/{sipId}", SIP_ID)).andExpect(status().is(403));
     }
 
-    /**
-     * Send request for AIP state and verifies that it is in ARCHIVED state and it has two xml versions.
-     *
-     * @throws Exception
-     */
     @Test
     public void aipState() throws Exception {
         mvc(api)

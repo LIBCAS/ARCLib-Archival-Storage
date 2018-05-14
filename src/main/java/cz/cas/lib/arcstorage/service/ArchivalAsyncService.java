@@ -37,7 +37,7 @@ public class ArchivalAsyncService {
 
     @Async
     @Transactional
-    public void store(AipDto aip, Path tmpSipPath, byte[] xmlContent, List<StorageService> storageServices) {
+    public void saveAip(AipDto aip, Path tmpSipPath, byte[] xmlContent, List<StorageService> storageServices) {
         String op = "AIP storage ";
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         AtomicBoolean rollback = new AtomicBoolean(false);
@@ -46,9 +46,9 @@ public class ArchivalAsyncService {
                         try (InputStream sipStream = new FileInputStream(tmpSipPath.toFile());
                              InputStream xmlStream = new ByteArrayInputStream(xmlContent)) {
                             a.storeAip(new AipDto(aip, sipStream, xmlStream), rollback);
-                            log.info(strSA(a.getStorageConfig().getName(), aip.getSip().getId()) + op + "success");
+                            log.info(strSA(a.getStorage().getName(), aip.getSip().getId()) + op + "success");
                         } catch (StorageException e) {
-                            log.warn(strSA(a.getStorageConfig().getName(), aip.getSip().getId()) + op + "error: " + e);
+                            log.warn(strSA(a.getStorage().getName(), aip.getSip().getId()) + op + "error: " + e);
                             throw new GeneralException(e);
                         } catch (IOException e) {
                             throw new CantReadException("SIP tmp file at path " + tmpSipPath.toString() +
@@ -71,7 +71,7 @@ public class ArchivalAsyncService {
             try {
                 Files.delete(tmpSipPath);
             } catch (IOException e) {
-                log.error("Could not delete temporary file " + tmpSipPath);
+                log.error("Could not deleteAip temporary file " + tmpSipPath);
             }
         }
         if (!rollback.get()) {
@@ -85,9 +85,9 @@ public class ArchivalAsyncService {
             CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                 try {
                     a.rollbackAip(aip.getSip().getId());
-                    log.warn(strSA(a.getStorageConfig().getName(), aip.getSip().getId()) + "rolled back");
+                    log.warn(strSA(a.getStorage().getName(), aip.getSip().getId()) + "rolled back");
                 } catch (StorageException e) {
-                    log.error(strSA(a.getStorageConfig().getName(), aip.getSip().getId()) + "rollback process error: " + e);
+                    log.error(strSA(a.getStorage().getName(), aip.getSip().getId()) + "rollback process error: " + e);
                     throw new GeneralException(e);
                 }
             }, executor);
@@ -107,7 +107,7 @@ public class ArchivalAsyncService {
     }
 
     @Async
-    public void putObject(ArchivalObjectDto archivalObject, ObjectType objectType, TmpSourceHolder tmpSourceHolder, List<StorageService> storageServices) {
+    public void saveObject(ArchivalObjectDto archivalObject, ObjectType objectType, TmpSourceHolder tmpSourceHolder, List<StorageService> storageServices) {
         String op = "AIP storage ";
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         AtomicBoolean rollback = new AtomicBoolean(false);
@@ -116,9 +116,9 @@ public class ArchivalAsyncService {
                         try (InputStream objectStream = tmpSourceHolder.createInputStream()) {
                             ArchivalObjectDto archivalObjectCpy = new ArchivalObjectDto(archivalObject.getDatabaseId(), archivalObject.getStorageId(), objectStream, archivalObject.getChecksum());
                             a.storeObject(archivalObjectCpy, rollback);
-                            log.info(strSX(a.getStorageConfig().getName(), archivalObject.getStorageId()) + op + "success");
+                            log.info(strSX(a.getStorage().getName(), archivalObject.getStorageId()) + op + "success");
                         } catch (StorageException e) {
-                            log.warn(strSX(a.getStorageConfig().getName(), archivalObject.getStorageId()) + op + "error");
+                            log.warn(strSX(a.getStorage().getName(), archivalObject.getStorageId()) + op + "error");
                             throw new GeneralException(e);
                         } catch (IOException e) {
                             throw new UncheckedIOException(e);
@@ -151,9 +151,9 @@ public class ArchivalAsyncService {
             CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                 try {
                     a.rollbackObject(archivalObject.getStorageId());
-                    log.warn(strSX(a.getStorageConfig().getName(), archivalObject.getStorageId()) + "rolled back");
+                    log.warn(strSX(a.getStorage().getName(), archivalObject.getStorageId()) + "rolled back");
                 } catch (StorageException e) {
-                    log.error(strSX(a.getStorageConfig().getName(), archivalObject.getStorageId()) + "rollback process error");
+                    log.error(strSX(a.getStorage().getName(), archivalObject.getStorageId()) + "rollback process error");
                     throw new GeneralException(e);
                 }
             }, executor);
@@ -173,7 +173,7 @@ public class ArchivalAsyncService {
     }
 
     @Async
-    public void delete(String sipId, List<StorageService> storageServices) throws StorageException {
+    public void deleteAip(String sipId, List<StorageService> storageServices) throws StorageException {
         try {
             for (StorageService storageService : storageServices) {
                 storageService.deleteSip(sipId);
@@ -187,7 +187,7 @@ public class ArchivalAsyncService {
     }
 
     @Async
-    public void remove(String sipId, List<StorageService> storageServices) throws StorageException {
+    public void removeAip(String sipId, List<StorageService> storageServices) throws StorageException {
         try {
             for (StorageService storageService : storageServices) {
                 storageService.remove(sipId);

@@ -357,7 +357,7 @@ public class Utils {
      * @param checksum
      */
     public static void checkChecksumFormat(Checksum checksum) throws BadRequestException {
-        String hash = checksum.getHash();
+        String hash = checksum.getValue();
         switch (checksum.getType()) {
             case MD5:
                 if (!hash.matches("\\p{XDigit}{32}")) {

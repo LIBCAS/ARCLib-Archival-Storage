@@ -40,9 +40,10 @@ public class AipStateInfoDto {
      * @param storageName
      * @param storageType
      */
-    public AipStateInfoDto(String storageName, StorageType storageType) {
+    public AipStateInfoDto(String storageName, StorageType storageType, ObjectState objectState) {
         this.storageName = storageName;
         this.storageType = storageType;
+        this.objectState = objectState;
         reachable = false;
     }
 

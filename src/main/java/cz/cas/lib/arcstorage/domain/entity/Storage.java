@@ -6,27 +6,25 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import javax.persistence.Entity;
-import javax.persistence.EnumType;
-import javax.persistence.Enumerated;
-import javax.persistence.Table;
+import javax.persistence.*;
 
 @Getter
 @Setter
 @Entity
-@Table(name = "arcstorage_storage_config")
+@Table(name = "arcstorage_storage")
 @NoArgsConstructor
 @AllArgsConstructor
-public class StorageConfig extends DomainObject {
+public class Storage extends DomainObject {
     String name;
     String host;
     int port;
     int priority;
     /**
-     * place to store data, folder path for FS, ZFS, bucket name for CEPH S3
+     * place to save data, folder path for FS, ZFS, bucket name for CEPH S3
      */
     String location;
     @Enumerated(EnumType.STRING)
+    @Column(name = "type")
     StorageType storageType;
     String note;
     /**
@@ -37,7 +35,7 @@ public class StorageConfig extends DomainObject {
 
     @Override
     public String toString() {
-        return "StorageConfig{" +
+        return "Storage{" +
                 "name='" + name + '\'' +
                 ", host='" + host + '\'' +
                 ", port=" + port +

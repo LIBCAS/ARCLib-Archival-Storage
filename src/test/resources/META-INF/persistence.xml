@@ -9,7 +9,7 @@
         <class>cz.cas.lib.arcstorage.domain.entity.AipSip</class>
         <class>cz.cas.lib.arcstorage.dto.ObjectState</class>
         <class>cz.cas.lib.arcstorage.domain.entity.AipXml</class>
-        <class>cz.cas.lib.arcstorage.domain.entity.StorageConfig</class>
+        <class>cz.cas.lib.arcstorage.domain.entity.Storage</class>
         <exclude-unlisted-classes>false</exclude-unlisted-classes>
 
         <properties>

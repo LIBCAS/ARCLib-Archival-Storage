@@ -13,7 +13,7 @@
                 <constraints primaryKey="true" primaryKeyName="arcstorage_aip_sip_pkey" nullable="false"/>
             </column>
             <column name="created" type="datetime"/>
-            <column name="checksum_hash" type="varchar(128)">
+            <column name="checksum_value" type="varchar(255)">
                 <constraints nullable="false"/>
             </column>
             <column name="checksum_type" type="varchar(32)">
@@ -33,7 +33,7 @@
                              referencedTableName="arcstorage_aip_sip" referencedColumnNames="id"/>
             </column>
             <column name="created" type="datetime"/>
-            <column name="checksum_hash" type="varchar(128)">
+            <column name="checksum_value" type="varchar(255)">
                 <constraints nullable="false"/>
             </column>
             <column name="checksum_type" type="varchar(32)">
@@ -47,9 +47,25 @@
             </column>
         </createTable>
 
-        <createTable tableName="arcstorage_storage_config">
+        <createTable tableName="arcstorage_object">
             <column name="id" type="varchar(255)">
-                <constraints primaryKey="true" primaryKeyName="arcstorage_storage_config_pkey" nullable="false"/>
+                <constraints primaryKey="true" primaryKeyName="arcstorage_object_pkey" nullable="false"/>
+            </column>
+            <column name="created" type="datetime"/>
+            <column name="checksum_value" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checksum_type" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="state" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createTable tableName="arcstorage_storage">
+            <column name="id" type="varchar(255)">
+                <constraints primaryKey="true" primaryKeyName="arcstorage_storage_pkey" nullable="false"/>
             </column>
             <column name="name" type="varchar(16)">
                 <constraints nullable="false"/>
@@ -66,7 +82,7 @@
             <column name="priority" type="int">
                 <constraints nullable="false"/>
             </column>
-            <column name="storage_type" type="varchar(16)">
+            <column name="type" type="varchar(16)">
                 <constraints nullable="false"/>
             </column>
             <column name="note" type="varchar(2000)"/>
