@@ -70,6 +70,7 @@ public class AipApi {
                 zipOut.closeEntry();
             }
         } finally {
+            aipRetrievalResource.close();
             tmpFolder.resolve(aipRetrievalResource.getId()).toFile().delete();
         }
     }
