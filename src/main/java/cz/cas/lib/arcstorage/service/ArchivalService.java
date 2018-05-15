@@ -10,10 +10,7 @@ import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.service.exception.FileCorruptedAtAllStoragesException;
 import cz.cas.lib.arcstorage.service.exception.InvalidChecksumException;
 import cz.cas.lib.arcstorage.service.exception.StorageNotReachableException;
-import cz.cas.lib.arcstorage.service.exception.state.DeletedStateException;
-import cz.cas.lib.arcstorage.service.exception.state.FailedStateException;
-import cz.cas.lib.arcstorage.service.exception.state.RollbackStateException;
-import cz.cas.lib.arcstorage.service.exception.state.StillProcessingStateException;
+import cz.cas.lib.arcstorage.service.exception.state.*;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.StorageUtils;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
@@ -61,7 +58,7 @@ public class ArchivalService {
      * @throws FailedStateException                if SIP is failed
      */
     public AipRetrievalResource get(String sipId, Optional<Boolean> all) throws RollbackStateException, StillProcessingStateException,
-            DeletedStateException, FailedStateException, FileCorruptedAtAllStoragesException {
+            DeletedStateException, FailedStateException, FileCorruptedAtAllStoragesException, RemovedStateException {
         AipSip sipEntity = archivalDbService.getAip(sipId);
 
         switch (sipEntity.getState()) {
@@ -73,6 +70,8 @@ public class ArchivalService {
                 throw new DeletedStateException(sipEntity);
             case ROLLED_BACK:
                 throw new RollbackStateException(sipEntity);
+            case REMOVED:
+                throw new RemovedStateException(sipEntity);
         }
 
         List<AipXml> xmls = all.isPresent() && all.get() ? sipEntity.getXmls() : asList(sipEntity.getLatestXml());
@@ -211,7 +210,7 @@ public class ArchivalService {
     }
 
     /**
-     * Logically removes SIP from database.
+     * Logically removes SIP.
      *
      * @param sipId
      * @throws StorageException
@@ -223,8 +222,25 @@ public class ArchivalService {
     public void remove(String sipId) throws StillProcessingStateException, DeletedStateException,
             RollbackStateException, StorageException, FailedStateException, StorageNotReachableException {
         List<StorageService> reachableAdapters = storageProvider.createReachableAdapters();
-        archivalDbService.removeSip(sipId);
+        archivalDbService.removeAip(sipId);
         async.removeAip(sipId, reachableAdapters);
+    }
+
+    /**
+     * Renews logically removed SIP.
+     *
+     * @param sipId
+     * @throws StorageException
+     * @throws DeletedStateException
+     * @throws RollbackStateException
+     * @throws StillProcessingStateException
+     * @throws FailedStateException
+     */
+    public void renew(String sipId) throws StillProcessingStateException, DeletedStateException,
+            RollbackStateException, StorageException, FailedStateException, StorageNotReachableException {
+        List<StorageService> reachableAdapters = storageProvider.createReachableAdapters();
+        archivalDbService.renewAip(sipId);
+        async.renewAip(sipId, reachableAdapters);
     }
 
     /**
@@ -251,7 +267,7 @@ public class ArchivalService {
                                     aip.getXmls().stream()
                                             .collect(Collectors.toMap(xml -> xml.getVersion(), xml -> xml.getChecksum())));
                         } catch (StorageException e) {
-                            return new AipStateInfoDto(adapter.getStorage().getName(), adapter.getStorage().getStorageType(),aip.getState());
+                            return new AipStateInfoDto(adapter.getStorage().getName(), adapter.getStorage().getStorageType(), aip.getState());
                         }
                     }
                 }

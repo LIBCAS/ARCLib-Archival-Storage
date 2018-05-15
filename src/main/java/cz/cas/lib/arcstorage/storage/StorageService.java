@@ -129,6 +129,15 @@ public interface StorageService {
     void remove(String id) throws StorageException;
 
     /**
+     * Renews logically removed SIP. Must not fail if SIP is already renewed, i.e. in ARCHIVED state.
+     *
+     * @param id
+     * @throws StorageException
+     * @throws cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException if metadata of SIP does not exist
+     */
+    void renew(String id) throws StorageException;
+
+    /**
      * Rollbacks AIP and its first XML file from storage. Used only in case of cleaning process after storage/application failure.
      * <p>
      * In any case (file not found / already rolled back / file which was never actually stored / inconsistent ...) this method has to set ROLLED_BACK state in metadata and deleteAip the file (if exists).

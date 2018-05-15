@@ -169,7 +169,7 @@ public class ArchivalDbService {
      * @throws RollbackStateException
      * @throws StillProcessingStateException
      */
-    public void removeSip(String sipId) throws DeletedStateException, RollbackStateException, StillProcessingStateException, FailedStateException {
+    public void removeAip(String sipId) throws DeletedStateException, RollbackStateException, StillProcessingStateException, FailedStateException {
         AipSip sip = aipSipStore.find(sipId);
         notNull(sip, () -> {
             log.warn("Could not find AIP: " + sipId);
@@ -186,6 +186,34 @@ public class ArchivalDbService {
                 throw new FailedStateException(sip);
         }
         sip.setState(ObjectState.REMOVED);
+        aipSipStore.save(sip);
+    }
+
+    /**
+     * Renews logically removed SIP i.e. sets its state to {@link ObjectState#REMOVED} in the database.
+     *
+     * @param sipId
+     * @throws DeletedStateException         if SIP is deleted
+     * @throws RollbackStateException
+     * @throws StillProcessingStateException
+     */
+    public void renewAip(String sipId) throws DeletedStateException, RollbackStateException, StillProcessingStateException, FailedStateException {
+        AipSip sip = aipSipStore.find(sipId);
+        notNull(sip, () -> {
+            log.warn("Could not find AIP: " + sipId);
+            return new MissingObject(AipSip.class, sipId);
+        });
+        switch (sip.getState()) {
+            case ROLLED_BACK:
+                throw new RollbackStateException(sip);
+            case DELETED:
+                throw new DeletedStateException(sip);
+            case PROCESSING:
+                throw new StillProcessingStateException(sip);
+            case FAILED:
+                throw new FailedStateException(sip);
+        }
+        sip.setState(ObjectState.ARCHIVED);
         aipSipStore.save(sip);
     }
 

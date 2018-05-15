@@ -1,6 +1,5 @@
 package cz.cas.lib.arcstorage.storage.fs;
 
-import cz.cas.lib.arcstorage.dto.ObjectState;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
@@ -56,6 +55,11 @@ public interface FsAdapter extends StorageService {
     @Override
     default void remove(String id) throws StorageException {
         getFsProcessor().remove(id);
+    }
+
+    @Override
+    default void renew(String id) throws StorageException {
+        getFsProcessor().renew(id);
     }
 
     @Override

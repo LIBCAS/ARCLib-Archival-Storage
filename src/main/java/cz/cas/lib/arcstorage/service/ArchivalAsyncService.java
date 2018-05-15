@@ -199,6 +199,19 @@ public class ArchivalAsyncService {
         log.info("AIP: " + sipId + " has been successfully removed.");
     }
 
+    @Async
+    public void renewAip(String sipId, List<StorageService> storageServices) throws StorageException {
+        try {
+            for (StorageService storageService : storageServices) {
+                storageService.renew(sipId);
+            }
+        } catch (StorageException e) {
+            log.error("Storage error has occurred during renewing of AIP: " + sipId + ". AIP is marked as archived in DB but may not be marked as archived on every storage.");
+            throw e;
+        }
+        log.info("AIP: " + sipId + " has been successfully removed.");
+    }
+
     @Inject
     public void setArchivalDbService(ArchivalDbService archivalDbService) {
         this.archivalDbService = archivalDbService;

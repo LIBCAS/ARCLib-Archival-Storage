@@ -149,7 +149,7 @@ public class ArchivalDbServiceTest extends DbTest {
     @Transactional
     public void removeSip() throws DeletedStateException, StillProcessingStateException, RollbackStateException,
             FailedStateException {
-        service.removeSip(SIP_ID);
+        service.removeAip(SIP_ID);
         AipSip aip = service.getAip(SIP_ID);
         assertThat(aip.getState(), equalTo(ObjectState.REMOVED));
         assertThat(aip.getXmls(), hasSize(2));
@@ -245,7 +245,7 @@ public class ArchivalDbServiceTest extends DbTest {
         assertThrown(() -> service.registerSipDeletion(S)).isInstanceOf(MissingObject.class);
         assertThrown(() -> service.registerXmlUpdate(XML1_ID, aipXmlChecksum, Optional.empty())).isInstanceOf(MissingObject.class);
         assertThrown(() -> service.getAip(S)).isInstanceOf(MissingObject.class);
-        assertThrown(() -> service.removeSip(S)).isInstanceOf(MissingObject.class);
+        assertThrown(() -> service.removeAip(S)).isInstanceOf(MissingObject.class);
     }
 
     @Test
@@ -282,14 +282,14 @@ public class ArchivalDbServiceTest extends DbTest {
         sip.setState(ObjectState.PROCESSING);
         sipStore.save(sip);
         assertThrown(() -> service.registerSipDeletion(SIP_ID)).isInstanceOf(StillProcessingStateException.class);
-        assertThrown(() -> service.removeSip(SIP_ID)).isInstanceOf(StillProcessingStateException.class);
+        assertThrown(() -> service.removeAip(SIP_ID)).isInstanceOf(StillProcessingStateException.class);
         sip.setState(ObjectState.ROLLED_BACK);
         sipStore.save(sip);
         assertThrown(() -> service.registerSipDeletion(SIP_ID)).isInstanceOf(RollbackStateException.class);
-        assertThrown(() -> service.removeSip(SIP_ID)).isInstanceOf(RollbackStateException.class);
+        assertThrown(() -> service.removeAip(SIP_ID)).isInstanceOf(RollbackStateException.class);
         sip.setState(ObjectState.DELETED);
         sipStore.save(sip);
-        assertThrown(() -> service.removeSip(SIP_ID)).isInstanceOf(DeletedStateException.class);
+        assertThrown(() -> service.removeAip(SIP_ID)).isInstanceOf(DeletedStateException.class);
     }
 
     @Test

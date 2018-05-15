@@ -204,7 +204,25 @@ public class RemoteFsProcessor implements StorageService {
             ssh.authPublickey("arcstorage", keyFilePath);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
                 checkFixityMetadataExists(sftp, sipFolder + S + sipId);
+                removeState(sftp, sipFolder, sipId, ObjectState.ARCHIVED);
                 setState(sftp, sipFolder, sipId, ObjectState.REMOVED);
+            }
+        } catch (IOException e) {
+            throw new SshException(e);
+        }
+    }
+
+    @Override
+    public void renew(String sipId) throws StorageException {
+        String sipFolder = getFolderPath(sipId);
+        try (SSHClient ssh = new SSHClient()) {
+            ssh.addHostKeyVerifier(new PromiscuousVerifier());
+            ssh.connect(storage.getHost(), storage.getPort());
+            ssh.authPublickey("arcstorage", keyFilePath);
+            try (SFTPClient sftp = ssh.newSFTPClient()) {
+                checkFixityMetadataExists(sftp, sipFolder + S + sipId);
+                removeState(sftp, sipFolder, sipId, ObjectState.REMOVED);
+                setState(sftp, sipFolder, sipId, ObjectState.ARCHIVED);
             }
         } catch (IOException e) {
             throw new SshException(e);
@@ -424,8 +442,13 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     private void setState(SFTPClient sftp, String folder, String fileId, ObjectState state) throws IOException {
-        sftp.put(new InputStreamSource(new ByteArrayInputStream("".getBytes()), fileId + state), folder);
+        sftp.put(new InputStreamSource(new ByteArrayInputStream("".getBytes()), fileId + "." + state), folder);
     }
+
+    private void removeState(SFTPClient sftp, String folder, String fileId, ObjectState state) throws IOException {
+        deleteIfExistsSftp(sftp, folder + S + fileId + "." + state);
+    }
+
 
     private void transitProcessingState(SFTPClient sftp, String folder, String fileId, ObjectState newState) throws IOException {
         sftp.rename(folder + S + toStateStr(fileId, ObjectState.PROCESSING), folder + S + toStateStr(fileId, newState));

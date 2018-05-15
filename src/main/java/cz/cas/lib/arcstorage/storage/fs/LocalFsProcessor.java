@@ -118,8 +118,21 @@ public class LocalFsProcessor implements StorageService {
         Path sipFolder = getFolderPath(sipId);
         try {
             checkFixityMetadataExists(sipFolder);
+            removeState(sipFolder, sipId, ObjectState.ARCHIVED);
             setState(sipFolder, sipId, ObjectState.REMOVED);
-            Files.createFile(sipFolder.resolve(String.format("%s.REMOVED", sipId)));
+        } catch (FileAlreadyExistsException e) {
+        } catch (IOException ex) {
+            throw new IOStorageException(ex);
+        }
+    }
+
+    @Override
+    public void renew(String sipId) throws IOStorageException, FileDoesNotExistException {
+        Path sipFolder = getFolderPath(sipId);
+        try {
+            checkFixityMetadataExists(sipFolder);
+            removeState(sipFolder, sipId, ObjectState.REMOVED);
+            setState(sipFolder, sipId, ObjectState.ARCHIVED);
         } catch (FileAlreadyExistsException e) {
         } catch (IOException ex) {
             throw new IOStorageException(ex);
@@ -255,7 +268,12 @@ public class LocalFsProcessor implements StorageService {
     }
 
     private void setState(Path folder, String fileId, ObjectState state) throws IOException {
-        Files.createFile(folder.resolve(toStateStr(fileId, state)));
+        if (!Files.exists(folder.resolve(toStateStr(fileId, state))))
+            Files.createFile(folder.resolve(toStateStr(fileId, state)));
+    }
+
+    private void removeState(Path folder, String fileId, ObjectState state) throws IOException {
+        Files.deleteIfExists(folder.resolve(toStateStr(fileId, state)));
     }
 
     private String toStateStr(String fileId, ObjectState objectState) {

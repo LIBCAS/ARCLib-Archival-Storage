@@ -6,10 +6,7 @@ import cz.cas.lib.arcstorage.service.ArchivalService;
 import cz.cas.lib.arcstorage.service.exception.FileCorruptedAtAllStoragesException;
 import cz.cas.lib.arcstorage.service.exception.InvalidChecksumException;
 import cz.cas.lib.arcstorage.service.exception.StorageNotReachableException;
-import cz.cas.lib.arcstorage.service.exception.state.DeletedStateException;
-import cz.cas.lib.arcstorage.service.exception.state.FailedStateException;
-import cz.cas.lib.arcstorage.service.exception.state.RollbackStateException;
-import cz.cas.lib.arcstorage.service.exception.state.StillProcessingStateException;
+import cz.cas.lib.arcstorage.service.exception.state.*;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import org.apache.commons.io.IOUtils;
 import org.springframework.beans.factory.annotation.Value;
@@ -51,7 +48,7 @@ public class AipApi {
     @RequestMapping(value = "/{sipId}", method = RequestMethod.GET)
     public void get(@PathVariable("sipId") String sipId,
                     @RequestParam(value = "all") Optional<Boolean> all, HttpServletResponse response)
-            throws IOException, RollbackStateException, DeletedStateException, StorageException, StillProcessingStateException, FailedStateException, FileCorruptedAtAllStoragesException, BadRequestException {
+            throws IOException, RollbackStateException, DeletedStateException, StorageException, StillProcessingStateException, FailedStateException, FileCorruptedAtAllStoragesException, BadRequestException, RemovedStateException {
         checkUUID(sipId);
 
         AipRetrievalResource aipRetrievalResource = archivalService.get(sipId, all);
@@ -172,6 +169,23 @@ public class AipApi {
             RollbackStateException, StorageException, FailedStateException, StorageNotReachableException, BadRequestException {
         checkUUID(sipId);
         archivalService.remove(sipId);
+    }
+
+    /**
+     * Logically removes AIP package by setting its state to {@link ObjectState#REMOVED}
+     * <p>Removed package can is still retrieved when {@link AipApi#get} method is called.</p>
+     *
+     * @param sipId
+     * @throws IOException
+     * @throws DeletedStateException
+     * @throws RollbackStateException
+     * @throws StillProcessingStateException
+     */
+    @RequestMapping(value = "/{sipId}", method = RequestMethod.DELETE)
+    public void renew(@PathVariable("sipId") String sipId) throws DeletedStateException, StillProcessingStateException,
+            RollbackStateException, StorageException, FailedStateException, StorageNotReachableException, BadRequestException {
+        checkUUID(sipId);
+        archivalService.renew(sipId);
     }
 
     /**

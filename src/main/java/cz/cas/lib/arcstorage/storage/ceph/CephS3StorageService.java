@@ -131,6 +131,17 @@ public class CephS3StorageService implements StorageService {
     }
 
     @Override
+    public void renew(String sipId) throws StorageException {
+        AmazonS3 s3 = connect();
+        String metadataId = toMetadataObjectId(sipId);
+        checkFileExists(s3, metadataId);
+        ObjectMetadata objectMetadata = s3.getObjectMetadata(storage.getLocation(), metadataId);
+        objectMetadata.addUserMetadata(STATE_KEY, ObjectState.ARCHIVED.toString());
+        s3.putObject(storage.getLocation(), toMetadataObjectId(sipId), new NullInputStream(0), objectMetadata);
+    }
+
+
+    @Override
     public void rollbackAip(String sipId) throws StorageException {
         AmazonS3 s3 = connect();
         rollbackFile(s3, sipId);
