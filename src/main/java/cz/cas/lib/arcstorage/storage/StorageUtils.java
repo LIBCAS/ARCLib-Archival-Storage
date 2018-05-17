@@ -96,7 +96,7 @@ public class StorageUtils {
         return storage.getHost().equals("localhost") || storage.getHost().equals("127.0.0.1");
     }
 
-    public static void validateChecksum(Checksum checksum, Path tmpSipPath) throws IOException, InvalidChecksumException {
+    public static void validateChecksum(Checksum checksum, Path tmpSipPath) throws IOException {
         try (BufferedInputStream fis = new BufferedInputStream(new FileInputStream(tmpSipPath.toString()))) {
             Checksum computedChecksum = StorageUtils.computeChecksum(fis, checksum.getType());
             if (!checksum.equals(computedChecksum)) {

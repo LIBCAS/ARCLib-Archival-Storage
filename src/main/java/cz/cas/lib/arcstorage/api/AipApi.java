@@ -48,7 +48,8 @@ public class AipApi {
     @RequestMapping(value = "/{sipId}", method = RequestMethod.GET)
     public void get(@PathVariable("sipId") String sipId,
                     @RequestParam(value = "all") Optional<Boolean> all, HttpServletResponse response)
-            throws IOException, RollbackStateException, DeletedStateException, StorageException, StillProcessingStateException, FailedStateException, FileCorruptedAtAllStoragesException, BadRequestException, RemovedStateException {
+            throws IOException, RollbackStateException, DeletedStateException, StillProcessingStateException,
+            FailedStateException, FileCorruptedAtAllStoragesException, BadRequestException, RemovedStateException {
         checkUUID(sipId);
 
         AipRetrievalResource aipRetrievalResource = archivalService.get(sipId, all);
@@ -80,8 +81,9 @@ public class AipApi {
      */
     @RequestMapping(value = "/xml/{sipId}", method = RequestMethod.GET)
     public void getXml(@PathVariable("sipId") String sipId, @RequestParam(value = "v")
-            Optional<Integer> version, HttpServletResponse response) throws StorageException, StillProcessingStateException,
-            RollbackStateException, IOException, FailedStateException, FileCorruptedAtAllStoragesException, BadRequestException {
+            Optional<Integer> version, HttpServletResponse response) throws StillProcessingStateException,
+            RollbackStateException, IOException, FailedStateException, FileCorruptedAtAllStoragesException,
+            BadRequestException {
         checkUUID(sipId);
         ArchivalObjectDto xml = archivalService.getXml(sipId, version);
         response.setContentType("application/xml");
@@ -111,10 +113,12 @@ public class AipApi {
      */
     @RequestMapping(value = "/save", method = RequestMethod.POST)
     public String save(@RequestParam("sip") MultipartFile sip, @RequestParam("aipXml") MultipartFile aipXml,
-                       @RequestParam("sipChecksumValue") String sipChecksumValue, @RequestParam("sipChecksumType") ChecksumType sipChecksumType,
+                       @RequestParam("sipChecksumValue") String sipChecksumValue,
+                       @RequestParam("sipChecksumType") ChecksumType sipChecksumType,
                        @RequestParam("aipXmlChecksumValue") String aipXmlChecksumValue,
-                       @RequestParam("aipXmlChecksumType") ChecksumType aipXmlChecksumType, @RequestParam(value = "UUID") Optional<String> id)
-            throws IOException, InvalidChecksumException, StorageNotReachableException, BadRequestException {
+                       @RequestParam("aipXmlChecksumType") ChecksumType aipXmlChecksumType,
+                       @RequestParam(value = "UUID") Optional<String> id)
+            throws IOException, StorageNotReachableException, BadRequestException {
         String sipId = id.isPresent() ? id.get() : UUID.randomUUID().toString();
 
         Checksum sipChecksum = new Checksum(sipChecksumType, sipChecksumValue);
@@ -146,7 +150,8 @@ public class AipApi {
     public void saveXml(@PathVariable("sipId") String sipId, @RequestParam("xml") MultipartFile xml,
                         @RequestParam("checksumValue") String checksumValue,
                         @RequestParam("checksumType") ChecksumType checksumType,
-                        @RequestParam("version") Optional<Integer> version) throws IOException, StorageNotReachableException, BadRequestException, InvalidChecksumException {
+                        @RequestParam("version") Optional<Integer> version) throws IOException,
+            StorageNotReachableException, BadRequestException {
         checkUUID(sipId);
         Checksum checksum = new Checksum(checksumType, checksumValue);
         checkChecksumFormat(checksum);
@@ -164,26 +169,30 @@ public class AipApi {
      * @throws RollbackStateException
      * @throws StillProcessingStateException
      */
-    @RequestMapping(value = "/{sipId}", method = RequestMethod.DELETE)
+    @RequestMapping(value = "/{sipId}/remove", method = RequestMethod.PUT)
     public void remove(@PathVariable("sipId") String sipId) throws DeletedStateException, StillProcessingStateException,
-            RollbackStateException, StorageException, FailedStateException, StorageNotReachableException, BadRequestException {
+            RollbackStateException, StorageException, FailedStateException, StorageNotReachableException,
+            BadRequestException {
         checkUUID(sipId);
         archivalService.remove(sipId);
     }
 
     /**
-     * Logically removes AIP package by setting its state to {@link ObjectState#REMOVED}
-     * <p>Removed package can is still retrieved when {@link AipApi#get} method is called.</p>
-     *
+     * Renews logically removed SIP.
      * @param sipId
-     * @throws IOException
+     *
      * @throws DeletedStateException
-     * @throws RollbackStateException
      * @throws StillProcessingStateException
+     * @throws RollbackStateException
+     * @throws StorageException
+     * @throws FailedStateException
+     * @throws StorageNotReachableException
+     * @throws BadRequestException
      */
-    @RequestMapping(value = "/{sipId}", method = RequestMethod.DELETE)
+    @RequestMapping(value = "/{sipId}/renew", method = RequestMethod.PUT)
     public void renew(@PathVariable("sipId") String sipId) throws DeletedStateException, StillProcessingStateException,
-            RollbackStateException, StorageException, FailedStateException, StorageNotReachableException, BadRequestException {
+            RollbackStateException, StorageException, FailedStateException, StorageNotReachableException,
+            BadRequestException {
         checkUUID(sipId);
         archivalService.renew(sipId);
     }
@@ -198,7 +207,7 @@ public class AipApi {
      * @throws RollbackStateException
      * @throws StillProcessingStateException
      */
-    @RequestMapping(value = "/{sipId}/hard", method = RequestMethod.DELETE)
+    @RequestMapping(value = "/{sipId}", method = RequestMethod.DELETE)
     public void delete(@PathVariable("sipId") String sipId) throws StillProcessingStateException, RollbackStateException,
             StorageException, FailedStateException, StorageNotReachableException, BadRequestException {
         checkUUID(sipId);

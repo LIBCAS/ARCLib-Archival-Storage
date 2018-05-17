@@ -55,7 +55,7 @@ public class ResourceExceptionHandler {
 
     @ExceptionHandler(InvalidChecksumException.class)
     public ResponseEntity invalidChecksumException(InvalidChecksumException e) {
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.toString());
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(e.toString());
     }
 
     @ExceptionHandler(StorageNotReachableException.class)
