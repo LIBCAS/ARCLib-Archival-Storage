@@ -38,6 +38,7 @@ import java.util.zip.ZipInputStream;
 
 import static cz.cas.lib.arcstorage.util.Utils.asList;
 import static cz.cas.lib.arcstorage.util.Utils.asMap;
+import static cz.cas.lib.arcstorage.util.Utils.asSet;
 import static java.lang.String.valueOf;
 import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.assertThat;
@@ -100,8 +101,7 @@ public class AipApiTest extends DbTest implements ApiTest {
     private static Storage s3;
 
     @BeforeClass
-    public static void setup() throws IOException {
-
+    public static void setup() {
         s1 = new Storage();
         s1.setHost("localhost");
         s1.setName("local fs");
@@ -138,15 +138,12 @@ public class AipApiTest extends DbTest implements ApiTest {
 
     @Before
     public void before() throws StorageException, FileNotFoundException {
-
         FileInputStream sipContent = new FileInputStream(SIP_SOURCE_PATH.toFile());
         FileInputStream xml1InputStream = new FileInputStream(Paths.get("./src/test/resources/aip/xml1.xml").toFile());
         FileInputStream xml2InputStream = new FileInputStream(Paths.get("./src/test/resources/aip/xml2.xml").toFile());
 
         sip = new AipSip(SIP_ID, new Checksum(ChecksumType.MD5, SIP_HASH), ObjectState.ARCHIVED);
-
         aipXml1 = new AipXml(XML1_ID, new Checksum(ChecksumType.MD5, XML1_HASH), sip, 1, ObjectState.ARCHIVED);
-
         aipXml2 = new AipXml(XML2_ID, new Checksum(ChecksumType.MD5, XML2_HASH), sip, 2, ObjectState.ARCHIVED);
 
         xmlStore.setEntityManager(getEm());
@@ -183,17 +180,18 @@ public class AipApiTest extends DbTest implements ApiTest {
         when(fsStorageService.getAipInfo(anyString(), anyObject(), anyObject(), anyObject()))
                 .thenReturn(aipStateInfoFsDto);
 
-        AipStateInfoDto aipStateInfoZfsDto = new AipStateInfoDto(fsStorageService.getStorage().getName(),
+        AipStateInfoDto aipStateInfoZfsDto = new AipStateInfoDto(zfsStorageService.getStorage().getName(),
                 StorageType.ZFS, sip.getState(), sip.getChecksum());
         when(zfsStorageService.getAipInfo(anyString(), anyObject(), anyObject(), anyObject()))
                 .thenReturn(aipStateInfoZfsDto);
 
-        AipStateInfoDto aipStateInfoCephDto = new AipStateInfoDto(fsStorageService.getStorage().getName(),
+        AipStateInfoDto aipStateInfoCephDto = new AipStateInfoDto(cephS3StorageService.getStorage().getName(),
                 StorageType.CEPH, sip.getState(), sip.getChecksum());
         when(cephS3StorageService.getAipInfo(anyString(), anyObject(), anyObject(), anyObject()))
                 .thenReturn(aipStateInfoCephDto);
 
-        when(storageProvider.createAllAdapters()).thenReturn(asList(fsStorageService, zfsStorageService, cephS3StorageService));
+        when(storageProvider.createAllAdapters()).thenReturn(asList(fsStorageService, zfsStorageService,
+                cephS3StorageService));
 
         AipRetrievalResource aip1 = new AipRetrievalResource(sipContent.getChannel());
         aip1.setSip(sipContent);
@@ -278,6 +276,17 @@ public class AipApiTest extends DbTest implements ApiTest {
     }
 
     /**
+     * Send request for SIP data for a nonexistent SIP and verifies a Bad Request error (400) is returned.
+     * @throws Exception
+     */
+    @Test
+    public void getSipNonExistentSip() throws Exception {
+        mvc(api)
+                .perform(MockMvcRequestBuilders.get(BASE + "/{sipId}", "nonExistentSipId"))
+                .andExpect(status().isBadRequest());
+    }
+
+    /**
      * Send request for latest xml and verifies data in response.
      *
      * @throws Exception
@@ -293,81 +302,17 @@ public class AipApiTest extends DbTest implements ApiTest {
     }
 
     /**
-     * Send AIP creation request with AIP data (sip & xml) and verifies that response contains ID of newly created AIP (SIP).
-     * Then send state request and verifies that SIP exists.
+     * Send request for latest xml for and non existent sip and verifies a Bad Request error (400) is returned.
      *
      * @throws Exception
      */
     @Test
-    public void saveIdProvided() throws Exception {
-        String sipId = "testSipId";
-        String xmlId = "testXmlId";
-
-        MockMultipartFile sipFile = new MockMultipartFile(
-                "sip", "sip", "text/plain", Files.readAllBytes(SIP_SOURCE_PATH));
-        MockMultipartFile xmlFile = new MockMultipartFile(
-                "aipXml", "xml", "text/plain", xmlId.getBytes());
-
-        String xmlHash = "af5e897c3cc424f31b84af579b274626";
-        int tmpFilesBeforeRetrieval = tmpFolder.toFile().listFiles().length;
-        mvc(api)
-                .perform(MockMvcRequestBuilders
-                        .fileUpload(BASE + "/save").file(sipFile).file(xmlFile)
-                        .param("sipChecksumValue", SIP_HASH)
-                        .param("sipChecksumType", valueOf(ChecksumType.MD5))
-                        .param("aipXmlChecksumValue", xmlHash)
-                        .param("aipXmlChecksumType", valueOf(ChecksumType.MD5))
-                        .param("UUID", sipId))
-                .andExpect(status().isOk());
-        assertThat(sipId, not(isEmptyOrNullString()));
-        Thread.sleep(5000);
-
-        AipSip aipSip = sipStore.find(sipId);
-        assertThat(aipSip.getState(), is(ObjectState.ARCHIVED));
-        assertThat(aipSip.getXmls().size(), is(1));
-        assertThat(aipSip.getXml(0).getState(), is(ObjectState.ARCHIVED));
-        int tmpFilesAfterRetrieval = tmpFolder.toFile().listFiles().length;
-        assertThat(tmpFilesAfterRetrieval, is(tmpFilesBeforeRetrieval));
-    }
-
-    /**
-     * Send AIP creation request with AIP data where MD5 param does not match MD5 of a file.
-     * Then send request for AIP state and verifies that both XML and SIP are ROLLED BACK.
-     * Then send request for AIP data and verifies 500 response code.
-     *
-     * @throws Exception
-     */
-    @Test
-    @Ignore
-    public void saveMD5Changed() throws Exception {
-        MockMultipartFile sipFile = new MockMultipartFile(
-                "sip", "sip", "text/plain", Files.readAllBytes(SIP_SOURCE_PATH));
-        MockMultipartFile xmlFile = new MockMultipartFile(
-                "aipXml", "xml", "text/plain", XML1_ID.getBytes());
-
-        String sipId = mvc(api)
-                .perform(MockMvcRequestBuilders
-                        .fileUpload(BASE + "/save").file(sipFile).file(xmlFile)
-                        .param("sipChecksumValue", XML1_HASH)
-                        .param("sipChecksumType", valueOf(ChecksumType.MD5))
-                        .param("aipXmlChecksumValue", XML1_HASH)
-                        .param("aipXmlChecksumType", valueOf(ChecksumType.MD5)))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-
-        assertThat(sipId, not(isEmptyOrNullString()));
-        Thread.sleep(6000);
-
-//        AipSip aipSip = sipStore.find(sipId);
-//        assertThat(aipSip.getState(), is(ObjectState.ROLLED_BACK));
-//        assertThat(aipSip.isConsistent(), is(true));
-//
-//        assertThat(aipSip.getXml(0).getState(), is(ObjectState.ROLLED_BACK));
-//        assertThat(aipSip.getXml(0).isConsistent(), is(true));
-//
-//        mvc(api)
-//                .perform(MockMvcRequestBuilders.get(BASE + "/{sipId}", sipId))
-//                .andExpect(status().is(500));
+    public void getLatestXmlNonExistentSip() throws Exception {
+         mvc(api)
+                .perform(MockMvcRequestBuilders.get(BASE + "/xml/{sipId}", "nonExistentSipId"))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse()
+                .getContentAsByteArray();
     }
 
     /**
@@ -386,8 +331,137 @@ public class AipApiTest extends DbTest implements ApiTest {
     }
 
     /**
+     * Send request for xml specified by version and verifies data in response.
+     *
+     * @throws Exception
+     */
+    @Test
+    public void getXmlByVersionNonExistentVersion() throws Exception {
+        mvc(api)
+                .perform(MockMvcRequestBuilders.get(BASE + "/xml/{sipId}", SIP_ID).param("v", "3"))
+                .andExpect(status().isNotFound());
+    }
+
+    /**
+     * Send AIP creation request with AIP data (sip & xml) and verifies that response contains ID of newly created AIP (SIP).
+     * Then verifies that SIP exists in the database.
+     *
+     * @throws Exception
+     */
+    @Test
+    public void saveIdProvided() throws Exception {
+        String sipId = "testSipId";
+        String xmlId = "testXmlId";
+
+        MockMultipartFile sipFile = new MockMultipartFile(
+                "sip", "sip", "text/plain", Files.readAllBytes(SIP_SOURCE_PATH));
+        MockMultipartFile xmlFile = new MockMultipartFile(
+                "aipXml", "xml", "text/plain", xmlId.getBytes());
+
+        String xmlHash = "af5e897c3cc424f31b84af579b274626";
+        String sipIdReturned = mvc(api)
+                .perform(MockMvcRequestBuilders
+                        .fileUpload(BASE + "/save").file(sipFile).file(xmlFile)
+                        .param("sipChecksumValue", SIP_HASH)
+                        .param("sipChecksumType", valueOf(ChecksumType.MD5))
+                        .param("aipXmlChecksumValue", xmlHash)
+                        .param("aipXmlChecksumType", valueOf(ChecksumType.MD5))
+                        .param("UUID", sipId))
+                .andExpect(status().isOk())
+                .andReturn().getResponse()
+                .getContentAsString();
+
+        assertThat(sipIdReturned, not(isEmptyOrNullString()));
+        assertThat(sipId, equalTo(sipIdReturned));
+        Thread.sleep(5000);
+
+        AipSip aipSip = sipStore.find(sipId);
+        assertThat(aipSip.getState(), is(ObjectState.ARCHIVED));
+        assertThat(aipSip.getXmls().size(), is(1));
+        assertThat(aipSip.getXml(0).getState(), is(ObjectState.ARCHIVED));
+    }
+
+    /**
+     * Send AIP creation request with AIP data (sip & xml) and verifies that response contains ID of newly created AIP (SIP).
+     * Then verifies that SIP exists in the database.
+     *
+     * @throws Exception
+     */
+    @Test
+    public void saveIdNotProvided() throws Exception {
+        String xmlId = "testXmlId";
+
+        MockMultipartFile sipFile = new MockMultipartFile(
+                "sip", "sip", "text/plain", Files.readAllBytes(SIP_SOURCE_PATH));
+        MockMultipartFile xmlFile = new MockMultipartFile(
+                "aipXml", "xml", "text/plain", xmlId.getBytes());
+
+        String xmlHash = "af5e897c3cc424f31b84af579b274626";
+        String sipId = mvc(api)
+                .perform(MockMvcRequestBuilders
+                        .fileUpload(BASE + "/save").file(sipFile).file(xmlFile)
+                        .param("sipChecksumValue", SIP_HASH)
+                        .param("sipChecksumType", valueOf(ChecksumType.MD5))
+                        .param("aipXmlChecksumValue", xmlHash)
+                        .param("aipXmlChecksumType", valueOf(ChecksumType.MD5)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse()
+                .getContentAsString();
+        Thread.sleep(5000);
+
+        AipSip aipSip = sipStore.find(sipId);
+        assertThat(aipSip.getState(), is(ObjectState.ARCHIVED));
+        assertThat(aipSip.getXmls().size(), is(1));
+        assertThat(aipSip.getXml(0).getState(), is(ObjectState.ARCHIVED));
+    }
+
+    /**
+     * Send AIP creation request with AIP data where MD5 param does not match MD5 of a file.
+     *
+     * @throws Exception
+     */
+    @Test
+    public void saveNonMatchingHashOfSip() throws Exception {
+        MockMultipartFile sipFile = new MockMultipartFile(
+                "sip", "sip", "text/plain", Files.readAllBytes(SIP_SOURCE_PATH));
+        MockMultipartFile xmlFile = new MockMultipartFile(
+                "aipXml", "xml", "text/plain", XML1_ID.getBytes());
+
+        mvc(api)
+                .perform(MockMvcRequestBuilders
+                        .fileUpload(BASE + "/save").file(sipFile).file(xmlFile)
+                        .param("sipChecksumValue", XML1_HASH)
+                        .param("sipChecksumType", valueOf(ChecksumType.MD5))
+                        .param("aipXmlChecksumValue", XML1_HASH)
+                        .param("aipXmlChecksumType", valueOf(ChecksumType.MD5)))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    /**
+     * Send AIP creation request with AIP data where MD5 param does not match MD5 of a file.
+     *
+     * @throws Exception
+     */
+    @Test
+    public void saveNonMatchingHashOfXml() throws Exception {
+        MockMultipartFile sipFile = new MockMultipartFile(
+                "sip", "sip", "text/plain", Files.readAllBytes(SIP_SOURCE_PATH));
+        MockMultipartFile xmlFile = new MockMultipartFile(
+                "aipXml", "xml", "text/plain", XML1_ID.getBytes());
+
+        mvc(api)
+                .perform(MockMvcRequestBuilders
+                        .fileUpload(BASE + "/save").file(sipFile).file(xmlFile)
+                        .param("sipChecksumValue", SIP_HASH)
+                        .param("sipChecksumType", valueOf(ChecksumType.MD5))
+                        .param("aipXmlChecksumValue", SIP_HASH)
+                        .param("aipXmlChecksumType", valueOf(ChecksumType.MD5)))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    /**
      * Send request for XML update.
-     * Then sends request for AIP state and verifies new XML record is there.
+     * Then checks AIP state in DB and verifies new XML record is there.
      *
      * @throws Exception
      */
@@ -415,14 +489,15 @@ public class AipApiTest extends DbTest implements ApiTest {
 
     /**
      * Send request for XML update where MD5 param does not match MD5 of a file.
-     * Then send request for AIP state and verifies that only last XML is ROLLED_BACK.
-     * Then send request for XML data and verifies 500 response code.
+     * Then checks AIP in DB and verifies that no new XML was saved.
      *
      * @throws Exception
      */
     @Test
-    @Ignore
-    public void updateXmlMD5Changed() throws Exception {
+    public void updateXmlNonMatchingHash() throws Exception {
+        AipSip aipSip = sipStore.find(SIP_ID);
+        List<AipXml> xmls = aipSip.getXmls();
+
         MockMultipartFile xmlFile = new MockMultipartFile(
                 "xml", "xml", "text/plain", XML2_ID.getBytes());
         mvc(api)
@@ -431,18 +506,18 @@ public class AipApiTest extends DbTest implements ApiTest {
                         .param("checksumValue", SIP_HASH)
                         .contentType(MediaType.APPLICATION_JSON)
                 )
-                .andExpect(status().isOk());
+                .andExpect(status().isUnprocessableEntity());
         Thread.sleep(4000);
 
-        AipSip aipSip = sipStore.find(SIP_ID);
-        assertThat(aipSip.getXml(0).getState(), is(ObjectState.ARCHIVED));
-        assertThat(aipSip.getXml(2).getState(), is(ObjectState.ROLLED_BACK));
-
-        mvc(api)
-                .perform(MockMvcRequestBuilders.get(BASE + "/xml/{sipId}", SIP_ID))
-                .andExpect(status().is(500));
+        assertThat(asSet(aipSip.getXmls()), is(asSet(xmls)));
     }
 
+    /**
+     * Sends request for XML update that fails during the saving process to one of the storage services.
+     * Then checks that the new XML is first in the state PROCESSING and later it is switched to the state ROLLED_BACK.
+     *
+     * @throws Exception
+     */
     @Test
     public void getDuringXmlUpdateWhichFailsInTheEnd() throws Exception {
         doAnswer(invocation -> {
@@ -479,34 +554,44 @@ public class AipApiTest extends DbTest implements ApiTest {
     @Test
     public void remove() throws Exception {
         mvc(api)
-                .perform(MockMvcRequestBuilders.delete(BASE + "/{sipId}", SIP_ID))
+                .perform(MockMvcRequestBuilders.put(BASE + "/{sipId}/remove", SIP_ID))
                 .andExpect(status().isOk());
         Thread.sleep(2000);
         AipSip aipSip = sipStore.find(SIP_ID);
         assertThat(aipSip.getState(), is(ObjectState.REMOVED));
     }
 
-    @Test
-    public void delete() throws Exception {
-        mvc(api)
-                .perform(MockMvcRequestBuilders.delete(BASE + "/{sipId}/hard", SIP_ID))
-                .andExpect(status().isOk());
-        Thread.sleep(2000);
-        AipSip aipSip = sipStore.find(SIP_ID);
-        assertThat(aipSip.getState(), is(ObjectState.DELETED));
-    }
-
     /**
-     * Send hard deleteAip request on created AIP verifies its status code.
-     * Also verifies that two XMLs of SIP does not have the same version number.
-     * At the end send request for AIP data and verifies that 404 error status is retrieved.
+     * Send renew request on created AIP verify its status code.
+     * At the end checks state of AIP in DB and verify its state is ARCHIVED.
      *
      * @throws Exception
      */
     @Test
-    public void getAfterDelete() throws Exception {
+    public void renew() throws Exception {
+        AipSip aipSip = sipStore.find(SIP_ID);
+        aipSip.setState(ObjectState.REMOVED);
+        sipStore.save(aipSip);
+
         mvc(api)
-                .perform(MockMvcRequestBuilders.delete(BASE + "/{sipId}/hard", SIP_ID))
+                .perform(MockMvcRequestBuilders.put(BASE + "/{sipId}/renew", SIP_ID))
+                .andExpect(status().isOk());
+        Thread.sleep(2000);
+
+        aipSip = sipStore.find(SIP_ID);
+        assertThat(aipSip.getState(), is(ObjectState.ARCHIVED));
+    }
+
+    /**
+     * Send deleteAip request on created AIP verify its status code.
+     * At the end send request for AIP data and verify that 404 error status is retrieved.
+     *
+     * @throws Exception
+     */
+    @Test
+    public void delete() throws Exception {
+        mvc(api)
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{sipId}", SIP_ID))
                 .andExpect(status().isOk());
         Thread.sleep(2000);
 
@@ -517,6 +602,12 @@ public class AipApiTest extends DbTest implements ApiTest {
                 .perform(MockMvcRequestBuilders.get(BASE + "/{sipId}", SIP_ID)).andExpect(status().is(403));
     }
 
+    /**
+     * Send request for AIP state and verify that the AIP is in the state ARCHIVED and and it is stored at the storage
+     * services of types: FS, ZFS and CEPH.
+     *
+     * @throws Exception
+     */
     @Test
     public void aipState() throws Exception {
         mvc(api)
@@ -527,7 +618,7 @@ public class AipApiTest extends DbTest implements ApiTest {
     }
 
     /**
-     * Send request for storage state and verifies response contains number of used and available bytes.
+     * Send request for storage state and verify response contains number of used and available bytes.
      *
      * @throws Exception
      */
@@ -541,7 +632,7 @@ public class AipApiTest extends DbTest implements ApiTest {
     }
 
     /**
-     * Send request with invalid MD5 and verifies that response contains BAD_REQUEST error status.
+     * Send request with invalid MD5 and verify that response contains BAD_REQUEST error status.
      *
      * @throws Exception
      */
@@ -559,14 +650,14 @@ public class AipApiTest extends DbTest implements ApiTest {
     }
 
     /**
-     * Send request with invalid UUID and verifies that response contains BAD_REQUEST error status.
+     * Send request with invalid UUID and verify that response contains BAD_REQUEST error status.
      *
      * @throws Exception
      */
     @Test
     public void badFormatID() throws Exception {
         mvc(api)
-                .perform(MockMvcRequestBuilders.delete(BASE + "/{sipId}/hard", "invalidid"))
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{sipId}", "invalidid"))
                 .andExpect(status().is(400));
     }
 
