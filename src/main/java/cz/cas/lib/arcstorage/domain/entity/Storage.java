@@ -33,6 +33,10 @@ public class Storage extends DomainObject {
     String config;
     boolean reachable;
 
+    public Storage(String id) {
+        this.id = id;
+    }
+
     @Override
     public String toString() {
         return "Storage{" +
