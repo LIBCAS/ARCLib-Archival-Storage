@@ -23,13 +23,13 @@ public class SwaggerConfig {
     @Bean
     public Docket api() {
         return new Docket(DocumentationType.SWAGGER_2)
-                .globalOperationParameters(
-                        asList(new ParameterBuilder()
-                                .name("Authorization")
-                                .modelRef(new ModelRef("string"))
-                                .parameterType("header")
-                                .defaultValue("Bearer ")
-                                .build()))
+//                .globalOperationParameters(
+//                        asList(new ParameterBuilder()
+//                                .name("Authorization")
+//                                .modelRef(new ModelRef("string"))
+//                                .parameterType("header")
+//                                .defaultValue("Bearer ")
+//                                .build()))
                 .select()
                 .apis(RequestHandlerSelectors.basePackage("cz.cas.lib"))
                 .paths(PathSelectors.any())
