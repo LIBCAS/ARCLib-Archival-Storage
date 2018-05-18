@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
@@ -44,14 +45,18 @@ public class CephS3Test implements StorageServiceTest {
     public TestName testName = new TestName();
 
     @BeforeClass
-    public static void beforeClass() {
-        storage.setHost("192.168.10.60");
+    public static void beforeClass() throws IOException {
+        Properties props = new Properties();
+        props.load(ClassLoader.getSystemResourceAsStream("application.properties"));
+        storage.setHost(props.getProperty("test.ceph.host"));
         storage.setName("ceph s3");
-        storage.setPort(7480);
+        storage.setPort(Integer.parseInt(props.getProperty("test.ceph.port")));
         storage.setPriority(1);
         storage.setStorageType(StorageType.CEPH);
-        storage.setLocation("arclib.bucket1");
-        storage.setConfig("{\"adapterType\":\"S3\",\"userKey\":\"BLZBGL9ZDD23WD0GL8V8\",\"userSecret\":\"pPYbINKQxEBLdxhzbycUI00UmTD4uaHjDel1IPui\"}");
+        storage.setLocation(props.getProperty("test.ceph.bucketname"));
+        storage.setConfig("{\"adapterType\":\"S3\"," +
+                "\"userKey\":\"" + props.getProperty("test.ceph.s3.user.key") + "\"," +
+                "\"userSecret\":\"" + props.getProperty("test.ceph.s3.user.secret") + "\"}");
         storage.setReachable(true);
         bucketName = storage.getLocation();
     }
