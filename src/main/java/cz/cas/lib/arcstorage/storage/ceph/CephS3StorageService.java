@@ -102,12 +102,6 @@ public class CephS3StorageService implements StorageService {
     }
 
     @Override
-    public void storeSip(SipDto sipRef, AtomicBoolean rollback) throws StorageException {
-        AmazonS3 s3 = connect();
-        storeFile(s3, sipRef.getId(), sipRef.getInputStream(), sipRef.getChecksum(), rollback);
-    }
-
-    @Override
     public void deleteSip(String sipId) throws StorageException {
         AmazonS3 s3 = connect();
         String metadataId = toMetadataObjectId(sipId);

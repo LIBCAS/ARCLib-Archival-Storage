@@ -93,21 +93,6 @@ public interface StorageService {
     ObjectRetrievalResource getObject(String id) throws FileDoesNotExistException, StorageException;
 
     /**
-     * Stores SIP file into storage.
-     * <p>
-     * If rollback is set to true by another thread, this method instance must stop computation as soon as possible.
-     * In this case, throwing exception is optional and is better to avoid, so that the log does not contain exceptions from all threads even if just the first one which set rollback to true is known to be the error one.
-     * </p>
-     * <p>
-     * If file can't be stored, checksum can't be computed or does not match, this method instance must set rollback to true and throw exception, so that other threads can follow the routine described above.
-     * </p>
-     *
-     * @return Object containing MD5 checksums computed from stored files.
-     * @throws IOException
-     */
-    void storeSip(SipDto sipRef, AtomicBoolean rollback) throws StorageException;
-
-    /**
      * Deletes SIP file from storage. Must not fail if SIP package is already physically deleted.
      * <p>
      * This operation may take a while and therefore sets file state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set state to PROCESSING before calling this method and to desired state after the method is done.

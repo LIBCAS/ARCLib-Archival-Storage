@@ -161,22 +161,6 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public void storeSip(SipDto sipRef, AtomicBoolean rollback) throws StorageException {
-        try (SSHClient ssh = new SSHClient()) {
-            ssh.addHostKeyVerifier(new PromiscuousVerifier());
-            ssh.connect(storage.getHost(), storage.getPort());
-            listenForRollbackToKillSession(ssh, rollback);
-            ssh.authPublickey("arcstorage", keyFilePath);
-            try (SFTPClient sftp = ssh.newSFTPClient()) {
-                storeFile(sftp, getFolderPath(sipRef.getId()), sipRef.getId(), S, sipRef.getInputStream(), sipRef.getChecksum(), rollback);
-            }
-        } catch (IOException e) {
-            rollback.set(true);
-            throw new SshException(e);
-        }
-    }
-
-    @Override
     public void deleteSip(String sipId) throws StorageException {
         String sipFolder = getFolderPath(sipId);
         String sipFilePath = sipFolder + S + sipId;

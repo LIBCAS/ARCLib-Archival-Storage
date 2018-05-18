@@ -578,9 +578,8 @@ public class ArchivalService {
             //repair sip at the storage
             if (invalidChecksumResult.invalidChecksumSip != null) {
                 InputStream sipInputStream = result.getAipFromStorage().getSip();
-                SipDto sipRef = new SipDto(sipEntity.getId(), sipInputStream, sipEntity.getChecksum());
                 try {
-                    usedStorageService.storeSip(sipRef, new AtomicBoolean(false));
+                    usedStorageService.storeObject(new ArchivalObjectDto(sipEntity.getId(), sipEntity.getId(), sipInputStream, sipEntity.getChecksum()), new AtomicBoolean(false));
                     log.info("SIP " + sipEntity.getId() + " has been successfully recovered at storage" +
                             usedStorageService.getStorage().getName());
                 } catch (StorageException e) {
