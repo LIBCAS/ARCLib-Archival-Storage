@@ -369,6 +369,8 @@ public class RemoteFsProcessor implements StorageService {
             rollback.set(true);
             throw new IOStorageException(e);
         } catch (Exception e) {
+            if (e instanceof FileCorruptedAfterStoreException)
+                throw e;
             rollback.set(true);
             throw new GeneralException(e);
         }

@@ -109,7 +109,7 @@ public class StorageProvider {
             }
             storageServices.add(service);
         }
-        if (!unreachableStorages.isEmpty())
+        if (!unreachableStorages.isEmpty() || storageServices.isEmpty())
             throw new StorageNotReachableException(unreachableStorages);
         return storageServices;
     }

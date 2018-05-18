@@ -230,16 +230,17 @@ public class LocalFsProcessor implements StorageService {
                 bos.write(buffer, 0, read);
                 read = stream.read(buffer);
             }
-
+            bos.flush();
             boolean rollbackInterruption = !verifyChecksum(new FileInputStream(folder.resolve(id).toFile()), checksum, rollback);
             if (rollbackInterruption)
                 return;
-
             transitProcessingState(folder, id, ObjectState.ARCHIVED);
         } catch (IOException e) {
             rollback.set(true);
             throw new IOStorageException(e);
         } catch (Exception e) {
+            if (e instanceof FileCorruptedAfterStoreException)
+                throw e;
             rollback.set(true);
             throw new GeneralException(e);
         }
@@ -264,7 +265,13 @@ public class LocalFsProcessor implements StorageService {
     }
 
     private Path getFolderPath(String fileName) {
-        return Paths.get(storage.getLocation()).resolve(fileName.substring(0, 2)).resolve(fileName.substring(2, 4)).resolve(fileName.substring(4, 6));
+        Path path = Paths.get(storage.getLocation()).resolve(fileName.substring(0, 2)).resolve(fileName.substring(2, 4)).resolve(fileName.substring(4, 6));
+        try {
+            Files.createDirectories(path);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return path;
     }
 
     private void setState(Path folder, String fileId, ObjectState state) throws IOException {

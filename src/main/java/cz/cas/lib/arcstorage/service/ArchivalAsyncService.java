@@ -95,7 +95,7 @@ public class ArchivalAsyncService {
         }
         try {
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[futures.size()])).get();
-            archivalDbService.rollbackAip(aip.getSip().getId(), aip.getXml().getStorageId());
+            archivalDbService.rollbackAip(aip.getSip().getId(), aip.getXml().getDatabaseId());
             log.info(strA(aip.getSip().getId()) + "rollback successful on all storages.");
         } catch (InterruptedException e) {
             archivalDbService.setAipFailed(aip.getSip().getId(), aip.getXml().getDatabaseId());

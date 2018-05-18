@@ -205,7 +205,7 @@ public interface StorageService {
      * @throws IOStorageException in case of any {@link IOException}
      * @throws GeneralException   in case of any unexpected error
      */
-    default boolean verifyChecksum(InputStream fileStream, Checksum expectedChecksum, AtomicBoolean rollback) throws IOStorageException {
+    default boolean verifyChecksum(InputStream fileStream, Checksum expectedChecksum, AtomicBoolean rollback) throws IOStorageException, FileCorruptedAfterStoreException {
         try {
             Checksum checksum = null;
             checksum = computeChecksumRollbackAware(fileStream, expectedChecksum.getType(), rollback);
@@ -220,6 +220,8 @@ public interface StorageService {
             rollback.set(true);
             throw new IOStorageException("error occured while computing sipStorageChecksum", e);
         } catch (Exception e) {
+            if (e instanceof FileCorruptedAfterStoreException)
+                throw e;
             rollback.set(true);
             throw new GeneralException(e);
         }
