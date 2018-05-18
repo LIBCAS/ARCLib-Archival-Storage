@@ -7,8 +7,9 @@ import cz.cas.lib.arcstorage.domain.store.Transactional;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.exception.MissingObject;
-import cz.cas.lib.arcstorage.service.exception.FileCorruptedAtAllStoragesException;
+import cz.cas.lib.arcstorage.service.exception.FilesCorruptedAtStoragesException;
 import cz.cas.lib.arcstorage.service.exception.InvalidChecksumException;
+import cz.cas.lib.arcstorage.service.exception.NoReachableStorageException;
 import cz.cas.lib.arcstorage.service.exception.StorageNotReachableException;
 import cz.cas.lib.arcstorage.service.exception.state.*;
 import cz.cas.lib.arcstorage.storage.StorageService;
@@ -51,14 +52,15 @@ public class ArchivalService {
      * @param all   if true reference to SIP and all XMLs is returned otherwise reference to SIP and latest XML is retrieved
      * @return reference of AIP which contains id and inputStream of SIP and XML/XMLs, if there are more XML to return those
      * which are rolled back are skipped
-     * @throws DeletedStateException               if SIP is deleted
-     * @throws RollbackStateException              if SIP is rolled back or only one XML is requested and that one is rolled back
-     * @throws StillProcessingStateException       if SIP or some of requested XML is still processing
-     * @throws FileCorruptedAtAllStoragesException if SIP is corrupted at all reachable storages
-     * @throws FailedStateException                if SIP is failed
+     * @throws DeletedStateException             if SIP is deleted
+     * @throws RollbackStateException            if SIP is rolled back or only one XML is requested and that one is rolled back
+     * @throws StillProcessingStateException     if SIP or some of requested XML is still processing
+     * @throws FilesCorruptedAtStoragesException if SIP is corrupted at all reachable storages
+     * @throws FailedStateException              if SIP is failed
      */
-    public AipRetrievalResource get(String sipId, Optional<Boolean> all) throws RollbackStateException, StillProcessingStateException,
-            DeletedStateException, FailedStateException, FileCorruptedAtAllStoragesException, RemovedStateException {
+    public AipRetrievalResource get(String sipId, Optional<Boolean> all) throws RollbackStateException,
+            StillProcessingStateException, DeletedStateException, FailedStateException,
+            FilesCorruptedAtStoragesException, RemovedStateException, NoReachableStorageException {
         AipSip sipEntity = archivalDbService.getAip(sipId);
 
         switch (sipEntity.getState()) {
@@ -100,11 +102,12 @@ public class ArchivalService {
      * @return reference to AIP XML
      * @throws FailedStateException
      * @throws RollbackStateException
-     * @throws FileCorruptedAtAllStoragesException
-     * @throws StillProcessingStateException       {
+     * @throws FilesCorruptedAtStoragesException
+     * @throws StillProcessingStateException     {
      */
     public ArchivalObjectDto getXml(String sipId, Optional<Integer> version) throws
-            FailedStateException, RollbackStateException, StillProcessingStateException, FileCorruptedAtAllStoragesException {
+            FailedStateException, RollbackStateException, StillProcessingStateException,
+            FilesCorruptedAtStoragesException, NoReachableStorageException {
         AipSip sipEntity = archivalDbService.getAip(sipId);
         AipXml requestedXml;
         if (version.isPresent()) {
@@ -128,13 +131,14 @@ public class ArchivalService {
         InputStream xmlRef;
         try {
             xmlRef = retrieveXml(requestedXml);
-        } catch (FileCorruptedAtAllStoragesException e) {
+        } catch (FilesCorruptedAtStoragesException e) {
             log.error("Storage error has occurred during retrieval process of XML version: " +
                     requestedXml.getVersion() + " of AIP: " + sipId);
             throw e;
         }
         log.info("XML version: " + requestedXml.getVersion() + " of AIP: " + sipId + " has been successfully retrieved.");
-        return new ArchivalObjectDto(requestedXml.getId(), toXmlId(sipId, requestedXml.getVersion()), xmlRef, requestedXml.getChecksum());
+        return new ArchivalObjectDto(requestedXml.getId(), toXmlId(sipId, requestedXml.getVersion()), xmlRef,
+                requestedXml.getChecksum());
     }
 
     /**
@@ -167,7 +171,8 @@ public class ArchivalService {
             Files.copy(ios, tmpSipPath, StandardCopyOption.REPLACE_EXISTING);
             validateChecksum(aip.getSip().getChecksum(), tmpSipPath);
         }
-        archivalDbService.registerAipCreation(aip.getSip().getId(), aip.getSip().getChecksum(), aip.getXml().getDatabaseId(), aip.getXml().getChecksum());
+        archivalDbService.registerAipCreation(aip.getSip().getId(), aip.getSip().getChecksum(),
+                aip.getXml().getDatabaseId(), aip.getXml().getChecksum());
         async.saveAip(aip, tmpSipPath, xmlContent, reachableAdapters);
     }
 
@@ -181,7 +186,8 @@ public class ArchivalService {
      * @param checksum
      */
     @Transactional
-    public void saveXml(String sipId, InputStream xml, Checksum checksum, Optional<Integer> version) throws StorageNotReachableException, IOException, InvalidChecksumException {
+    public void saveXml(String sipId, InputStream xml, Checksum checksum, Optional<Integer> version)
+            throws StorageNotReachableException, IOException {
         List<StorageService> reachableAdapters = storageProvider.createReachableAdapters();
         byte[] bytes;
         try (BufferedInputStream ios = new BufferedInputStream(xml)) {
@@ -190,7 +196,8 @@ public class ArchivalService {
             xml = new ByteArrayInputStream(bytes);
         }
         AipXml xmlEntity = archivalDbService.registerXmlUpdate(sipId, checksum, version);
-        async.saveObject(new ArchivalObjectDto(xmlEntity.getId(), toXmlId(sipId, xmlEntity.getVersion()), xml, checksum), ObjectType.XML, new ByteArrayHolder(bytes), reachableAdapters);
+        async.saveObject(new ArchivalObjectDto(xmlEntity.getId(), toXmlId(sipId, xmlEntity.getVersion()), xml, checksum),
+                ObjectType.XML, new ByteArrayHolder(bytes), reachableAdapters);
     }
 
     /**
@@ -253,21 +260,23 @@ public class ArchivalService {
     //todo: implement self-healing
     //todo: recreate current flat structure (objecstate, databasechecksum etc. are replicated in all AipStateInfos..
     //todo: it would be better to have parent object with those and then child objects specific for every storage
-    public List<AipStateInfoDto> getAipState(String sipId) throws StillProcessingStateException, StorageException {
+    public List<AipStateInfoDto> getAipState(String sipId) throws StillProcessingStateException {
         AipSip aip = archivalDbService.getAip(sipId);
         if (aip.getState() == ObjectState.PROCESSING)
             throw new StillProcessingStateException(aip);
         List<AipStateInfoDto> result = storageProvider.createAllAdapters().stream().map(
                 adapter -> {
                     if (!adapter.getStorage().isReachable()) {
-                        return new AipStateInfoDto(adapter.getStorage().getName(), adapter.getStorage().getStorageType(), aip.getState());
+                        return new AipStateInfoDto(adapter.getStorage().getName(), adapter.getStorage().getStorageType(),
+                                aip.getState());
                     } else {
                         try {
                             return adapter.getAipInfo(sipId, aip.getChecksum(), aip.getState(),
                                     aip.getXmls().stream()
                                             .collect(Collectors.toMap(xml -> xml.getVersion(), xml -> xml.getChecksum())));
                         } catch (StorageException e) {
-                            return new AipStateInfoDto(adapter.getStorage().getName(), adapter.getStorage().getStorageType(), aip.getState());
+                            return new AipStateInfoDto(adapter.getStorage().getName(), adapter.getStorage().getStorageType(),
+                                    aip.getState());
                         }
                     }
                 }
@@ -314,7 +323,8 @@ public class ArchivalService {
         for (StorageService storageService : storageServices) {
             for (AipSip sip : unfinishedSips) {
                 if (sip.getXmls().size() > 1)
-                    log.warn("Found more than one XML of SIP package with id " + sip.getId() + " which was in PROCESSING state. SIP and its first XML will be rolled back.");
+                    log.warn("Found more than one XML of SIP package with id " + sip.getId() +
+                            " which was in PROCESSING state. SIP and its first XML will be rolled back.");
                 try {
                     storageService.rollbackAip(sip.getId());
                 } catch (StorageException e) {
@@ -338,15 +348,16 @@ public class ArchivalService {
     /**
      * Tries to retrieve AIP. Storage is chosen randomly from those with highest priority. If the chose storage throws
      * {@link StorageException}, or checksum does not match, {@link #recoverAipFromOtherStorages(AipSip, List, TreeMap, AipRetrievalResult)}
-     * is called to scan through all storages until it finds the right one or throws {@link FileCorruptedAtAllStoragesException} which
+     * is called to scan through all storages until it finds the right one or throws {@link FilesCorruptedAtStoragesException} which
      * is propagated.
      *
      * @param sipEntity sip from main request
      * @param xmls      xmls from main request
      * @return valid AIP
-     * @throws FileCorruptedAtAllStoragesException
+     * @throws FilesCorruptedAtStoragesException if AIP is corrupted at the given storages
      */
-    private AipRetrievalResource retrieveAip(AipSip sipEntity, List<AipXml> xmls) throws FileCorruptedAtAllStoragesException {
+    private AipRetrievalResource retrieveAip(AipSip sipEntity, List<AipXml> xmls)
+            throws FilesCorruptedAtStoragesException, NoReachableStorageException {
         TreeMap<Integer, List<StorageService>> storageServicesByPriorities = getStorageServicesByPriorities();
         List<StorageService> highestPriorityStorages = storageServicesByPriorities.pollFirstEntry().getValue();
 
@@ -359,7 +370,7 @@ public class ArchivalService {
             AipRetrievalResult result = retrieveAipFromStorage(sipEntity, xmls, storageServiceChosen);
             aip = !result.invalidChecksumFound ? result.getAipFromStorage() :
                     recoverAipFromOtherStorages(sipEntity, xmls, storageServicesByPriorities, result);
-        } catch (FileCorruptedAtAllStoragesException e) {
+        } catch (FilesCorruptedAtStoragesException e) {
             log.error("Cannot retrieve AIP " + sipEntity.getId() + " from neither of the storages because the checksums do not match.");
             throw e;
         } catch (StorageException e) {
@@ -373,14 +384,15 @@ public class ArchivalService {
     /**
      * Tries to retrieve XML. Storage is chosen randomly from those with highest priority. If the chose storage throws
      * {@link StorageException}, or checksum does not match, {@link #recoverXmlFromOtherStorages(AipXml, TreeMap, StorageService)}
-     * is called to scan through all storages until it finds the right one or throws {@link FileCorruptedAtAllStoragesException} which
+     * is called to scan through all storages until it finds the right one or throws {@link FilesCorruptedAtStoragesException} which
      * is propagated.
      *
      * @param aipXml xml from main request
      * @return valid XML's inputstream
-     * @throws FileCorruptedAtAllStoragesException
+     * @throws FilesCorruptedAtStoragesException if XML is corrupted at the given storages
      */
-    private InputStream retrieveXml(AipXml aipXml) throws FileCorruptedAtAllStoragesException {
+    private InputStream retrieveXml(AipXml aipXml)
+            throws FilesCorruptedAtStoragesException, NoReachableStorageException {
         TreeMap<Integer, List<StorageService>> storageServicesByPriorities = getStorageServicesByPriorities();
         List<StorageService> highestPriorityStorages = storageServicesByPriorities.pollFirstEntry().getValue();
 
@@ -394,7 +406,7 @@ public class ArchivalService {
             if (xmlRef == null) {
                 xmlRef = recoverXmlFromOtherStorages(aipXml, storageServicesByPriorities, storageServiceChosen);
             }
-        } catch (FileCorruptedAtAllStoragesException e) {
+        } catch (FilesCorruptedAtStoragesException e) {
             log.error("Cannot retrieve XML " + aipXml.getId() + " form neither of the storages because the checksums do not match.");
             throw e;
         } catch (StorageException e) {
@@ -414,7 +426,7 @@ public class ArchivalService {
      * @param xmls           xmls from main request
      * @param storageService service used fo retrieval
      * @return AIP with additional information describing wheter the AIP is OK or has to be recovered
-     * @throws StorageException
+     * @throws StorageException if an error occurred during AIP retrieval
      */
     private AipRetrievalResult retrieveAipFromStorage(AipSip sipEntity, List<AipXml> xmls, StorageService storageService)
             throws StorageException {
@@ -453,7 +465,9 @@ public class ArchivalService {
                 Checksum xmlComputedChecksum = StorageUtils.computeChecksum(
                         new ByteArrayInputStream(bytes), xmlEntity.getChecksum().getType());
                 if (!xmlEntity.getChecksum().equals(xmlComputedChecksum)) {
-                    log.error("Checksum for XML " + xmlEntity.getId() + " is invalid at storage " + storageName);
+                    log.error("Checksum for XML " + xmlEntity.getId() + " is invalid at storage " + storageName + ". " +
+                            "Expected checksum " + xmlEntity.getChecksum() + " computed checksum " +
+                            xmlComputedChecksum + "");
                     result.addInvalidChecksumXml(xmlEntity);
                     result.setInvalidChecksumFound(true);
                 }
@@ -475,14 +489,15 @@ public class ArchivalService {
      * @param xmlEntity
      * @param storageService
      * @return DTO with XML stream if XML was found and is valid, null if XML checksum does not match expected value
-     * @throws StorageException
+     * @throws StorageException if an error occurred during XML retrieval
      */
     private InputStream retrieveXmlFromStorage(AipXml xmlEntity, StorageService storageService)
             throws StorageException {
         String storageName = storageService.getStorage().getName();
         log.info("Storage: " + storageName + " chosen to retrieve AIP: " + xmlEntity.getId());
 
-        ObjectRetrievalResource xmlFromStorage = storageService.getObject(toXmlId(xmlEntity.getSip().getId(), xmlEntity.getVersion()));
+        ObjectRetrievalResource xmlFromStorage = storageService.getObject(toXmlId(xmlEntity.getSip().getId(),
+                xmlEntity.getVersion()));
 
         //verification of the XML checksum
         byte[] bytes;
@@ -513,12 +528,13 @@ public class ArchivalService {
      * @param latestInvalidChecksumResult result of the first attempt which has failed because of corrupted AIP,
      *                                    or null if the first attempt failed because of other error
      * @return valid AIP
-     * @throws FileCorruptedAtAllStoragesException if no valid AIP was found
+     * @throws FilesCorruptedAtStoragesException if no valid AIP was found
      */
     //todo: possible optimization: if SIP is ok there is no need to pull whole AIP from the storage, only particular XML/XMLs
     public AipRetrievalResource recoverAipFromOtherStorages(AipSip sipEntity, List<AipXml> xmls,
                                                             TreeMap<Integer, List<StorageService>> sortedStorageServices,
-                                                            AipRetrievalResult latestInvalidChecksumResult) throws FileCorruptedAtAllStoragesException {
+                                                            AipRetrievalResult latestInvalidChecksumResult)
+            throws FilesCorruptedAtStoragesException {
         List<StorageService> storageServices = sortedStorageServices.values().stream()
                 .map(storageServicesByPriority -> {
                     shuffle(storageServicesByPriority);
@@ -548,7 +564,11 @@ public class ArchivalService {
                 log.error("Storage error has occurred during retrieval process of AIP: " + sipEntity.getId());
             }
         }
-        if (result.invalidChecksumFound) throw new FileCorruptedAtAllStoragesException(sipEntity);
+        if (result == null || result.invalidChecksumFound) {
+            throw new FilesCorruptedAtStoragesException(sipEntity, invalidChecksumResults.stream()
+                    .map(invalidChecksumResult -> invalidChecksumResult.storageService)
+                    .collect(Collectors.toList()));
+        }
 
         log.info("AIP " + sipEntity.getId() + " has been successfully retrieved.");
 
@@ -573,7 +593,8 @@ public class ArchivalService {
             for (AipXml invalidChecksumXml : invalidChecksumResult.invalidChecksumXmls) {
                 InputStream xmlInputStream = result.getAipFromStorage().getXmls().get(invalidChecksumXml.getVersion());
                 String xmlStorageId = toXmlId(sipEntity.getId(), invalidChecksumXml.getVersion());
-                ArchivalObjectDto xmlDto = new ArchivalObjectDto(invalidChecksumXml.getId(), xmlStorageId, xmlInputStream, invalidChecksumXml.getChecksum());
+                ArchivalObjectDto xmlDto = new ArchivalObjectDto(invalidChecksumXml.getId(), xmlStorageId, xmlInputStream,
+                        invalidChecksumXml.getChecksum());
                 try {
                     usedStorageService.storeObject(xmlDto, new AtomicBoolean(false));
                     log.info("XML: " + invalidChecksumXml.getId() + " has been successfully recovered at storage" +
@@ -587,8 +608,20 @@ public class ArchivalService {
         return result.getAipFromStorage();
     }
 
+    /**
+     * This method is called when the very first attempt to return XML fails. It scans through all storages until it finds
+     * valid XML. Then it tries to recover all XMLs on storages where the XML was corrupted. If the recovery fails it is logged
+     * and the method continues.
+     *
+     * @param xmlEntity              xml from the main request
+     * @param sortedStorageServices  storage services which are used for retrieval
+     * @param invalidChecksumStorage storage of which the first attempt has failed because of corrupted XML,
+     *                               or null if the first attempt failed because of other error
+     * @return valid AIP
+     * @throws FilesCorruptedAtStoragesException if no valid AIP was found
+     */
     public InputStream recoverXmlFromOtherStorages(AipXml xmlEntity, TreeMap<Integer, List<StorageService>> sortedStorageServices,
-                                                   StorageService invalidChecksumStorage) throws FileCorruptedAtAllStoragesException {
+                                                   StorageService invalidChecksumStorage) throws FilesCorruptedAtStoragesException {
         List<StorageService> storageServices = sortedStorageServices.values().stream()
                 .map(storageServicesByPriority -> {
                     shuffle(storageServicesByPriority);
@@ -615,7 +648,9 @@ public class ArchivalService {
                 log.error("Storage error has occurred during retrieval process of AIP: " + xmlEntity.getId());
             }
         }
-        if (xmlInputStream == null) throw new FileCorruptedAtAllStoragesException(xmlEntity);
+        if (xmlInputStream == null) {
+            throw new FilesCorruptedAtStoragesException(asList(xmlEntity), invalidChecksumStorages);
+        }
 
         log.info("XML " + xmlEntity.getId() + " has been successfully retrieved");
 
@@ -638,9 +673,10 @@ public class ArchivalService {
     /**
      * called only by retrieval, GET methods.. methods which writes writes to all storages
      *
-     * @return
+     * @return map of services sorted by priorities in the descending order (highest priority storages first),
+     * where the key is the priority and the value is a list of storages with the given priority
      */
-    private TreeMap<Integer, List<StorageService>> getStorageServicesByPriorities() {
+    private TreeMap<Integer, List<StorageService>> getStorageServicesByPriorities() throws NoReachableStorageException {
         //sorted map where the keys are the priorities and the values are the lists of storage services
         TreeMap<Integer, List<StorageService>> storageServicesByPriorities = new TreeMap<>(Collections.reverseOrder());
         storageProvider.createAllAdapters().forEach(adapter -> {
@@ -651,6 +687,7 @@ public class ArchivalService {
                 storageServicesByPriorities.put(adapter.getStorage().getPriority(), storageServices);
             }
         });
+        if (storageServicesByPriorities.isEmpty()) throw new NoReachableStorageException();
         return storageServicesByPriorities;
     }
 

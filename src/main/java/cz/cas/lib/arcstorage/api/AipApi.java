@@ -3,8 +3,8 @@ package cz.cas.lib.arcstorage.api;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.BadRequestException;
 import cz.cas.lib.arcstorage.service.ArchivalService;
-import cz.cas.lib.arcstorage.service.exception.FileCorruptedAtAllStoragesException;
-import cz.cas.lib.arcstorage.service.exception.InvalidChecksumException;
+import cz.cas.lib.arcstorage.service.exception.FilesCorruptedAtStoragesException;
+import cz.cas.lib.arcstorage.service.exception.NoReachableStorageException;
 import cz.cas.lib.arcstorage.service.exception.StorageNotReachableException;
 import cz.cas.lib.arcstorage.service.exception.state.*;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
@@ -49,7 +49,8 @@ public class AipApi {
     public void get(@PathVariable("sipId") String sipId,
                     @RequestParam(value = "all") Optional<Boolean> all, HttpServletResponse response)
             throws IOException, RollbackStateException, DeletedStateException, StillProcessingStateException,
-            FailedStateException, FileCorruptedAtAllStoragesException, BadRequestException, RemovedStateException {
+            FailedStateException, FilesCorruptedAtStoragesException, BadRequestException, RemovedStateException,
+            NoReachableStorageException {
         checkUUID(sipId);
 
         AipRetrievalResource aipRetrievalResource = archivalService.get(sipId, all);
@@ -82,8 +83,8 @@ public class AipApi {
     @RequestMapping(value = "/xml/{sipId}", method = RequestMethod.GET)
     public void getXml(@PathVariable("sipId") String sipId, @RequestParam(value = "v")
             Optional<Integer> version, HttpServletResponse response) throws StillProcessingStateException,
-            RollbackStateException, IOException, FailedStateException, FileCorruptedAtAllStoragesException,
-            BadRequestException {
+            RollbackStateException, IOException, FailedStateException, FilesCorruptedAtStoragesException,
+            BadRequestException, NoReachableStorageException {
         checkUUID(sipId);
         ArchivalObjectDto xml = archivalService.getXml(sipId, version);
         response.setContentType("application/xml");

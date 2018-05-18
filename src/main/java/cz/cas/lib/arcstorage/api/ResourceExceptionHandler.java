@@ -3,7 +3,7 @@ package cz.cas.lib.arcstorage.api;
 import cz.cas.lib.arcstorage.exception.BadRequestException;
 import cz.cas.lib.arcstorage.exception.ConflictObject;
 import cz.cas.lib.arcstorage.exception.MissingObject;
-import cz.cas.lib.arcstorage.service.exception.FileCorruptedAtAllStoragesException;
+import cz.cas.lib.arcstorage.service.exception.FilesCorruptedAtStoragesException;
 import cz.cas.lib.arcstorage.service.exception.InvalidChecksumException;
 import cz.cas.lib.arcstorage.service.exception.StorageNotReachableException;
 import cz.cas.lib.arcstorage.service.exception.state.StateException;
@@ -48,8 +48,8 @@ public class ResourceExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.toString());
     }
 
-    @ExceptionHandler(FileCorruptedAtAllStoragesException.class)
-    public ResponseEntity fileCorruptedAtAllStoragesException(FileCorruptedAtAllStoragesException e) {
+    @ExceptionHandler(FilesCorruptedAtStoragesException.class)
+    public ResponseEntity fileCorruptedAtAllStoragesException(FilesCorruptedAtStoragesException e) {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.toString());
     }
 

@@ -13,7 +13,6 @@ import cz.cas.lib.arcstorage.service.ArchivalAsyncService;
 import cz.cas.lib.arcstorage.service.ArchivalDbService;
 import cz.cas.lib.arcstorage.service.ArchivalService;
 import cz.cas.lib.arcstorage.service.StorageProvider;
-import cz.cas.lib.arcstorage.service.exception.InvalidChecksumException;
 import cz.cas.lib.arcstorage.service.exception.StorageNotReachableException;
 import cz.cas.lib.arcstorage.service.exception.state.DeletedStateException;
 import cz.cas.lib.arcstorage.service.exception.state.FailedStateException;
@@ -26,7 +25,6 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.junit.AfterClass;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -59,25 +57,23 @@ public class ArchivalServiceTest extends DbTest {
     private static final ArchivalService archivalService = new ArchivalService();
     private static final AipSipStore aipSipStore = new AipSipStore();
     private static final AipXmlStore aipXmlStore = new AipXmlStore();
-    private static final StorageStore STORAGE_STORE = new StorageStore();
+    private static final StorageStore storageStore = new StorageStore();
     private static final ArchivalDbService archivalDbService = new ArchivalDbService();
 
     private static final String SIP_ID = "SIPtestID";
     private static final String SIP_MD5 = "101b295a91f771d96e1987ff501b034c";
     private static final Checksum SIP_CHECKSUM = new Checksum(ChecksumType.MD5, SIP_MD5);
-    private static final AipSip SIP = new AipSip(SIP_ID, SIP_CHECKSUM, ObjectState.ARCHIVED);
 
     private static final String SIP2_ID = "testSipId";
 
-    private static final String XML1_ID = "XML1testID";
-    private static final String XML1_MD5 = "f09e5f27526a0ed7ec5b2d9d5c0b53cf";
-    private static final Checksum XML1_CHECKSUM = new Checksum(ChecksumType.MD5, XML1_MD5);
-    private static final AipXml XML1 = new AipXml(XML1_ID, XML1_CHECKSUM, null, 1, ObjectState.ARCHIVED);
+    private static final String XML1_ID = toXmlId(SIP_ID, 1);
+    private static final String XML2_ID = toXmlId(SIP_ID, 2);
 
-    private static final String XML2_ID = "XML2testID";
-    private static final String XML2_MD5 = "XML2hash";
+    private static final String XML1_MD5 = "5e95c70e5ca025d836f3bbe04fab0968";
+    private static final Checksum XML1_CHECKSUM = new Checksum(ChecksumType.MD5, XML1_MD5);
+
+    private static final String XML2_MD5 = "2aef000621927f2091b88f32d5a3ff00";
     private static final Checksum XML2_CHECKSUM = new Checksum(ChecksumType.MD5, XML2_MD5);
-    private static final AipXml XML2 = new AipXml(XML2_ID, XML2_CHECKSUM, null, 2, ObjectState.ARCHIVED);
 
     private static final String STORAGE_CONFIG = "{\"adapterType\": \"S3\", \"userKey\": \"key\", \"userSecret\": \"secret\", \"region\": \"region\"}";
 
@@ -106,12 +102,20 @@ public class ArchivalServiceTest extends DbTest {
 
     private Storage storage;
 
+    private AipSip SIP;
+    private AipXml XML1;
+    private AipXml XML2;
+
     @Before
     public void setup() throws StorageException, SQLException {
         clearDatabase();
         MockitoAnnotations.initMocks(this);
 
-        initializeStores(aipSipStore, aipXmlStore, STORAGE_STORE);
+        SIP = new AipSip(SIP_ID, SIP_CHECKSUM, ObjectState.ARCHIVED);
+        XML1 = new AipXml(XML1_ID, XML1_CHECKSUM, null, 1, ObjectState.ARCHIVED);
+        XML2 = new AipXml(XML2_ID, XML2_CHECKSUM, null, 2, ObjectState.ARCHIVED);
+
+        initializeStores(aipSipStore, aipXmlStore, storageStore);
 
         archivalDbService.setAipSipStore(aipSipStore);
         archivalDbService.setAipXmlStore(aipXmlStore);
@@ -134,7 +138,8 @@ public class ArchivalServiceTest extends DbTest {
         storage.setName("test ceph storage");
         storage.setStorageType(StorageType.CEPH);
         storage.setConfig(STORAGE_CONFIG);
-        STORAGE_STORE.save(storage);
+        storage.setReachable(true);
+        storageStore.save(storage);
         when(storageService.getStorage()).thenReturn(storage);
 
         AipRetrievalResource aip1 = new AipRetrievalResource(null);
@@ -143,15 +148,12 @@ public class ArchivalServiceTest extends DbTest {
 
         AipRetrievalResource aip2 = new AipRetrievalResource(null);
         aip2.setSip(sipStream());
-        aip2.addXml(2, xml1Stream());
+        aip2.addXml(2, xml2Stream());
 
         AipRetrievalResource aip3 = new AipRetrievalResource(null);
         aip3.setSip(sipStream());
         aip3.addXml(1, xml1Stream());
         aip3.addXml(2, xml2Stream());
-
-        String xml1Id = toXmlId(SIP_ID, 1);
-        String xml2Id = toXmlId(SIP_ID, 2);
 
         when(storageService.getAip(SIP_ID, 1)).thenReturn(aip1);
         when(storageService.getAip(SIP_ID, 2)).thenReturn(aip2);
@@ -162,8 +164,8 @@ public class ArchivalServiceTest extends DbTest {
         ObjectRetrievalResource xml1 = new ObjectRetrievalResource(xml1Stream(), null);
         ObjectRetrievalResource xml2 = new ObjectRetrievalResource(xml2Stream(), null);
 
-        when(storageService.getObject(xml1Id)).thenReturn(xml1);
-        when(storageService.getObject(xml2Id)).thenReturn(xml2);
+        when(storageService.getObject(XML1_ID)).thenReturn(xml1);
+        when(storageService.getObject(XML2_ID)).thenReturn(xml2);
     }
 
     @AfterClass
@@ -172,41 +174,45 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    @Ignore
     public void getAll() throws Exception {
         AipRetrievalResource aip = archivalService.get(SIP_ID, Optional.of(true));
 
-        assertTrue(IOUtils.contentEquals(aip.getSip(), sipStream()));
+        try (InputStream ios = aip.getSip(); InputStream sipStream = sipStream()) {
+            assertTrue(IOUtils.contentEquals(ios, sipStream));
+        }
 
         Map<Integer, InputStream> xmls = aip.getXmls();
         assertThat(xmls.values(), hasSize(2));
 
-        InputStream inputStream1 = aip.getXmls().get(2);
-        assertThat(inputStream1, notNullValue());
-        assertTrue(IOUtils.contentEquals(inputStream1, xml1Stream()));
+        try (InputStream inputStream1 = aip.getXmls().get(1); InputStream xml1Stream = xml1Stream()){
+            assertThat(inputStream1, notNullValue());
+            assertTrue(IOUtils.contentEquals(inputStream1, xml1Stream));
+        }
 
-        InputStream inputStream2 = aip.getXmls().get(2);
-        assertThat(inputStream2, notNullValue());
-        assertTrue(IOUtils.contentEquals(inputStream2, xml2Stream()));
+        try (InputStream inputStream2 = aip.getXmls().get(2); InputStream xml2Stream = xml2Stream()) {
+            assertThat(inputStream2, notNullValue());
+            assertTrue(IOUtils.contentEquals(inputStream2, xml2Stream));
+        }
     }
 
     @Test
-    @Ignore
     public void getLatest() throws Exception {
         AipRetrievalResource aip = archivalService.get(SIP_ID, Optional.of(false));
 
-        assertTrue(IOUtils.contentEquals(aip.getSip(), sipStream()));
+        try (InputStream ios = aip.getSip(); InputStream sipStream = sipStream()) {
+            assertTrue(IOUtils.contentEquals(ios, sipStream));
+        }
 
         Map<Integer, InputStream> xmls = aip.getXmls();
         assertThat(xmls.values(), hasSize(1));
 
-        InputStream inputStream = aip.getXmls().get(2);
-        assertThat(inputStream, notNullValue());
-        assertTrue(IOUtils.contentEquals(inputStream, xml2Stream()));
+        try (InputStream inputStream = aip.getXmls().get(2); InputStream xml2Stream = xml2Stream()) {
+            assertThat(inputStream, notNullValue());
+            assertTrue(IOUtils.contentEquals(inputStream, xml2Stream));
+        }
     }
 
     @Test
-    @Ignore
     public void getXml() throws Exception {
         Optional<Integer> version = Optional.empty();
         ArchivalObjectDto xml = archivalService.getXml(SIP_ID, version);
@@ -214,7 +220,6 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    @Ignore
     public void getXmlVersionSpecified() throws Exception {
         Optional<Integer> version1 = Optional.of(1);
         ArchivalObjectDto xml = archivalService.getXml(SIP_ID, version1);
@@ -222,7 +227,7 @@ public class ArchivalServiceTest extends DbTest {
 
         Optional<Integer> version2 = Optional.of(2);
         ArchivalObjectDto xml2 = archivalService.getXml(SIP_ID, version2);
-        assertThat(extractXmlVersion(xml.getStorageId()), is(2));
+        assertThat(extractXmlVersion(xml2.getStorageId()), is(2));
     }
 
     @Test
@@ -245,7 +250,7 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void store() throws InvalidChecksumException, StorageNotReachableException, IOException {
+    public void store() throws StorageNotReachableException, IOException {
         AipDto aipDto = new AipDto(SIP2_ID, sipStream(), SIP_CHECKSUM, xml1Stream(), XML1_CHECKSUM);
         archivalService.save(aipDto);
 
@@ -259,7 +264,7 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void updateXml() throws StorageNotReachableException, IOException, InvalidChecksumException {
+    public void updateXml() throws StorageNotReachableException, IOException {
         Collection allXmls = aipXmlStore.findAll();
         assertThat(allXmls.size(), is(2));
 
