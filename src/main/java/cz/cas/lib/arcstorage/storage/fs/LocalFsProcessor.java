@@ -209,7 +209,7 @@ public class LocalFsProcessor implements StorageService {
      * @throws IOStorageException               in case of any {@link IOException}
      * @throws GeneralException                 in case of any unexpected error
      */
-    private void storeFile(Path folder, String id, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws FileCorruptedAfterStoreException, IOStorageException {
+    void storeFile(Path folder, String id, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws FileCorruptedAfterStoreException, IOStorageException {
         if (rollback.get())
             return;
         try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(folder.resolve(id).toFile()))) {
@@ -241,7 +241,7 @@ public class LocalFsProcessor implements StorageService {
         }
     }
 
-    private void rollbackFile(Path folder, String fileId) throws StorageException, IOException {
+    void rollbackFile(Path folder, String fileId) throws StorageException, IOException {
         String processingStateId = toStateStr(fileId, ObjectState.PROCESSING);
         if (Files.notExists(folder.resolve(processingStateId)))
             Files.createFile(folder.resolve(processingStateId));
@@ -259,7 +259,7 @@ public class LocalFsProcessor implements StorageService {
             throw new FileDoesNotExistException("metadata of file " + sipFilePath.toAbsolutePath().toString());
     }
 
-    private Path getFolderPath(String fileName) {
+    Path getFolderPath(String fileName) {
         Path path = Paths.get(storage.getLocation()).resolve(fileName.substring(0, 2)).resolve(fileName.substring(2, 4)).resolve(fileName.substring(4, 6));
         try {
             Files.createDirectories(path);
