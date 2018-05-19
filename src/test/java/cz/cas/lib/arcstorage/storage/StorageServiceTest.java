@@ -1,6 +1,7 @@
 package cz.cas.lib.arcstorage.storage;
 
 import cz.cas.lib.arcstorage.dto.*;
+import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
 import org.apache.commons.io.IOUtils;
 import org.junit.Rule;
@@ -30,6 +31,9 @@ public abstract class StorageServiceTest {
     public static final Checksum XML_CHECKSUM = new Checksum(ChecksumType.SHA512, "7EE090163B74E20DFEA30A7DD3CA969F75B1CCD713844F6B6ECD08F101AD04711C0D931BF372C32284BBF656CAC459AFC217C1F290808D0EB35AFFD569FF899C");
     public static final String XML_CONTENT_2 = "blob";
     public static final Checksum XML_CHECKSUM_2 = new Checksum(ChecksumType.MD5, "ee26908bf9629eeb4b37dac350f4754a");
+    public static final String LARGE_SIP_PATH = "src/test/resources/8MiB+file";
+    public static final Checksum LARGE_SIP_CHECKSUM = new Checksum(ChecksumType.MD5, "A95E65A3DE9704CB0C5B5C68AE41AE6F");
+
 
     @Rule
     public TestName testName = new TestName();
@@ -63,8 +67,6 @@ public abstract class StorageServiceTest {
     public abstract void storeFileSettingRollback() throws Exception;
 
     public abstract void storeAipOk() throws Exception;
-
-    public abstract void storeAipSetsRollback() throws Exception;
 
     public abstract void storeXmlOk() throws Exception;
 
@@ -146,15 +148,12 @@ public abstract class StorageServiceTest {
     }
 
     @Test
-    public void deleteSipMissingMetadata() throws Exception {
+    public void storeAipSetsRollback() throws Exception {
         String sipId = testName.getMethodName();
-        assertThrown(() -> getService().deleteSip(sipId)).isInstanceOf(FileDoesNotExistException.class);
-    }
-
-    @Test
-    public void removeSipMissingMetadata() throws Exception {
-        String sipId = testName.getMethodName();
-        assertThrown(() -> getService().remove(sipId)).isInstanceOf(FileDoesNotExistException.class);
+        AipDto aip = new AipDto(sipId, getSipStream(), null, getXmlStream(), null);
+        AtomicBoolean rollback = new AtomicBoolean(false);
+        assertThrown(() -> getService().storeAip(aip, rollback)).isInstanceOf(GeneralException.class);
+        assertThat(rollback.get(), is(true));
     }
 
     @Test

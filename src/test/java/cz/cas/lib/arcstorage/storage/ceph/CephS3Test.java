@@ -7,7 +7,6 @@ import com.amazonaws.services.s3.model.Owner;
 import com.amazonaws.services.s3.model.S3Object;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.dto.*;
-import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.storage.StorageServiceTest;
 import cz.cas.lib.arcstorage.storage.StorageUtils;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
@@ -56,22 +55,21 @@ public class CephS3Test extends StorageServiceTest {
     public void storeLargeFileSuccessTest() throws Exception {
 
         String fileId = testName.getMethodName();
-        Checksum checksum = new Checksum(ChecksumType.MD5, "A95E65A3DE9704CB0C5B5C68AE41AE6F");
         AmazonS3 s3 = service.connect();
 
-        File file = new File("src/test/resources/8MiB+file");
+        File file = new File(LARGE_SIP_PATH);
         try (BufferedInputStream bos = new BufferedInputStream(new FileInputStream(file))) {
-            service.storeFile(s3, fileId, bos, checksum, new AtomicBoolean(false));
+            service.storeFile(s3, fileId, bos, LARGE_SIP_CHECKSUM, new AtomicBoolean(false));
         }
 
         S3Object object = s3.getObject(service.getStorage().getLocation(), fileId);
         Checksum checksumOfStoredFile = StorageUtils.computeChecksum(object.getObjectContent(), ChecksumType.MD5);
-        assertThat(checksum, is(checksumOfStoredFile));
+        assertThat(LARGE_SIP_CHECKSUM, is(checksumOfStoredFile));
 
         ObjectMetadata objectMetadata = s3.getObjectMetadata(service.getStorage().getLocation(), service.toMetadataObjectId(fileId));
         Map<String, String> userMetadata = objectMetadata.getUserMetadata();
         assertThat(userMetadata.get(CephS3StorageService.STATE_KEY), is(ObjectState.ARCHIVED.toString()));
-        assertThat(userMetadata.get(checksum.getType().toString()), is(checksum.getValue()));
+        assertThat(userMetadata.get(LARGE_SIP_CHECKSUM.getType().toString()), is(LARGE_SIP_CHECKSUM.getValue()));
         assertThat(userMetadata.get(CephS3StorageService.CREATED_KEY), not(isEmptyOrNullString()));
     }
 
@@ -108,7 +106,7 @@ public class CephS3Test extends StorageServiceTest {
         String fileId = testName.getMethodName();
         AmazonS3 s3 = service.connect();
 
-        File file = new File("src/test/resources/8MiB+file");
+        File file = new File(LARGE_SIP_PATH);
         AtomicBoolean rollback = new AtomicBoolean(false);
 
         new Thread(() -> {
@@ -121,7 +119,7 @@ public class CephS3Test extends StorageServiceTest {
         }).start();
 
         try (BufferedInputStream bos = new BufferedInputStream(new FileInputStream(file))) {
-            service.storeFile(s3, fileId, bos, SIP_CHECKSUM, rollback);
+            service.storeFile(s3, fileId, bos, LARGE_SIP_CHECKSUM, rollback);
         }
 
         ObjectMetadata objectMetadata = s3.getObjectMetadata(service.getStorage().getLocation(), service.toMetadataObjectId(fileId));
@@ -174,16 +172,6 @@ public class CephS3Test extends StorageServiceTest {
         assertThat(streamToString(xmlObj.getObjectContent()), is(XML_CONTENT));
         assertThat(xmlObjMeta.getObjectMetadata().getUserMetadata().get(service.STATE_KEY), is(ObjectState.ARCHIVED.toString()));
         assertThat(rollback.get(), is(false));
-    }
-
-    @Test
-    @Override
-    public void storeAipSetsRollback() throws Exception {
-        String sipId = testName.getMethodName();
-        AipDto aip = new AipDto(sipId, getSipStream(), null, getXmlStream(), null);
-        AtomicBoolean rollback = new AtomicBoolean(false);
-        assertThrown(() -> service.storeAip(aip, rollback)).isInstanceOf(GeneralException.class);
-        assertThat(rollback.get(), is(true));
     }
 
     @Test
@@ -270,7 +258,7 @@ public class CephS3Test extends StorageServiceTest {
         String fileId = testName.getMethodName();
         AmazonS3 s3 = service.connect();
 //preparation phase copied from rollbackAwareTest
-        File file = new File("src/test/resources/8MiB+file");
+        File file = new File(LARGE_SIP_PATH);
         AtomicBoolean rollback = new AtomicBoolean(false);
 
         new Thread(() -> {
@@ -283,7 +271,7 @@ public class CephS3Test extends StorageServiceTest {
         }).start();
 
         try (BufferedInputStream bos = new BufferedInputStream(new FileInputStream(file))) {
-            service.storeFile(s3, fileId, bos, SIP_CHECKSUM, rollback);
+            service.storeFile(s3, fileId, bos, LARGE_SIP_CHECKSUM, rollback);
         }
 
         ObjectMetadata objectMetadata = s3.getObjectMetadata(service.getStorage().getLocation(), service.toMetadataObjectId(fileId));

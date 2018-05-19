@@ -1,3 +1,4 @@
 .idea/
 archival-storage.iml
 target/
+local-fs-tests/

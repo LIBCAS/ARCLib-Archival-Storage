@@ -13,11 +13,7 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.*;
-import java.nio.file.FileAlreadyExistsException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Arrays;
+import java.nio.file.*;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -99,10 +95,9 @@ public class LocalFsProcessor implements StorageService {
         Path sipFolder = getFolderPath(sipId);
         Path sipFilePath = sipFolder.resolve(sipId);
         try {
-            checkFixityMetadataExists(sipFilePath);
             setState(sipFolder, sipId, ObjectState.PROCESSING);
             Files.deleteIfExists(sipFilePath);
-            transitProcessingState(sipFolder, sipId, ObjectState.DELETED);
+            transitState(sipFolder, sipId, ObjectState.PROCESSING, ObjectState.DELETED);
         } catch (IOException ex) {
             throw new IOStorageException(ex);
         }
@@ -112,9 +107,7 @@ public class LocalFsProcessor implements StorageService {
     public void remove(String sipId) throws IOStorageException, FileDoesNotExistException {
         Path sipFolder = getFolderPath(sipId);
         try {
-            checkFixityMetadataExists(sipFolder);
-            removeState(sipFolder, sipId, ObjectState.ARCHIVED);
-            setState(sipFolder, sipId, ObjectState.REMOVED);
+            transitState(sipFolder, sipId, ObjectState.ARCHIVED, ObjectState.REMOVED);
         } catch (FileAlreadyExistsException e) {
         } catch (IOException ex) {
             throw new IOStorageException(ex);
@@ -125,9 +118,7 @@ public class LocalFsProcessor implements StorageService {
     public void renew(String sipId) throws IOStorageException, FileDoesNotExistException {
         Path sipFolder = getFolderPath(sipId);
         try {
-            checkFixityMetadataExists(sipFolder);
-            removeState(sipFolder, sipId, ObjectState.REMOVED);
-            setState(sipFolder, sipId, ObjectState.ARCHIVED);
+            transitState(sipFolder, sipId, ObjectState.REMOVED, ObjectState.ARCHIVED);
         } catch (FileAlreadyExistsException e) {
         } catch (IOException ex) {
             throw new IOStorageException(ex);
@@ -215,7 +206,7 @@ public class LocalFsProcessor implements StorageService {
         try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(folder.resolve(id).toFile()))) {
             Files.createDirectories(folder);
             setState(folder, id, ObjectState.PROCESSING);
-            Files.copy(new ByteArrayInputStream(checksum.getValue().getBytes()), folder.resolve(id + "." + checksum.getType()));
+            Files.copy(new ByteArrayInputStream(checksum.getValue().getBytes()), folder.resolve(id + "." + checksum.getType()), StandardCopyOption.REPLACE_EXISTING);
 
             byte[] buffer = new byte[8192];
             int read = stream.read(buffer);
@@ -229,7 +220,7 @@ public class LocalFsProcessor implements StorageService {
             boolean rollbackInterruption = !verifyChecksum(new FileInputStream(folder.resolve(id).toFile()), checksum, rollback);
             if (rollbackInterruption)
                 return;
-            transitProcessingState(folder, id, ObjectState.ARCHIVED);
+            transitState(folder, id, ObjectState.PROCESSING, ObjectState.ARCHIVED);
         } catch (IOException e) {
             rollback.set(true);
             throw new IOStorageException(e);
@@ -249,14 +240,7 @@ public class LocalFsProcessor implements StorageService {
         Files.deleteIfExists(folder.resolve(toStateStr(fileId, ObjectState.DELETED)));
         Files.deleteIfExists(folder.resolve(toStateStr(fileId, ObjectState.ROLLED_BACK)));
         Files.deleteIfExists(folder.resolve(fileId));
-        transitProcessingState(folder, fileId, ObjectState.ROLLED_BACK);
-    }
-
-    private void checkFixityMetadataExists(Path sipFilePath) throws FileDoesNotExistException {
-        boolean exists = Arrays.stream(ChecksumType.values())
-                .anyMatch(ct -> sipFilePath.resolveSibling(sipFilePath.getFileName() + "." + ct.toString()).toFile().exists());
-        if (!exists)
-            throw new FileDoesNotExistException("metadata of file " + sipFilePath.toAbsolutePath().toString());
+        transitState(folder, fileId, ObjectState.PROCESSING, ObjectState.ROLLED_BACK);
     }
 
     Path getFolderPath(String fileName) {
@@ -274,19 +258,18 @@ public class LocalFsProcessor implements StorageService {
             Files.createFile(folder.resolve(toStateStr(fileId, state)));
     }
 
-    private void removeState(Path folder, String fileId, ObjectState state) throws IOException {
-        Files.deleteIfExists(folder.resolve(toStateStr(fileId, state)));
-    }
-
     private String toStateStr(String fileId, ObjectState objectState) {
         return fileId + "." + objectState.toString();
     }
 
-    private void transitProcessingState(Path folder, String fileId, ObjectState newState) throws IOException {
+    private void transitState(Path folder, String fileId, ObjectState oldState, ObjectState newState) throws IOException {
         File oldFile = folder
-                .resolve(toStateStr(fileId, ObjectState.PROCESSING))
+                .resolve(toStateStr(fileId, oldState))
                 .toFile();
         File newFile = folder.resolve(toStateStr(fileId, newState)).toFile();
-        oldFile.renameTo(newFile);
+        if (newFile.exists())
+            oldFile.delete();
+        else
+            oldFile.renameTo(newFile);
     }
 }

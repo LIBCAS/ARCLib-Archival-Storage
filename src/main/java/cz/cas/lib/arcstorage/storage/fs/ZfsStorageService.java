@@ -35,22 +35,14 @@ public class ZfsStorageService implements FsAdapter {
     private Storage storage;
     @Getter
     private StorageService fsProcessor;
-    private String keyFilePath;
-    private String pool;
-    private String dataset;
 
     /**
      * Creates a new ZFS storage service.
      *
      * @param storage     storage
-     * @param pool        ZFS zpool
-     * @param dataset     specific dataset of a zpool
      * @param keyFilePath path to private key used for authentication to remote server
      */
-    public ZfsStorageService(Storage storage, String pool, String dataset, String keyFilePath) {
-        this.pool = pool;
-        this.dataset = dataset;
-        this.keyFilePath = keyFilePath;
+    public ZfsStorageService(Storage storage, String keyFilePath) {
         this.storage = storage;
         String separator = storage.getLocation().startsWith("/") ? "/" : "\\";
         if (isLocalhost(storage))

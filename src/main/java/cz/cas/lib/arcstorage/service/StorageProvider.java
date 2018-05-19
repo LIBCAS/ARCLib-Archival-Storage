@@ -46,16 +46,7 @@ public class StorageProvider {
                 service = new FsStorageService(storage, keyFilePath);
                 break;
             case ZFS:
-                try {
-                    root = new ObjectMapper().readTree(storage.getConfig());
-                } catch (IOException e) {
-                    throw new ConfigParserException(e);
-                }
-                String pool = root.at("/pool").textValue();
-                String dataset = root.at("/dataset").textValue();
-                if (pool == null || dataset == null)
-                    throw new ConfigParserException("pool or dataset string missing in ZFS storage config");
-                service = new ZfsStorageService(storage, pool, dataset, keyFilePath);
+                service = new ZfsStorageService(storage, keyFilePath);
                 break;
             case CEPH:
                 try {
