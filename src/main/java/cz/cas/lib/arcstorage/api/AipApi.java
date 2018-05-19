@@ -3,10 +3,11 @@ package cz.cas.lib.arcstorage.api;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.BadRequestException;
 import cz.cas.lib.arcstorage.service.ArchivalService;
-import cz.cas.lib.arcstorage.service.exception.FilesCorruptedAtStoragesException;
-import cz.cas.lib.arcstorage.service.exception.NoReachableStorageException;
-import cz.cas.lib.arcstorage.service.exception.StorageNotReachableException;
 import cz.cas.lib.arcstorage.service.exception.state.*;
+import cz.cas.lib.arcstorage.service.exception.storage.FilesCorruptedAtStoragesException;
+import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
+import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageReachableException;
+import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import org.apache.commons.io.IOUtils;
 import org.springframework.beans.factory.annotation.Value;
@@ -50,7 +51,7 @@ public class AipApi {
                     @RequestParam(value = "all") Optional<Boolean> all, HttpServletResponse response)
             throws IOException, RollbackStateException, DeletedStateException, StillProcessingStateException,
             FailedStateException, FilesCorruptedAtStoragesException, BadRequestException, RemovedStateException,
-            NoReachableStorageException {
+            NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
         checkUUID(sipId);
 
         AipRetrievalResource aipRetrievalResource = archivalService.get(sipId, all);
@@ -84,7 +85,7 @@ public class AipApi {
     public void getXml(@PathVariable("sipId") String sipId, @RequestParam(value = "v")
             Optional<Integer> version, HttpServletResponse response) throws StillProcessingStateException,
             RollbackStateException, IOException, FailedStateException, FilesCorruptedAtStoragesException,
-            BadRequestException, NoReachableStorageException {
+            BadRequestException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
         checkUUID(sipId);
         ArchivalObjectDto xml = archivalService.getXml(sipId, version);
         response.setContentType("application/xml");
@@ -119,7 +120,7 @@ public class AipApi {
                        @RequestParam("aipXmlChecksumValue") String aipXmlChecksumValue,
                        @RequestParam("aipXmlChecksumType") ChecksumType aipXmlChecksumType,
                        @RequestParam(value = "UUID") Optional<String> id)
-            throws IOException, StorageNotReachableException, BadRequestException {
+            throws IOException, SomeLogicalStoragesNotReachableException, BadRequestException, NoLogicalStorageAttachedException {
         String sipId = id.isPresent() ? id.get() : UUID.randomUUID().toString();
 
         Checksum sipChecksum = new Checksum(sipChecksumType, sipChecksumValue);
@@ -152,7 +153,7 @@ public class AipApi {
                         @RequestParam("checksumValue") String checksumValue,
                         @RequestParam("checksumType") ChecksumType checksumType,
                         @RequestParam("version") Optional<Integer> version) throws IOException,
-            StorageNotReachableException, BadRequestException {
+            SomeLogicalStoragesNotReachableException, BadRequestException, NoLogicalStorageAttachedException {
         checkUUID(sipId);
         Checksum checksum = new Checksum(checksumType, checksumValue);
         checkChecksumFormat(checksum);
@@ -172,28 +173,28 @@ public class AipApi {
      */
     @RequestMapping(value = "/{sipId}/remove", method = RequestMethod.PUT)
     public void remove(@PathVariable("sipId") String sipId) throws DeletedStateException, StillProcessingStateException,
-            RollbackStateException, StorageException, FailedStateException, StorageNotReachableException,
-            BadRequestException {
+            RollbackStateException, StorageException, FailedStateException, SomeLogicalStoragesNotReachableException,
+            BadRequestException, NoLogicalStorageAttachedException {
         checkUUID(sipId);
         archivalService.remove(sipId);
     }
 
     /**
      * Renews logically removed SIP.
-     * @param sipId
      *
+     * @param sipId
      * @throws DeletedStateException
      * @throws StillProcessingStateException
      * @throws RollbackStateException
      * @throws StorageException
      * @throws FailedStateException
-     * @throws StorageNotReachableException
+     * @throws SomeLogicalStoragesNotReachableException
      * @throws BadRequestException
      */
     @RequestMapping(value = "/{sipId}/renew", method = RequestMethod.PUT)
     public void renew(@PathVariable("sipId") String sipId) throws DeletedStateException, StillProcessingStateException,
-            RollbackStateException, StorageException, FailedStateException, StorageNotReachableException,
-            BadRequestException {
+            RollbackStateException, StorageException, FailedStateException, SomeLogicalStoragesNotReachableException,
+            BadRequestException, NoLogicalStorageAttachedException {
         checkUUID(sipId);
         archivalService.renew(sipId);
     }
@@ -210,7 +211,7 @@ public class AipApi {
      */
     @RequestMapping(value = "/{sipId}", method = RequestMethod.DELETE)
     public void delete(@PathVariable("sipId") String sipId) throws StillProcessingStateException, RollbackStateException,
-            StorageException, FailedStateException, StorageNotReachableException, BadRequestException {
+            StorageException, FailedStateException, SomeLogicalStoragesNotReachableException, BadRequestException, NoLogicalStorageAttachedException {
         checkUUID(sipId);
         archivalService.delete(sipId);
     }
@@ -224,7 +225,7 @@ public class AipApi {
      */
     @RequestMapping(value = "/{uuid}/state", method = RequestMethod.GET)
     public List<AipStateInfoDto> getAipState(@PathVariable("uuid") String sipId) throws StillProcessingStateException,
-            StorageException, BadRequestException {
+            StorageException, BadRequestException, NoLogicalStorageAttachedException {
         checkUUID(sipId);
         return archivalService.getAipState(sipId);
     }
@@ -235,7 +236,7 @@ public class AipApi {
      * @return
      */
     @RequestMapping(value = "/state", method = RequestMethod.GET)
-    public List<StorageStateDto> getStorageState() {
+    public List<StorageStateDto> getStorageState() throws NoLogicalStorageAttachedException {
         return archivalService.getStorageState();
     }
 

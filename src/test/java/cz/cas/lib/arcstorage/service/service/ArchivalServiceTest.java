@@ -13,11 +13,10 @@ import cz.cas.lib.arcstorage.service.ArchivalAsyncService;
 import cz.cas.lib.arcstorage.service.ArchivalDbService;
 import cz.cas.lib.arcstorage.service.ArchivalService;
 import cz.cas.lib.arcstorage.service.StorageProvider;
-import cz.cas.lib.arcstorage.service.exception.StorageNotReachableException;
 import cz.cas.lib.arcstorage.service.exception.state.DeletedStateException;
-import cz.cas.lib.arcstorage.service.exception.state.FailedStateException;
 import cz.cas.lib.arcstorage.service.exception.state.RollbackStateException;
 import cz.cas.lib.arcstorage.service.exception.state.StillProcessingStateException;
+import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import helper.DbTest;
@@ -107,7 +106,7 @@ public class ArchivalServiceTest extends DbTest {
     private AipXml XML2;
 
     @Before
-    public void setup() throws StorageException, SQLException {
+    public void setup() throws StorageException, SQLException, NoLogicalStorageAttachedException {
         clearDatabase();
         MockitoAnnotations.initMocks(this);
 
@@ -184,7 +183,7 @@ public class ArchivalServiceTest extends DbTest {
         Map<Integer, InputStream> xmls = aip.getXmls();
         assertThat(xmls.values(), hasSize(2));
 
-        try (InputStream inputStream1 = aip.getXmls().get(1); InputStream xml1Stream = xml1Stream()){
+        try (InputStream inputStream1 = aip.getXmls().get(1); InputStream xml1Stream = xml1Stream()) {
             assertThat(inputStream1, notNullValue());
             assertTrue(IOUtils.contentEquals(inputStream1, xml1Stream));
         }
@@ -250,7 +249,7 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void store() throws StorageNotReachableException, IOException {
+    public void store() throws Exception {
         AipDto aipDto = new AipDto(SIP2_ID, sipStream(), SIP_CHECKSUM, xml1Stream(), XML1_CHECKSUM);
         archivalService.save(aipDto);
 
@@ -264,7 +263,7 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void updateXml() throws StorageNotReachableException, IOException {
+    public void updateXml() throws Exception {
         Collection allXmls = aipXmlStore.findAll();
         assertThat(allXmls.size(), is(2));
 
@@ -283,7 +282,7 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void getAipInfo() throws StillProcessingStateException, StorageException {
+    public void getAipInfo() throws Exception {
         when(storageService.getAipInfo(anyObject(), anyObject(), anyObject(), anyObject())).thenReturn(
                 new AipStateInfoDto("", StorageType.CEPH, ObjectState.ARCHIVED, null));
 
@@ -330,8 +329,7 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void delete() throws
-            StorageException, StillProcessingStateException, RollbackStateException, FailedStateException, StorageNotReachableException {
+    public void delete() throws Exception {
         archivalService.delete(SIP_ID);
 
         AipSip sip = archivalDbService.getAip(SIP_ID);
@@ -340,8 +338,7 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void remove() throws RollbackStateException, DeletedStateException, StorageException,
-            StillProcessingStateException, FailedStateException, StorageNotReachableException {
+    public void remove() throws Exception {
         archivalService.remove(SIP_ID);
 
         AipSip sip = archivalDbService.getAip(SIP_ID);

@@ -9,6 +9,7 @@ import cz.cas.lib.arcstorage.domain.store.AipXmlStore;
 import cz.cas.lib.arcstorage.domain.store.StorageStore;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.service.StorageProvider;
+import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
 import cz.cas.lib.arcstorage.storage.ceph.CephS3StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.storage.fs.FsStorageService;
@@ -138,7 +139,7 @@ public class AipApiTest extends DbTest implements ApiTest {
     }
 
     @Before
-    public void before() throws StorageException, FileNotFoundException {
+    public void before() throws StorageException, FileNotFoundException, NoLogicalStorageAttachedException {
         FileInputStream sipContent = new FileInputStream(SIP_SOURCE_PATH.toFile());
         FileInputStream xml1InputStream = new FileInputStream(Paths.get("./src/test/resources/aip/xml1.xml").toFile());
         FileInputStream xml2InputStream = new FileInputStream(Paths.get("./src/test/resources/aip/xml2.xml").toFile());

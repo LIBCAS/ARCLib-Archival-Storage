@@ -1,4 +1,4 @@
-package cz.cas.lib.arcstorage.service.exception;
+package cz.cas.lib.arcstorage.service.exception.storage;
 
 import cz.cas.lib.arcstorage.domain.entity.Storage;
 
@@ -7,21 +7,21 @@ import java.util.List;
 
 import static cz.cas.lib.arcstorage.util.Utils.asList;
 
-public class StorageNotReachableException extends Exception {
+public class SomeLogicalStoragesNotReachableException extends Exception {
 
     List<Storage> storages;
 
-    public StorageNotReachableException(Storage... configs) {
+    public SomeLogicalStoragesNotReachableException(Storage... configs) {
         this.storages = asList(configs);
     }
 
-    public StorageNotReachableException(List<Storage> configs) {
+    public SomeLogicalStoragesNotReachableException(List<Storage> configs) {
         this.storages = configs;
     }
 
     @Override
     public String toString() {
-        return "StorageNotReachableException{" +
+        return "SomeLogicalStoragesNotReachableException{" +
                 "storages=" + Arrays.toString(storages.toArray()) +
                 '}';
     }

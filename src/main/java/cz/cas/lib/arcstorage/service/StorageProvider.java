@@ -6,7 +6,8 @@ import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.domain.store.StorageStore;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.service.exception.ConfigParserException;
-import cz.cas.lib.arcstorage.service.exception.StorageNotReachableException;
+import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
+import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.ceph.CephAdapterType;
 import cz.cas.lib.arcstorage.storage.ceph.CephS3StorageService;
@@ -96,9 +97,9 @@ public class StorageProvider {
      * reachablity flag is updated if changed.
      *
      * @return storage services for all storages
-     * @throws StorageNotReachableException if some storage is unreachable
+     * @throws SomeLogicalStoragesNotReachableException if some storage is unreachable
      */
-    public List<StorageService> createReachableAdapters() throws StorageNotReachableException {
+    public List<StorageService> createReachableAdapters() throws SomeLogicalStoragesNotReachableException, NoLogicalStorageAttachedException {
         List<StorageService> storageServices = new ArrayList<>();
         List<Storage> unreachableStorages = new ArrayList<>();
         for (Storage storage : storageStore.findAll()) {
@@ -109,8 +110,10 @@ public class StorageProvider {
             }
             storageServices.add(service);
         }
-        if (!unreachableStorages.isEmpty() || storageServices.isEmpty())
-            throw new StorageNotReachableException(unreachableStorages);
+        if (storageServices.isEmpty())
+            throw new NoLogicalStorageAttachedException();
+        if (!unreachableStorages.isEmpty())
+            throw new SomeLogicalStoragesNotReachableException(unreachableStorages);
         return storageServices;
     }
 
@@ -121,8 +124,11 @@ public class StorageProvider {
      * @return storage services
      * @throws ConfigParserException
      */
-    public List<StorageService> createAllAdapters() {
-        return storageStore.findAll().stream().map(this::createAdapter).collect(Collectors.toList());
+    public List<StorageService> createAllAdapters() throws NoLogicalStorageAttachedException {
+        List<StorageService> list = storageStore.findAll().stream().map(this::createAdapter).collect(Collectors.toList());
+        if (list.isEmpty())
+            throw new NoLogicalStorageAttachedException();
+        return list;
     }
 
     @Inject
