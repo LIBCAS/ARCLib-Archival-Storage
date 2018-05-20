@@ -61,13 +61,14 @@ public class LocalProcessorTest extends StorageServiceTest {
 
         new Thread(() -> {
             try {
-                //this test fails if waiting for too long
-                Thread.sleep(20);
+                Thread.sleep(500);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
             rollback.set(true);
         }).start();
+
+        LocalFsProcessor service = new TestServiceCatchingRollback(this.service.getStorage());
         Path path = service.getFolderPath(fileId).resolve(fileId);
 
         try (BufferedInputStream bos = new BufferedInputStream(new FileInputStream(file))) {

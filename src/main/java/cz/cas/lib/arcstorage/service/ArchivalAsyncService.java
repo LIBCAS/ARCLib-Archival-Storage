@@ -209,7 +209,7 @@ public class ArchivalAsyncService {
             log.error("Storage error has occurred during renewing of AIP: " + sipId + ". AIP is marked as archived in DB but may not be marked as archived on every storage.");
             throw e;
         }
-        log.info("AIP: " + sipId + " has been successfully removed.");
+        log.info("AIP: " + sipId + " has been successfully renewed.");
     }
 
     @Inject

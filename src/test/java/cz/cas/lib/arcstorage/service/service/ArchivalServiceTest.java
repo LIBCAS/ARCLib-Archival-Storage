@@ -24,6 +24,7 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.junit.AfterClass;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -32,13 +33,11 @@ import org.mockito.MockitoAnnotations;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.SQLException;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.extractXmlVersion;
 import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
@@ -76,7 +75,7 @@ public class ArchivalServiceTest extends DbTest {
 
     private static final String STORAGE_CONFIG = "{\"adapterType\": \"S3\", \"userKey\": \"key\", \"userSecret\": \"secret\", \"region\": \"region\"}";
 
-    private static final Path tmpFolder = Paths.get("tmp");
+    private static Path tmpFolder;
 
     private static InputStream sipStream() {
         return new ByteArrayInputStream(SIP_ID.getBytes());
@@ -104,6 +103,14 @@ public class ArchivalServiceTest extends DbTest {
     private AipSip SIP;
     private AipXml XML1;
     private AipXml XML2;
+
+    @BeforeClass
+    public static void beforeClass() throws IOException {
+        Properties props = new Properties();
+        props.load(ClassLoader.getSystemResourceAsStream("application.properties"));
+        tmpFolder = Paths.get(props.getProperty("arcstorage.tmp-folder"));
+        Files.createDirectories(tmpFolder);
+    }
 
     @Before
     public void setup() throws StorageException, SQLException, NoLogicalStorageAttachedException {
@@ -174,7 +181,7 @@ public class ArchivalServiceTest extends DbTest {
 
     @Test
     public void getAll() throws Exception {
-        AipRetrievalResource aip = archivalService.get(SIP_ID, Optional.of(true));
+        AipRetrievalResource aip = archivalService.get(SIP_ID, true);
 
         try (InputStream ios = aip.getSip(); InputStream sipStream = sipStream()) {
             assertTrue(IOUtils.contentEquals(ios, sipStream));
@@ -196,7 +203,7 @@ public class ArchivalServiceTest extends DbTest {
 
     @Test
     public void getLatest() throws Exception {
-        AipRetrievalResource aip = archivalService.get(SIP_ID, Optional.of(false));
+        AipRetrievalResource aip = archivalService.get(SIP_ID, false);
 
         try (InputStream ios = aip.getSip(); InputStream sipStream = sipStream()) {
             assertTrue(IOUtils.contentEquals(ios, sipStream));
@@ -213,39 +220,33 @@ public class ArchivalServiceTest extends DbTest {
 
     @Test
     public void getXml() throws Exception {
-        Optional<Integer> version = Optional.empty();
-        ArchivalObjectDto xml = archivalService.getXml(SIP_ID, version);
+        ArchivalObjectDto xml = archivalService.getXml(SIP_ID, null);
         assertThat(extractXmlVersion(xml.getStorageId()), is(2));
     }
 
     @Test
     public void getXmlVersionSpecified() throws Exception {
-        Optional<Integer> version1 = Optional.of(1);
-        ArchivalObjectDto xml = archivalService.getXml(SIP_ID, version1);
+        ArchivalObjectDto xml = archivalService.getXml(SIP_ID, 1);
         assertThat(extractXmlVersion(xml.getStorageId()), is(1));
 
-        Optional<Integer> version2 = Optional.of(2);
-        ArchivalObjectDto xml2 = archivalService.getXml(SIP_ID, version2);
+        ArchivalObjectDto xml2 = archivalService.getXml(SIP_ID, 2);
         assertThat(extractXmlVersion(xml2.getStorageId()), is(2));
     }
 
     @Test
     public void getXmlNonExistentVersionSpecified() {
-        Optional<Integer> version = Optional.of(3);
-        assertThrown(() -> archivalService.getXml(SIP_ID, version)).isInstanceOf(MissingObject.class);
+        assertThrown(() -> archivalService.getXml(SIP_ID, 3)).isInstanceOf(MissingObject.class);
     }
 
     @Test
     public void getXmlIllegalStates() {
-        Optional<Integer> version = Optional.of(2);
-
         XML2.setState(ObjectState.ROLLED_BACK);
         aipXmlStore.save(XML2);
-        assertThrown(() -> archivalService.getXml(SIP_ID, version)).isInstanceOf(RollbackStateException.class);
+        assertThrown(() -> archivalService.getXml(SIP_ID, 2)).isInstanceOf(RollbackStateException.class);
 
         XML2.setState(ObjectState.PROCESSING);
         aipXmlStore.save(XML2);
-        assertThrown(() -> archivalService.getXml(SIP_ID, version)).isInstanceOf(StillProcessingStateException.class);
+        assertThrown(() -> archivalService.getXml(SIP_ID, 2)).isInstanceOf(StillProcessingStateException.class);
     }
 
     @Test
@@ -304,19 +305,19 @@ public class ArchivalServiceTest extends DbTest {
     public void getIllegalStateSipTest() {
         SIP.setState(ObjectState.DELETED);
         aipSipStore.save(SIP);
-        assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(DeletedStateException.class);
+        assertThrown(() -> archivalService.get(SIP_ID, true)).isInstanceOf(DeletedStateException.class);
 
         SIP.setState(ObjectState.ROLLED_BACK);
         aipSipStore.save(SIP);
-        assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(RollbackStateException.class);
+        assertThrown(() -> archivalService.get(SIP_ID, true)).isInstanceOf(RollbackStateException.class);
 
         SIP.setState(ObjectState.PROCESSING);
         aipSipStore.save(SIP);
-        assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(StillProcessingStateException.class);
+        assertThrown(() -> archivalService.get(SIP_ID, true)).isInstanceOf(StillProcessingStateException.class);
 
         XML1.setState(ObjectState.PROCESSING);
         aipXmlStore.save(XML1);
-        assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(StillProcessingStateException.class);
+        assertThrown(() -> archivalService.get(SIP_ID, true)).isInstanceOf(StillProcessingStateException.class);
 
         XML1.setState(ObjectState.ROLLED_BACK);
         SIP.setState(ObjectState.ARCHIVED);
@@ -325,7 +326,7 @@ public class ArchivalServiceTest extends DbTest {
         aipXmlStore.delete(XML2);
         //findall does the trick so that service sees up-to-date records
         aipXmlStore.findAll();
-        assertThrown(() -> archivalService.get(SIP_ID, Optional.of(true))).isInstanceOf(RollbackStateException.class);
+        assertThrown(() -> archivalService.get(SIP_ID, true)).isInstanceOf(RollbackStateException.class);
     }
 
     @Test

@@ -9,6 +9,10 @@ import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedE
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageReachableException;
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
+import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiParam;
+import io.swagger.annotations.ApiResponse;
+import io.swagger.annotations.ApiResponses;
 import org.apache.commons.io.IOUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
@@ -42,30 +46,36 @@ public class AipApi {
     /**
      * Retrieves specified AIP as ZIP package.
      *
-     * @param sipId
+     * @param aipId
      * @param all   if true all AIP XMLs are packed otherwise only the latest is packed
      * @throws IOException
      */
-    @RequestMapping(value = "/{sipId}", method = RequestMethod.GET)
-    public void get(@PathVariable("sipId") String sipId,
-                    @RequestParam(value = "all") Optional<Boolean> all, HttpServletResponse response)
+
+    @ApiOperation(value = "")
+    @ApiResponses(value = {
+            @ApiResponse(code = 200, message = "Successful response")})
+    @RequestMapping(value = "/{aipId}", method = RequestMethod.GET)
+    public void get(
+            @ApiParam(value = "AIP ID", required = true) @PathVariable("aipId") String aipId,
+            @ApiParam(value = "true to return all XMLs, otherwise only the latest is returned", required = false) @RequestParam(value = "all", defaultValue = "false") boolean all,
+            HttpServletResponse response)
             throws IOException, RollbackStateException, DeletedStateException, StillProcessingStateException,
             FailedStateException, FilesCorruptedAtStoragesException, BadRequestException, RemovedStateException,
             NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
-        checkUUID(sipId);
+        checkUUID(aipId);
 
-        AipRetrievalResource aipRetrievalResource = archivalService.get(sipId, all);
+        AipRetrievalResource aipRetrievalResource = archivalService.get(aipId, all);
         response.setContentType("application/zip");
         response.setStatus(200);
-        response.addHeader("Content-Disposition", "attachment; filename=aip_" + sipId);
+        response.addHeader("Content-Disposition", "attachment; filename=aip_" + aipId + ".zip");
 
         try (ZipOutputStream zipOut = new ZipOutputStream(new BufferedOutputStream(response.getOutputStream()));
              InputStream sipIs = new BufferedInputStream(aipRetrievalResource.getSip())) {
-            zipOut.putNextEntry(new ZipEntry(sipId));
+            zipOut.putNextEntry(new ZipEntry(aipId));
             IOUtils.copyLarge(sipIs, zipOut);
             zipOut.closeEntry();
             for (Integer xmlVersion : aipRetrievalResource.getXmls().keySet()) {
-                zipOut.putNextEntry(new ZipEntry(toXmlId(sipId, xmlVersion)));
+                zipOut.putNextEntry(new ZipEntry(toXmlId(aipId, xmlVersion)));
                 IOUtils.copyLarge(new BufferedInputStream(aipRetrievalResource.getXmls().get(xmlVersion)), zipOut);
                 zipOut.closeEntry();
             }
@@ -78,19 +88,21 @@ public class AipApi {
     /**
      * Retrieves specified AIP XML file.
      *
-     * @param sipId
+     * @param aipId
      * @param version version of XML, if not specified the latest version is retrieved
      */
-    @RequestMapping(value = "/xml/{sipId}", method = RequestMethod.GET)
-    public void getXml(@PathVariable("sipId") String sipId, @RequestParam(value = "v")
-            Optional<Integer> version, HttpServletResponse response) throws StillProcessingStateException,
+    @RequestMapping(value = "/{aipId}/xml", method = RequestMethod.GET)
+    public void getXml(
+            @ApiParam(value = "AIP ID", required = true) @PathVariable("aipId") String aipId,
+            @ApiParam(value = "version number of XML, if not set the latest version is returned", required = false) @RequestParam(value = "v", defaultValue = "") Integer version,
+            HttpServletResponse response) throws StillProcessingStateException,
             RollbackStateException, IOException, FailedStateException, FilesCorruptedAtStoragesException,
             BadRequestException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
-        checkUUID(sipId);
-        ArchivalObjectDto xml = archivalService.getXml(sipId, version);
+        checkUUID(aipId);
+        ArchivalObjectDto xml = archivalService.getXml(aipId, version);
         response.setContentType("application/xml");
         response.setStatus(200);
-        response.addHeader("Content-Disposition", "attachment; filename=" + xml.getStorageId());
+        response.addHeader("Content-Disposition", "attachment; filename=" + xml.getStorageId() + ".xml");
         IOUtils.copyLarge(xml.getInputStream(), response.getOutputStream());
     }
 
@@ -121,7 +133,7 @@ public class AipApi {
                        @RequestParam("aipXmlChecksumType") ChecksumType aipXmlChecksumType,
                        @RequestParam(value = "UUID") Optional<String> id)
             throws IOException, SomeLogicalStoragesNotReachableException, BadRequestException, NoLogicalStorageAttachedException {
-        String sipId = id.isPresent() ? id.get() : UUID.randomUUID().toString();
+        String aipId = id.isPresent() ? id.get() : UUID.randomUUID().toString();
 
         Checksum sipChecksum = new Checksum(sipChecksumType, sipChecksumValue);
         checkChecksumFormat(sipChecksum);
@@ -129,9 +141,9 @@ public class AipApi {
         Checksum aipXmlChecksum = new Checksum(aipXmlChecksumType, aipXmlChecksumValue);
         checkChecksumFormat(aipXmlChecksum);
 
-        AipDto aipDto = new AipDto(sipId, sip.getInputStream(), sipChecksum, aipXml.getInputStream(), aipXmlChecksum);
+        AipDto aipDto = new AipDto(aipId, sip.getInputStream(), sipChecksum, aipXml.getInputStream(), aipXmlChecksum);
         archivalService.save(aipDto);
-        return sipId;
+        return aipId;
     }
 
     /**
@@ -143,46 +155,46 @@ public class AipApi {
      * This endpoint handles AIP versioning when AIP XML is versioned.
      * </p>
      *
-     * @param sipId         Id of SIP to which XML belongs
+     * @param aipId         Id of SIP to which XML belongs
      * @param xml           ARCLib XML
      * @param checksumValue XML checksum value
      * @param checksumType  XML checksum type
      */
-    @RequestMapping(value = "/{sipId}/update", method = RequestMethod.POST)
-    public void saveXml(@PathVariable("sipId") String sipId, @RequestParam("xml") MultipartFile xml,
+    @RequestMapping(value = "/{aipId}/update", method = RequestMethod.POST)
+    public void saveXml(@PathVariable("aipId") String aipId, @RequestParam("xml") MultipartFile xml,
                         @RequestParam("checksumValue") String checksumValue,
                         @RequestParam("checksumType") ChecksumType checksumType,
                         @RequestParam("version") Optional<Integer> version) throws IOException,
             SomeLogicalStoragesNotReachableException, BadRequestException, NoLogicalStorageAttachedException {
-        checkUUID(sipId);
+        checkUUID(aipId);
         Checksum checksum = new Checksum(checksumType, checksumValue);
         checkChecksumFormat(checksum);
 
-        archivalService.saveXml(sipId, xml.getInputStream(), checksum, version);
+        archivalService.saveXml(aipId, xml.getInputStream(), checksum, version);
     }
 
     /**
      * Logically removes AIP package by setting its state to {@link ObjectState#REMOVED}
      * <p>Removed package can is still retrieved when {@link AipApi#get} method is called.</p>
      *
-     * @param sipId
+     * @param aipId
      * @throws IOException
      * @throws DeletedStateException
      * @throws RollbackStateException
      * @throws StillProcessingStateException
      */
-    @RequestMapping(value = "/{sipId}/remove", method = RequestMethod.PUT)
-    public void remove(@PathVariable("sipId") String sipId) throws DeletedStateException, StillProcessingStateException,
+    @RequestMapping(value = "/{aipId}/remove", method = RequestMethod.PUT)
+    public void remove(@PathVariable("aipId") String aipId) throws DeletedStateException, StillProcessingStateException,
             RollbackStateException, StorageException, FailedStateException, SomeLogicalStoragesNotReachableException,
             BadRequestException, NoLogicalStorageAttachedException {
-        checkUUID(sipId);
-        archivalService.remove(sipId);
+        checkUUID(aipId);
+        archivalService.remove(aipId);
     }
 
     /**
      * Renews logically removed SIP.
      *
-     * @param sipId
+     * @param aipId
      * @throws DeletedStateException
      * @throws StillProcessingStateException
      * @throws RollbackStateException
@@ -191,12 +203,12 @@ public class AipApi {
      * @throws SomeLogicalStoragesNotReachableException
      * @throws BadRequestException
      */
-    @RequestMapping(value = "/{sipId}/renew", method = RequestMethod.PUT)
-    public void renew(@PathVariable("sipId") String sipId) throws DeletedStateException, StillProcessingStateException,
+    @RequestMapping(value = "/{aipId}/renew", method = RequestMethod.PUT)
+    public void renew(@PathVariable("aipId") String aipId) throws DeletedStateException, StillProcessingStateException,
             RollbackStateException, StorageException, FailedStateException, SomeLogicalStoragesNotReachableException,
             BadRequestException, NoLogicalStorageAttachedException {
-        checkUUID(sipId);
-        archivalService.renew(sipId);
+        checkUUID(aipId);
+        archivalService.renew(aipId);
     }
 
     /**
@@ -204,30 +216,30 @@ public class AipApi {
      * {@link ObjectState#DELETED}. XMLs and data in transaction database are not removed.
      * <p>Deleted package is no longer retrieved when {@link AipApi#get} method is called.</p>
      *
-     * @param sipId
+     * @param aipId
      * @throws IOException
      * @throws RollbackStateException
      * @throws StillProcessingStateException
      */
-    @RequestMapping(value = "/{sipId}", method = RequestMethod.DELETE)
-    public void delete(@PathVariable("sipId") String sipId) throws StillProcessingStateException, RollbackStateException,
+    @RequestMapping(value = "/{aipId}", method = RequestMethod.DELETE)
+    public void delete(@PathVariable("aipId") String aipId) throws StillProcessingStateException, RollbackStateException,
             StorageException, FailedStateException, SomeLogicalStoragesNotReachableException, BadRequestException, NoLogicalStorageAttachedException {
-        checkUUID(sipId);
-        archivalService.delete(sipId);
+        checkUUID(aipId);
+        archivalService.delete(aipId);
     }
 
     /**
      * Retrieves information about AIP containing state, whether is consistent etc...
      *
-     * @param sipId
+     * @param aipId
      * @throws StillProcessingStateException
      * @throws StorageException
      */
-    @RequestMapping(value = "/{uuid}/state", method = RequestMethod.GET)
-    public List<AipStateInfoDto> getAipState(@PathVariable("uuid") String sipId) throws StillProcessingStateException,
+    //@RequestMapping(value = "/{uuid}/state", method = RequestMethod.GET)
+    public List<AipStateInfoDto> getAipState(@PathVariable("uuid") String aipId) throws StillProcessingStateException,
             StorageException, BadRequestException, NoLogicalStorageAttachedException {
-        checkUUID(sipId);
-        return archivalService.getAipState(sipId);
+        checkUUID(aipId);
+        return archivalService.getAipState(aipId);
     }
 
     /**
@@ -235,7 +247,7 @@ public class AipApi {
      *
      * @return
      */
-    @RequestMapping(value = "/state", method = RequestMethod.GET)
+    //@RequestMapping(value = "/state", method = RequestMethod.GET)
     public List<StorageStateDto> getStorageState() throws NoLogicalStorageAttachedException {
         return archivalService.getStorageState();
     }

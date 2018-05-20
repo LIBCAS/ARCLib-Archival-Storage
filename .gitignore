@@ -2,3 +2,4 @@
 archival-storage.iml
 target/
 local-fs-tests/
+local-fs-tests-folder/

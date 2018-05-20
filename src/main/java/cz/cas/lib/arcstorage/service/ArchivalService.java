@@ -59,7 +59,7 @@ public class ArchivalService {
      * @throws FilesCorruptedAtStoragesException if SIP is corrupted at all reachable storages
      * @throws FailedStateException              if SIP is failed
      */
-    public AipRetrievalResource get(String sipId, Optional<Boolean> all) throws RollbackStateException,
+    public AipRetrievalResource get(String sipId, boolean all) throws RollbackStateException,
             StillProcessingStateException, DeletedStateException, FailedStateException,
             FilesCorruptedAtStoragesException, RemovedStateException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
         AipSip sipEntity = archivalDbService.getAip(sipId);
@@ -77,7 +77,7 @@ public class ArchivalService {
                 throw new RemovedStateException(sipEntity);
         }
 
-        List<AipXml> xmls = all.isPresent() && all.get() ? sipEntity.getXmls() : asList(sipEntity.getLatestXml());
+        List<AipXml> xmls = all ? sipEntity.getXmls() : asList(sipEntity.getLatestXml());
 
         Optional<AipXml> unfinishedXml = xmls.stream()
                 .filter(xml -> xml.getState() == ObjectState.PROCESSING)
@@ -106,16 +106,16 @@ public class ArchivalService {
      * @throws FilesCorruptedAtStoragesException
      * @throws StillProcessingStateException     {
      */
-    public ArchivalObjectDto getXml(String sipId, Optional<Integer> version) throws
+    public ArchivalObjectDto getXml(String sipId, Integer version) throws
             FailedStateException, RollbackStateException, StillProcessingStateException,
             FilesCorruptedAtStoragesException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
         AipSip sipEntity = archivalDbService.getAip(sipId);
         AipXml requestedXml;
-        if (version.isPresent()) {
-            Optional<AipXml> xmlOpt = sipEntity.getXmls().stream().filter(xml -> xml.getVersion() == version.get()).findFirst();
+        if (version != null) {
+            Optional<AipXml> xmlOpt = sipEntity.getXmls().stream().filter(xml -> xml.getVersion() == version).findFirst();
             if (!xmlOpt.isPresent()) {
-                log.warn("Could not find XML version: " + version.get() + " of AIP: " + sipId);
-                throw new MissingObject(AipXml.class, sipId + " version: " + version.get());
+                log.warn("Could not find XML version: " + version + " of AIP: " + sipId);
+                throw new MissingObject(AipXml.class, sipId + " version: " + version);
             }
             requestedXml = xmlOpt.get();
         } else
