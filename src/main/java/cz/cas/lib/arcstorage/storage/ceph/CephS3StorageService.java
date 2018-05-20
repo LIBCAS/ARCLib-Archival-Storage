@@ -41,13 +41,16 @@ public class CephS3StorageService implements StorageService {
     private Storage storage;
     private String userAccessKey;
     private String userSecretKey;
+    //not used for now
     private String region;
+    private int connectionTimeout;
 
-    public CephS3StorageService(Storage storage, String userAccessKey, String userSecretKey, String region) {
+    public CephS3StorageService(Storage storage, String userAccessKey, String userSecretKey, String region, int connectionTimeout) {
         this.storage = storage;
         this.userAccessKey = userAccessKey;
         this.userSecretKey = userSecretKey;
         this.region = region;
+        this.connectionTimeout = connectionTimeout;
     }
 
     @Override
@@ -64,22 +67,14 @@ public class CephS3StorageService implements StorageService {
         storeFile(s3, xml.getStorageId(), xml.getInputStream(), xml.getChecksum(), rollback);
     }
 
-    /**
-     * Retrieves reference to a file.
-     *
-     * @param sipId
-     * @param xmlVersions specifies which XML versions should be retrieved, typically all or the latest only
-     * @return
-     * @throws FileDoesNotExistException
-     */
     @Override
-    public AipRetrievalResource getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException {
+    public AipRetrievalResource getAip(String aipId, Integer... xmlVersions) throws FileDoesNotExistException {
         AmazonS3 s3 = connect();
-        checkFileExists(s3, sipId);
+        checkFileExists(s3, aipId);
         AipRetrievalResource aip = new AipRetrievalResource(new ClosableS3(s3));
-        aip.setSip(s3.getObject(storage.getLocation(), sipId).getObjectContent());
+        aip.setSip(s3.getObject(storage.getLocation(), aipId).getObjectContent());
         for (Integer xmlVersion : xmlVersions) {
-            String xmlId = toXmlId(sipId, xmlVersion);
+            String xmlId = toXmlId(aipId, xmlVersion);
             checkFileExists(s3, xmlId);
             aip.addXml(xmlVersion, s3.getObject(storage.getLocation(), xmlId).getObjectContent());
         }
@@ -146,12 +141,12 @@ public class CephS3StorageService implements StorageService {
     }
 
     @Override
-    public AipStateInfoDto getAipInfo(String sipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions) throws FileDoesNotExistException {
+    public AipStateInfoDto getAipInfo(String aipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions) throws FileDoesNotExistException {
         AmazonS3 s3 = connect();
-        AipStateInfoDto info = new AipStateInfoDto(storage.getName(), storage.getStorageType(), objectState, sipChecksum);
+        AipStateInfoDto info = new AipStateInfoDto(storage.getName(), storage.getStorageType(), objectState, sipChecksum, true);
         if (objectState == ObjectState.ARCHIVED || objectState == ObjectState.REMOVED) {
-            checkFileExists(s3, sipId);
-            S3Object sipObject = s3.getObject(storage.getLocation(), sipId);
+            checkFileExists(s3, aipId);
+            S3Object sipObject = s3.getObject(storage.getLocation(), aipId);
             Checksum storageFileChecksum = StorageUtils.computeChecksum(sipObject.getObjectContent(),
                     sipChecksum.getType());
             info.setSipStorageChecksum(storageFileChecksum);
@@ -162,7 +157,7 @@ public class CephS3StorageService implements StorageService {
         }
 
         for (Integer version : xmlVersions.keySet()) {
-            String xmlId = toXmlId(sipId, version);
+            String xmlId = toXmlId(aipId, version);
             checkFileExists(s3, xmlId);
             S3Object xmlObject = s3.getObject(storage.getLocation(), xmlId);
             Checksum dbChecksum = xmlVersions.get(version);
@@ -195,23 +190,12 @@ public class CephS3StorageService implements StorageService {
     /**
      * Stores file and then reads it and verifies its fixity.
      * <p>
-     * If rollback is set to true by another thread, this method returns ASAP  (without throwing exception). It also tries to deleteAip already stored parts but
-     * the cleaning may not be successful. All parts should be cleaned during rollback again.
+     * If rollback is set to true by another thread, this method returns ASAP (without throwing exception), leaving the file uncompleted but closing stream.  Uncompleted files are to be cleaned during rollback.
      * </p>
      * <p>
      * In case of any exception, rollback flag is set to true.
      * </p>
-     *
-     * @param s3       connection
-     * @param id       storageId of new file
-     * @param stream   new file stream
-     * @param checksum sipStorageChecksum of the file, this is only added to metadata and not used for fixity comparison, fixity is compared per each chunk during upload
-     * @param rollback rollback flag to be periodically checked
-     * @throws FileCorruptedAfterStoreException if fixity does not match after save
-     * @throws IOStorageException               in case of any {@link IOException}
-     * @throws GeneralException                 in case of any unexpected error
      */
-
     void storeFile(AmazonS3 s3, String id, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws FileCorruptedAfterStoreException, IOStorageException {
         if (rollback.get())
             return;
@@ -298,6 +282,7 @@ public class CephS3StorageService implements StorageService {
         //force usage of AWS signature v2 instead of v4 to enable multipart uploads (v4 does not work with multipart upload for now)
         clientConfig.setSignerOverride("S3SignerType");
         clientConfig.setProtocol(Protocol.HTTP);
+        clientConfig.setConnectionTimeout(connectionTimeout);
         AmazonS3 conn = AmazonS3ClientBuilder
                 .standard()
                 .withCredentials(provider)

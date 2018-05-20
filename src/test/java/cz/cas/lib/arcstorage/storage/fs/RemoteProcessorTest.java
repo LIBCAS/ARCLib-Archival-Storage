@@ -23,6 +23,7 @@ import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 import static helper.ThrowableAssertion.assertThrown;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.core.IsNot.not;
 import static org.junit.Assert.assertThat;
 
 public class RemoteProcessorTest extends StorageServiceTest {
@@ -63,7 +64,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
 
     @Before
     public void before() throws IOException {
-        service = new RemoteFsProcessor(storage, S, KEY_PATH);
+        service = new RemoteFsProcessor(storage, S, KEY_PATH,10000);
     }
 
     @Test
@@ -76,6 +77,17 @@ public class RemoteProcessorTest extends StorageServiceTest {
         assertThat(getFileContent(folder + S + fileId), is(SIP_CONTENT));
         assertThat(getFileContent(folder + S + fileId + "." + SIP_CHECKSUM.getType()), is(SIP_CHECKSUM.getValue()));
         assertThat(isInState(folder + S + fileId, ObjectState.ARCHIVED), is(true));
+    }
+
+    @Test
+    public void getLargeFileSuccessTest() throws Exception {
+        String fileId = testName.getMethodName();
+        String folder = service.getFolderPath(fileId);
+        File file = new File(LARGE_SIP_PATH);
+        service.storeFile(sftp,folder,fileId,new FileInputStream(file),LARGE_SIP_CHECKSUM,new AtomicBoolean(false));
+        assertThat(isInState(folder + S + fileId, ObjectState.ARCHIVED), is(true));
+        ObjectRetrievalResource object = service.getObject(fileId);
+        assertThat(object.getInputStream(),not(nullValue()));
     }
 
     @Test
@@ -302,7 +314,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
 
     @Test
     public void testConnection() {
-        RemoteFsProcessor badService = new RemoteFsProcessor(storage, "/", "src/main/resources/arcstorage.pub");
+        RemoteFsProcessor badService = new RemoteFsProcessor(storage, "/", "src/main/resources/arcstorage.pub",10000);
         assertThat(service.testConnection(), is(true));
         assertThat(badService.testConnection(), is(false));
     }
@@ -343,7 +355,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
 
     private static final class TestServiceSettingRollback extends RemoteFsProcessor {
         public TestServiceSettingRollback(Storage storage) {
-            super(storage, S, KEY_PATH);
+            super(storage, S, KEY_PATH,10000);
         }
 
         @Override

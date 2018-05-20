@@ -27,7 +27,7 @@ import static org.junit.Assert.assertThat;
 public class CephS3Test extends StorageServiceTest {
 
     @Getter
-    private CephS3StorageService service = new CephS3StorageService(storage, "BLZBGL9ZDD23WD0GL8V8", "pPYbINKQxEBLdxhzbycUI00UmTD4uaHjDel1IPui", null);
+    private CephS3StorageService service = new CephS3StorageService(storage, "BLZBGL9ZDD23WD0GL8V8", "pPYbINKQxEBLdxhzbycUI00UmTD4uaHjDel1IPui", null,10000);
     private static Storage storage = new Storage();
     private static String bucketName;
 
@@ -379,7 +379,7 @@ public class CephS3Test extends StorageServiceTest {
 
     private static final class TestStorageService extends CephS3StorageService {
         public TestStorageService(Storage storage, String userAccessKey, String userSecretKey, String region) {
-            super(storage, userAccessKey, userSecretKey, region);
+            super(storage, userAccessKey, userSecretKey, region,10000);
         }
 
         @Override

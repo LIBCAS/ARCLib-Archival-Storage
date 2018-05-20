@@ -30,6 +30,7 @@ public class StorageProvider {
 
     private String keyFilePath;
     private StorageStore storageStore;
+    private int connectionTimeout;
 
     /**
      * Returns storage service according to the database object. The storage is tested for reachability and is updated if
@@ -44,10 +45,10 @@ public class StorageProvider {
         JsonNode root;
         switch (storage.getStorageType()) {
             case FS:
-                service = new FsStorageService(storage, keyFilePath);
+                service = new FsStorageService(storage, keyFilePath, connectionTimeout);
                 break;
             case ZFS:
-                service = new ZfsStorageService(storage, keyFilePath);
+                service = new ZfsStorageService(storage, keyFilePath, connectionTimeout);
                 break;
             case CEPH:
                 try {
@@ -63,7 +64,7 @@ public class StorageProvider {
                         String region = root.at("/region").textValue();
                         if (userKey == null || userSecret == null)
                             throw new ConfigParserException("userKey or userSecret string missing in CEPH storage config");
-                        service = new CephS3StorageService(storage, userKey, userSecret, region);
+                        service = new CephS3StorageService(storage, userKey, userSecret, region, connectionTimeout);
                         break;
                     case SWIFT:
                         throw new UnsupportedOperationException();
@@ -125,6 +126,7 @@ public class StorageProvider {
 
     /**
      * Returns storage service according to the {@link Storage} with the provided id.
+     *
      * @param storageId
      * @return storage service for the storage
      */
@@ -142,5 +144,10 @@ public class StorageProvider {
     @Inject
     public void setStorageStore(StorageStore storageStore) {
         this.storageStore = storageStore;
+    }
+
+    @Inject
+    public void setConnectionTimeout(@Value("${arcstorage.connection-timeout}") String connectionTimeout) {
+        this.connectionTimeout = Integer.parseInt(connectionTimeout);
     }
 }

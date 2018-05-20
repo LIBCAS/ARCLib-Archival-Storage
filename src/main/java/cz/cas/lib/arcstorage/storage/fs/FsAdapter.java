@@ -28,8 +28,8 @@ public interface FsAdapter extends StorageService {
     }
 
     @Override
-    default AipRetrievalResource getAip(String sipId, Integer... xmlVersions) throws StorageException {
-        return getFsProcessor().getAip(sipId, xmlVersions);
+    default AipRetrievalResource getAip(String aipId, Integer... xmlVersions) throws StorageException {
+        return getFsProcessor().getAip(aipId, xmlVersions);
     }
 
     @Override
@@ -68,7 +68,7 @@ public interface FsAdapter extends StorageService {
     }
 
     @Override
-    default AipStateInfoDto getAipInfo(String sipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions) throws StorageException {
-        return getFsProcessor().getAipInfo(sipId, sipChecksum, objectState, xmlVersions);
+    default AipStateInfoDto getAipInfo(String aipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions) throws StorageException {
+        return getFsProcessor().getAipInfo(aipId, sipChecksum, objectState, xmlVersions);
     }
 }

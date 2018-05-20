@@ -52,15 +52,15 @@ public class LocalFsProcessor implements StorageService {
     }
 
     @Override
-    public AipRetrievalResource getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException {
-        String fileToOpen = sipId;
+    public AipRetrievalResource getAip(String aipId, Integer... xmlVersions) throws FileDoesNotExistException {
+        String fileToOpen = aipId;
         AipRetrievalResource aip = new AipRetrievalResource(null);
         try {
-            File sipFile = getFolderPath(sipId).resolve(sipId).toFile();
+            File sipFile = getFolderPath(aipId).resolve(aipId).toFile();
             aip.setSip(new FileInputStream(sipFile));
             for (int version : xmlVersions) {
-                fileToOpen = toXmlId(sipId, version);
-                aip.addXml(version, new FileInputStream(getFolderPath(sipId).resolve(fileToOpen).toFile()));
+                fileToOpen = toXmlId(aipId, version);
+                aip.addXml(version, new FileInputStream(getFolderPath(aipId).resolve(fileToOpen).toFile()));
             }
         } catch (FileNotFoundException e) {
             for (InputStream ref : aip.getXmls().values()) {
@@ -145,16 +145,16 @@ public class LocalFsProcessor implements StorageService {
     }
 
     @Override
-    public AipStateInfoDto getAipInfo(String sipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions) throws StorageException {
-        Path folder = getFolderPath(sipId);
-        AipStateInfoDto info = new AipStateInfoDto(storage.getName(), storage.getStorageType(), objectState, sipChecksum);
+    public AipStateInfoDto getAipInfo(String aipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions) throws StorageException {
+        Path folder = getFolderPath(aipId);
+        AipStateInfoDto info = new AipStateInfoDto(storage.getName(), storage.getStorageType(), objectState, sipChecksum,true);
         if (objectState == ObjectState.ARCHIVED || objectState == ObjectState.REMOVED) {
-            try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(folder.resolve(sipId).toFile()))) {
+            try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(folder.resolve(aipId).toFile()))) {
                 Checksum storageSipChecksum = StorageUtils.computeChecksum(bis, sipChecksum.getType());
                 info.setSipStorageChecksum(storageSipChecksum);
                 info.setConsistent(sipChecksum.equals(storageSipChecksum));
             } catch (FileNotFoundException e) {
-                throw new FileDoesNotExistException(folder.resolve(sipId).toAbsolutePath().toString());
+                throw new FileDoesNotExistException(folder.resolve(aipId).toAbsolutePath().toString());
             } catch (IOException e) {
                 throw new IOStorageException(e);
             }
@@ -163,7 +163,7 @@ public class LocalFsProcessor implements StorageService {
             info.setConsistent(false);
         }
         for (Integer version : xmlVersions.keySet()) {
-            Path xmlFilePath = folder.resolve(toXmlId(sipId, version));
+            Path xmlFilePath = folder.resolve(toXmlId(aipId, version));
             try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(xmlFilePath.toFile()))) {
                 Checksum dbChecksum = xmlVersions.get(version);
                 Checksum storageChecksum = StorageUtils.computeChecksum(bis, dbChecksum.getType());
@@ -190,15 +190,6 @@ public class LocalFsProcessor implements StorageService {
      * <p>
      * In case of any exception, rollback flag is set to true.
      * </p>
-     *
-     * @param folder   path to new file
-     * @param id       storageId of new file
-     * @param stream   new file stream
-     * @param checksum sipStorageChecksum of the file
-     * @param rollback rollback flag to be periodically checked
-     * @throws FileCorruptedAfterStoreException if fixity does not match after save
-     * @throws IOStorageException               in case of any {@link IOException}
-     * @throws GeneralException                 in case of any unexpected error
      */
     void storeFile(Path folder, String id, InputStream stream, Checksum checksum, AtomicBoolean rollback) throws FileCorruptedAfterStoreException, IOStorageException {
         if (rollback.get())

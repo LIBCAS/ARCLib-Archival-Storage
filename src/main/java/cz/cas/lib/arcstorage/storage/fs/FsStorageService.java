@@ -1,14 +1,14 @@
 package cz.cas.lib.arcstorage.storage.fs;
 
-import cz.cas.lib.arcstorage.dto.ObjectState;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
+import cz.cas.lib.arcstorage.domain.store.Transactional;
 import cz.cas.lib.arcstorage.dto.ChecksumType;
+import cz.cas.lib.arcstorage.dto.ObjectState;
 import cz.cas.lib.arcstorage.dto.StorageStateDto;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.CmdOutputParsingException;
 import cz.cas.lib.arcstorage.storage.exception.SshException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
-import cz.cas.lib.arcstorage.domain.store.Transactional;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.schmizz.sshj.SSHClient;
@@ -52,14 +52,14 @@ public class FsStorageService implements FsAdapter {
     private StorageService fsProcessor;
     private String keyFilePath;
 
-    public FsStorageService(Storage storage, String keyFilePath) {
+    public FsStorageService(Storage storage, String keyFilePath, int connectionTimeout) {
         this.storage = storage;
         this.keyFilePath = keyFilePath;
         String separator = storage.getLocation().startsWith("/") ? "/" : "\\";
         if (isLocalhost(storage))
             this.fsProcessor = new LocalFsProcessor(storage);
         else
-            this.fsProcessor = new RemoteFsProcessor(storage, separator, keyFilePath);
+            this.fsProcessor = new RemoteFsProcessor(storage, separator, keyFilePath, connectionTimeout);
     }
 
     @Override
