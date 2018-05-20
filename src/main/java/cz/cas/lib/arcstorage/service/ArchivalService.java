@@ -58,10 +58,14 @@ public class ArchivalService {
      * @throws StillProcessingStateException     if SIP or some of requested XML is still processing
      * @throws FilesCorruptedAtStoragesException if SIP is corrupted at all reachable storages
      * @throws FailedStateException              if SIP is failed
+     * @throws RemovedStateException
+     * @throws NoLogicalStorageReachableException
+     * @throws NoLogicalStorageAttachedException
      */
     public AipRetrievalResource get(String sipId, boolean all) throws RollbackStateException,
             StillProcessingStateException, DeletedStateException, FailedStateException,
-            FilesCorruptedAtStoragesException, RemovedStateException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
+            FilesCorruptedAtStoragesException, RemovedStateException, NoLogicalStorageReachableException,
+            NoLogicalStorageAttachedException {
         AipSip sipEntity = archivalDbService.getAip(sipId);
 
         switch (sipEntity.getState()) {
@@ -104,7 +108,10 @@ public class ArchivalService {
      * @throws FailedStateException
      * @throws RollbackStateException
      * @throws FilesCorruptedAtStoragesException
-     * @throws StillProcessingStateException     {
+     * @throws StillProcessingStateException
+     * @throws FilesCorruptedAtStoragesException
+     * @throws NoLogicalStorageReachableException
+     * @throws NoLogicalStorageAttachedException
      */
     public ArchivalObjectDto getXml(String sipId, Integer version) throws
             FailedStateException, RollbackStateException, StillProcessingStateException,
@@ -155,9 +162,11 @@ public class ArchivalService {
      * @throws SomeLogicalStoragesNotReachableException
      * @throws InvalidChecksumException
      * @throws IOException
+     * @throws NoLogicalStorageAttachedException
      */
     @Transactional
-    public void save(AipDto aip) throws InvalidChecksumException, SomeLogicalStoragesNotReachableException, IOException, NoLogicalStorageAttachedException {
+    public void save(AipDto aip) throws InvalidChecksumException, SomeLogicalStoragesNotReachableException, IOException,
+            NoLogicalStorageAttachedException {
         List<StorageService> reachableAdapters = storageProvider.createReachableAdapters();
         //validate checksum of XML
         byte[] xmlContent;
@@ -185,6 +194,10 @@ public class ArchivalService {
      * @param sipId    Id of SIP to which XML belongs
      * @param xml      Stream of xml file
      * @param checksum
+     *
+     * @throws SomeLogicalStoragesNotReachableException
+     * @throws IOException
+     * @throws NoLogicalStorageAttachedException
      */
     @Transactional
     public void saveXml(String sipId, InputStream xml, Checksum checksum, Optional<Integer> version)
@@ -209,9 +222,11 @@ public class ArchivalService {
      * @throws StillProcessingStateException
      * @throws StorageException
      * @throws FailedStateException
+     * @throws SomeLogicalStoragesNotReachableException
      */
     public void delete(String sipId) throws StillProcessingStateException, RollbackStateException,
-            StorageException, FailedStateException, SomeLogicalStoragesNotReachableException, NoLogicalStorageAttachedException {
+            StorageException, FailedStateException, SomeLogicalStoragesNotReachableException,
+            NoLogicalStorageAttachedException {
         List<StorageService> reachableAdapters = storageProvider.createReachableAdapters();
         archivalDbService.registerSipDeletion(sipId);
         async.deleteAip(sipId, reachableAdapters);
@@ -226,9 +241,11 @@ public class ArchivalService {
      * @throws RollbackStateException
      * @throws StillProcessingStateException
      * @throws FailedStateException
+     * @throws SomeLogicalStoragesNotReachableException
      */
     public void remove(String sipId) throws StillProcessingStateException, DeletedStateException,
-            RollbackStateException, StorageException, FailedStateException, SomeLogicalStoragesNotReachableException, NoLogicalStorageAttachedException {
+            RollbackStateException, StorageException, FailedStateException, SomeLogicalStoragesNotReachableException,
+            NoLogicalStorageAttachedException {
         List<StorageService> reachableAdapters = storageProvider.createReachableAdapters();
         archivalDbService.removeAip(sipId);
         async.removeAip(sipId, reachableAdapters);
@@ -243,25 +260,28 @@ public class ArchivalService {
      * @throws RollbackStateException
      * @throws StillProcessingStateException
      * @throws FailedStateException
+     * @throws SomeLogicalStoragesNotReachableException
+     * @throws NoLogicalStorageAttachedException
      */
     public void renew(String sipId) throws StillProcessingStateException, DeletedStateException,
-            RollbackStateException, StorageException, FailedStateException, SomeLogicalStoragesNotReachableException, NoLogicalStorageAttachedException {
+            RollbackStateException, StorageException, FailedStateException, SomeLogicalStoragesNotReachableException,
+            NoLogicalStorageAttachedException {
         List<StorageService> reachableAdapters = storageProvider.createReachableAdapters();
         archivalDbService.renewAip(sipId);
         async.renewAip(sipId, reachableAdapters);
     }
 
     /**
-     * Retrieves information about AIP.
+     * Retrieves information about AIP from every storage.
      *
      * @param sipId
      * @throws StillProcessingStateException
-     * @throws StorageException
+     * @throws NoLogicalStorageAttachedException
      */
     //todo: implement self-healing
     //todo: recreate current flat structure (objecstate, databasechecksum etc. are replicated in all AipStateInfos..
     //todo: it would be better to have parent object with those and then child objects specific for every storage
-    public List<AipStateInfoDto> getAipState(String sipId) throws StillProcessingStateException, NoLogicalStorageAttachedException {
+    public List<AipStateInfoDto> getAipStates(String sipId) throws StillProcessingStateException, NoLogicalStorageAttachedException {
         AipSip aip = archivalDbService.getAip(sipId);
         if (aip.getState() == ObjectState.PROCESSING)
             throw new StillProcessingStateException(aip);
@@ -283,6 +303,31 @@ public class ArchivalService {
                 }
         ).collect(Collectors.toList());
         log.info(String.format("Info about AIP: %s has been successfully retrieved.", sipId));
+        return result;
+    }
+
+    /**
+     * Retrieves information about AIP from a single storage.
+     *
+     * @param sipId
+     * @throws StillProcessingStateException
+     * @throws NoLogicalStorageAttachedException
+     */
+    //todo: implement self-healing
+    //todo: recreate current flat structure (objecstate, databasechecksum etc. are replicated in all AipStateInfos..
+    //todo: it would be better to have parent object with those and then child objects specific for every storage
+    public AipStateInfoDto getAipState(String sipId, String storageId) throws StillProcessingStateException,
+            StorageException {
+        AipSip aip = archivalDbService.getAip(sipId);
+        if (aip.getState() == ObjectState.PROCESSING) {
+            throw new StillProcessingStateException(aip);
+        }
+        StorageService storageService = storageProvider.createAdapter(storageId);
+        AipStateInfoDto result = storageService.getAipInfo(sipId, aip.getChecksum(), aip.getState(),
+                aip.getXmls().stream().collect(Collectors.toMap(xml -> xml.getVersion(), xml -> xml.getChecksum())));
+
+        log.info(String.format("Info about AIP: %s has been successfully retrieved from storage %s.", sipId,
+                storageService.getStorage().getName()));
         return result;
     }
 
@@ -359,7 +404,7 @@ public class ArchivalService {
      */
     private AipRetrievalResource retrieveAip(AipSip sipEntity, List<AipXml> xmls)
             throws FilesCorruptedAtStoragesException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
-        TreeMap<Integer, List<StorageService>> storageServicesByPriorities = getStorageServicesByPriorities();
+        TreeMap<Integer, List<StorageService>> storageServicesByPriorities = getReachableStorageServicesByPriorities();
         List<StorageService> highestPriorityStorages = storageServicesByPriorities.pollFirstEntry().getValue();
 
         //shuffle to ensure randomness in selection of the storage
@@ -394,7 +439,7 @@ public class ArchivalService {
      */
     private InputStream retrieveXml(AipXml aipXml)
             throws FilesCorruptedAtStoragesException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
-        TreeMap<Integer, List<StorageService>> storageServicesByPriorities = getStorageServicesByPriorities();
+        TreeMap<Integer, List<StorageService>> storageServicesByPriorities = getReachableStorageServicesByPriorities();
         List<StorageService> highestPriorityStorages = storageServicesByPriorities.pollFirstEntry().getValue();
 
         //shuffle to ensure randomness in selection of the storage
@@ -589,7 +634,7 @@ public class ArchivalService {
                 }
             }
 
-            //repair xmls at the storage
+            //repair XMLs at the storage
             for (AipXml invalidChecksumXml : invalidChecksumResult.invalidChecksumXmls) {
                 InputStream xmlInputStream = result.getAipFromStorage().getXmls().get(invalidChecksumXml.getVersion());
                 String xmlStorageId = toXmlId(sipEntity.getId(), invalidChecksumXml.getVersion());
@@ -638,6 +683,7 @@ public class ArchivalService {
         }
 
         InputStream xmlInputStream = null;
+        //iterate over all the storages to find an uncorrupted version of the XML
         for (StorageService storageService : storageServices) {
             try {
                 xmlInputStream = retrieveXmlFromStorage(xmlEntity, storageService);
@@ -673,10 +719,14 @@ public class ArchivalService {
     /**
      * called only by retrieval, GET methods.. methods which writes writes to all storages
      *
-     * @return map of services sorted by priorities in the descending order (highest priority storages first),
+     * @return map of reachable storage services sorted by priorities in the descending order (highest priority storages first),
      * where the key is the priority and the value is a list of storages with the given priority
+     *
+     * @throws NoLogicalStorageReachableException if the number of reachable storages is zero
+     * @throws NoLogicalStorageAttachedException  if the number of attached storages is zero
      */
-    private TreeMap<Integer, List<StorageService>> getStorageServicesByPriorities() throws NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
+    private TreeMap<Integer, List<StorageService>> getReachableStorageServicesByPriorities()
+            throws NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
         //sorted map where the keys are the priorities and the values are the lists of storage services
         TreeMap<Integer, List<StorageService>> storageServicesByPriorities = new TreeMap<>(Collections.reverseOrder());
         storageProvider.createAllAdapters().forEach(adapter -> {

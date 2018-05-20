@@ -229,17 +229,20 @@ public class AipApi {
     }
 
     /**
-     * Retrieves information about AIP containing state, whether is consistent etc...
+     * Retrieves information about AIP containing state, whether is consistent etc from the given storage
      *
      * @param aipId
+     * @param storageId
+     *
      * @throws StillProcessingStateException
      * @throws StorageException
+     * @throws BadRequestException
      */
-    //@RequestMapping(value = "/{uuid}/state", method = RequestMethod.GET)
-    public List<AipStateInfoDto> getAipState(@PathVariable("uuid") String aipId) throws StillProcessingStateException,
-            StorageException, BadRequestException, NoLogicalStorageAttachedException {
+    @RequestMapping(value = "/{uuid}/state", method = RequestMethod.GET)
+    public AipStateInfoDto getAipState(@PathVariable("uuid") String aipId, @RequestParam(value = "storageId") String storageId)
+            throws StillProcessingStateException, BadRequestException, StorageException {
         checkUUID(aipId);
-        return archivalService.getAipState(aipId);
+        return archivalService.getAipState(aipId, storageId);
     }
 
     /**

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.domain.store.StorageStore;
 import cz.cas.lib.arcstorage.exception.GeneralException;
+import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.service.exception.ConfigParserException;
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
@@ -120,6 +121,17 @@ public class StorageProvider {
         if (list.isEmpty())
             throw new NoLogicalStorageAttachedException();
         return list;
+    }
+
+    /**
+     * Returns storage service according to the {@link Storage} with the provided id.
+     * @param storageId
+     * @return storage service for the storage
+     */
+    public StorageService createAdapter(String storageId) {
+        Storage storage = storageStore.find(storageId);
+        if (storage == null) throw new MissingObject(Storage.class, storageId);
+        return createAdapter(storage);
     }
 
     @Inject

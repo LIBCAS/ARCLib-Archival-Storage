@@ -103,7 +103,7 @@ public class AipApiTest extends DbTest implements ApiTest {
     private static Storage s3;
 
     @BeforeClass
-    public static void setup() throws IOException {
+    public static void setup() {
         s1 = new Storage();
         s1.setHost("localhost");
         s1.setName("local fs");
@@ -198,6 +198,9 @@ public class AipApiTest extends DbTest implements ApiTest {
 
         when(storageProvider.createAllAdapters()).thenReturn(asList(fsStorageService, zfsStorageService,
                 cephS3StorageService));
+
+
+        when(storageProvider.createAdapter(s1.getId())).thenReturn(fsStorageService);
 
         AipRetrievalResource aip1 = new AipRetrievalResource(sipContent.getChannel());
         aip1.setSip(sipContent);
@@ -616,13 +619,13 @@ public class AipApiTest extends DbTest implements ApiTest {
      * @throws Exception
      */
     @Test
-    @Ignore
-    public void aipState() throws Exception {
+    public void getAipState() throws Exception {
         mvc(api)
-                .perform(MockMvcRequestBuilders.get(BASE + "/{aipId}/state", SIP_ID))
+                .perform(MockMvcRequestBuilders.get(BASE + "/{aipId}/state", SIP_ID).param("storageId",
+                        s1.getId()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.[0].objectState").value("ARCHIVED"))
-                .andExpect(jsonPath("$..storageType", containsInAnyOrder("FS", "ZFS", "CEPH")));
+                .andExpect(jsonPath("$.objectState").value("ARCHIVED"))
+                .andExpect(jsonPath("$.storageType", equalTo("FS")));
     }
 
     /**

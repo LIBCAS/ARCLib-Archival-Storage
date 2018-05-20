@@ -292,7 +292,7 @@ public class ArchivalServiceTest extends DbTest {
 
         flushCache();
 
-        List<AipStateInfoDto> aipStateInfoDtos = archivalService.getAipState(SIP_ID);
+        List<AipStateInfoDto> aipStateInfoDtos = archivalService.getAipStates(SIP_ID);
 
         assertThat(aipStateInfoDtos.size(), is(1));
 
