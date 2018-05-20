@@ -1,4 +1,20 @@
 spring.application.name: arcstorage
+security:
+  debug: true
+  jwt:
+    secret: YXVyYTI0Z3JvZ3M=
+    expiration: 300000
+    refresh: 30
+  basic:
+    authQueries: "/api/auth/user"
+  roles:
+    internal:
+      enabled: true
+  password:
+    enabled: true
+    length: 8
+    digit: true
+    alphabet: true
 spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/arcstorage
@@ -25,4 +41,9 @@ liquibase:
   url: jdbc:postgresql://localhost:5432/arcstorage
   user: arcstorage
   password: vuji61oilo
+arcstorage:
+  tmp-folder: tmp
+  auth-key: src/main/resources/arcstorage.ppk
+  thread-count: 8
+  connection-timeout: 5000
 

@@ -1,17 +1,23 @@
 package cz.cas.lib.arcstorage.util;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.io.ByteSource;
 import com.google.common.io.Resources;
-import cz.cas.lib.arcstorage.domain.DomainObject;
+import cz.cas.lib.arcstorage.exception.GeneralException;
+import cz.cas.lib.arcstorage.exception.BadRequestException;
+import cz.cas.lib.arcstorage.domain.entity.DomainObject;
+import cz.cas.lib.arcstorage.dto.Checksum;
 import cz.cas.lib.arcstorage.exception.MissingObject;
+import cz.cas.lib.arcstorage.service.exception.ConfigParserException;
+import org.apache.commons.io.IOUtils;
 import org.springframework.aop.framework.Advised;
 import org.springframework.aop.support.AopUtils;
 
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.math.BigDecimal;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -157,7 +163,7 @@ public class Utils {
         }
     }
 
-    public static boolean isUUID(String id) {
+    public static boolean isUuid(String id) {
         try {
             UUID.fromString(id);
             return true;
@@ -166,8 +172,19 @@ public class Utils {
         }
     }
 
-    public static boolean isMD5(String string) {
+    public static boolean isMd5(String string) {
         if (string.length() != 32)
+            return false;
+        try {
+            Long.parseLong(string, 16);
+            return true;
+        } catch (NumberFormatException nfe) {
+            return false;
+        }
+    }
+
+    public static boolean isSha512(String string) {
+        if (string.length() != 128)
             return false;
         try {
             Long.parseLong(string, 16);
@@ -286,11 +303,153 @@ public class Utils {
         }
     }
 
+    public static String strSA(String storageName, String aipId) {
+        return strS(storageName) + strA(aipId);
+    }
+
+    public static String strSX(String storageName, String xmlId) {
+        return strS(storageName) + strX(xmlId);
+    }
+
+    public static String strSF(String storageName, String fileId) {
+        return strS(storageName) + strF(fileId);
+    }
+
+    public static String strA(String aipId) {
+        return "Aip: " + aipId + " ";
+    }
+
+    public static String strF(String fileId) {
+        return "File: " + fileId + " ";
+    }
+
+    public static String strX(String xmlId) {
+        return "Xml: " + xmlId + " ";
+    }
+
+    public static String strS(String storageName) {
+        return "Storage: " + storageName + " ";
+    }
+
     public static String bytesToHexString(byte[] bytes) {
         final StringBuilder builder = new StringBuilder();
         for (byte b : bytes) {
             builder.append(String.format("%02x", b));
         }
         return builder.toString();
+    }
+
+    public static <T extends Enum<T>> T parseEnumFromConfig(JsonNode root, String jsonPtrExpr, Class<T> enumerationClass) throws ConfigParserException {
+        JsonNode node = root.at(jsonPtrExpr);
+        if (!node.isMissingNode()) {
+            String value = node.textValue();
+            for (Enum enumeration : enumerationClass.getEnumConstants()) {
+                if (enumeration.toString().equals(value.toUpperCase()))
+                    return enumeration.valueOf(enumerationClass, value.toUpperCase());
+            }
+        }
+        throw new ConfigParserException(jsonPtrExpr, node.toString(), enumerationClass);
+    }
+
+    /**
+     * Checks that the checksum has the appropriate format
+     *
+     * @param checksum
+     */
+    public static void checkChecksumFormat(Checksum checksum) throws BadRequestException {
+        String hash = checksum.getValue();
+        switch (checksum.getType()) {
+            case MD5:
+                if (!hash.matches("\\p{XDigit}{32}")) {
+                    throw new BadRequestException("Invalid format of MD5 checksum: " + hash);
+                }
+                break;
+            case SHA512:
+                if (!hash.matches("\\p{Alnum}{128}")) {
+                    throw new BadRequestException("Invalid format of SHA512 checksum: " + hash);
+                }
+        }
+    }
+
+    public static class Pair<L, R> implements Serializable {
+        private L l;
+        private R r;
+
+        public Pair(L l, R r) {
+            this.l = l;
+            this.r = r;
+        }
+
+        public L getL() {
+            return l;
+        }
+
+        public R getR() {
+            return r;
+        }
+
+        public void setL(L l) {
+            this.l = l;
+        }
+
+        public void setR(R r) {
+            this.r = r;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+
+            Pair<?, ?> pair = (Pair<?, ?>) o;
+
+            if (l != null ? !l.equals(pair.l) : pair.l != null) return false;
+            return r != null ? r.equals(pair.r) : pair.r == null;
+        }
+
+        @Override
+        public int hashCode() {
+            int result = l != null ? l.hashCode() : 0;
+            result = 31 * result + (r != null ? r.hashCode() : 0);
+            return result;
+        }
+    }
+
+    /**
+     * Executes process wia command.
+     *
+     * @param cmd command to be executed
+     * @return process return code together with string output
+     */
+    public static Pair<Integer, List<String>> executeProcessCustomResultHandle(String... cmd) {
+        File tmp = null;
+        try {
+            tmp = File.createTempFile("out", null);
+            tmp.deleteOnExit();
+            final ProcessBuilder processBuilder = new ProcessBuilder(cmd);
+            processBuilder.redirectErrorStream(true).redirectOutput(tmp);
+            final Process process = processBuilder.start();
+            final int exitCode = process.waitFor();
+            return new Pair<>(exitCode, Files.readAllLines(tmp.toPath()));
+        } catch (InterruptedException | IOException ex) {
+            throw new GeneralException("unexpected error while executing process", ex);
+        } finally {
+            if (tmp != null)
+                tmp.delete();
+        }
+    }
+
+    public static void checkUUID(String id) throws BadRequestException {
+        try {
+            UUID.fromString(id);
+        } catch (Exception e) {
+            throw new BadRequestException(id + " is not valid UUID");
+        }
+    }
+
+    public static byte[] inputStreamToBytes(InputStream ios) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        IOUtils.copy(ios, baos);
+        return baos.toByteArray();
     }
 }

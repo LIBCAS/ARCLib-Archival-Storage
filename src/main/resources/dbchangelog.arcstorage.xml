@@ -6,4 +6,107 @@
     <property name="now" value="getDate()" dbms="mssql"/>
     <property name="now" value="now()" dbms="mysql"/>
     <property name="now" value="now()" dbms="postgresql"/>
+
+    <changeSet id="arcstorage:1" author="tomasek">
+        <createTable tableName="arcstorage_aip_sip">
+            <column name="id" type="varchar(255)">
+                <constraints primaryKey="true" primaryKeyName="arcstorage_aip_sip_pkey" nullable="false"/>
+            </column>
+            <column name="created" type="datetime"/>
+            <column name="checksum_value" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checksum_type" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="state" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createTable tableName="arcstorage_aip_xml">
+            <column name="id" type="varchar(255)">
+                <constraints primaryKey="true" primaryKeyName="arcstorage_aip_xml_pkey" nullable="false"/>
+            </column>
+            <column name="arcstorage_aip_sip_id" type="varchar(255)">
+                <constraints nullable="false" deleteCascade="true" foreignKeyName="arcstorage_aip_sip_fk"
+                             referencedTableName="arcstorage_aip_sip" referencedColumnNames="id"/>
+            </column>
+            <column name="created" type="datetime"/>
+            <column name="checksum_value" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checksum_type" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="version" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="state" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createTable tableName="arcstorage_object">
+            <column name="id" type="varchar(255)">
+                <constraints primaryKey="true" primaryKeyName="arcstorage_object_pkey" nullable="false"/>
+            </column>
+            <column name="created" type="datetime"/>
+            <column name="checksum_value" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checksum_type" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="state" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createTable tableName="arcstorage_storage">
+            <column name="id" type="varchar(255)">
+                <constraints primaryKey="true" primaryKeyName="arcstorage_storage_pkey" nullable="false"/>
+            </column>
+            <column name="name" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="host" type="varchar(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="location" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="port" type="int">
+                <constraints nullable="false"/>
+            </column>
+            <column name="priority" type="int">
+                <constraints nullable="false"/>
+            </column>
+            <column name="type" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="note" type="varchar(2000)"/>
+            <column name="config" type="varchar(2000)"/>
+            <column name="reachable" type="boolean"/>
+        </createTable>
+
+        <createTable tableName="arcstorage_user">
+            <column name="id" type="varchar(255)">
+                <constraints primaryKey="true" primaryKeyName="arcstorage_user_pkey" nullable="false"/>
+            </column>
+
+            <column name="created" type="datetime"/>
+            <column name="updated" type="datetime"/>
+            <column name="deleted" type="datetime"/>
+
+            <column name="username" type="nvarchar(255)"/>
+            <column name="password" type="varchar(255)"/>
+        </createTable>
+
+        <addUniqueConstraint
+                columnNames="arcstorage_aip_sip_id, version"
+                constraintName="unique_version"
+                tableName="arcstorage_aip_xml"/>
+    </changeSet>
+
 </databaseChangeLog>
