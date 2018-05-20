@@ -1,5 +1,8 @@
 package cz.cas.lib.arcstorage.storage.exception;
 
+/**
+ * thrown when some unrecognized IO exception occurs
+ */
 public class IOStorageException extends StorageException {
 
     public IOStorageException() {

@@ -19,7 +19,6 @@ import org.springframework.transaction.annotation.Propagation;
 
 import javax.inject.Inject;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static cz.cas.lib.arcstorage.util.Utils.notNull;
@@ -70,13 +69,13 @@ public class ArchivalDbService {
      * @return created XML entity filled ID and version
      */
     @org.springframework.transaction.annotation.Transactional(propagation = Propagation.REQUIRES_NEW)
-    public AipXml registerXmlUpdate(String sipId, Checksum xmlChecksum, Optional<Integer> version) {
-        if (version.isPresent()) {
-            AipXml existingXml = aipXmlStore.findBySipAndVersion(sipId, version.get());
+    public AipXml registerXmlUpdate(String sipId, Checksum xmlChecksum, Integer version) {
+        if (version != null && version != 0) {
+            AipXml existingXml = aipXmlStore.findBySipAndVersion(sipId, version);
             if (existingXml != null && !existingXml.getState().equals(ObjectState.ROLLED_BACK) && !existingXml.getState().equals(ObjectState.FAILED))
                 throw new ConflictObject(existingXml);
             if (existingXml == null)
-                existingXml = new AipXml(UUID.randomUUID().toString(), xmlChecksum, new AipSip(sipId), version.get(), ObjectState.PROCESSING);
+                existingXml = new AipXml(UUID.randomUUID().toString(), xmlChecksum, new AipSip(sipId), version, ObjectState.PROCESSING);
             else
                 existingXml.setState(ObjectState.PROCESSING);
             aipXmlStore.save(existingXml);

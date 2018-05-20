@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Adapter for more elegant sharing of code.
+ * Adapter for {@link ZfsStorageService} and {@link FsStorageService} for more elegant sharing of code of the {@link LocalFsProcessor} and {@link RemoteFsProcessor}.
  */
 public interface FsAdapter extends StorageService {
 

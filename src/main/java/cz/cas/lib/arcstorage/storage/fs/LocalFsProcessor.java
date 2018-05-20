@@ -21,6 +21,11 @@ import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 import static cz.cas.lib.arcstorage.util.Utils.strSF;
 import static cz.cas.lib.arcstorage.util.Utils.strSX;
 
+
+/**
+ * implementation used by {@link FsAdapter} to provide {@link ZfsStorageService} and {@link FsStorageService} with methods
+ * for access to the Local FS/ZFS or FS/ZFS mapped with NFS
+ */
 @Slf4j
 public class LocalFsProcessor implements StorageService {
 

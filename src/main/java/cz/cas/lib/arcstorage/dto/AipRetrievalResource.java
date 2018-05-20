@@ -17,9 +17,15 @@ public class AipRetrievalResource extends StorageSessionHolder {
     @Getter
     public String id = UUID.randomUUID().toString();
 
+    /**
+     * SIP input stream
+     */
     @Setter
     @Getter
     private InputStream sip;
+    /**
+     * map of XML input streams with XML version as a key
+     */
     @Getter
     private Map<Integer, InputStream> xmls = new TreeMap<>();
 

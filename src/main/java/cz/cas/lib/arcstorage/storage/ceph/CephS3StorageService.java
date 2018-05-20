@@ -31,6 +31,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 
+/**
+ * Implementation of {@link StorageService} for the Ceph accessed over S3.
+ * <p>
+ * Metadata are stored in a separate metadata object, which id is idOfTheObject.meta
+ * </p>
+ * Fulfillment of the requirements on the metadata storing specified by the interface:
+ * <ul>
+ * <li>initial checksum of the object: stored in metadata object</li>
+ * <li>creation time of the object: stored in metadata object</li>
+ * <li>state of object matching {@link ObjectState}: stored in metadata object</li>
+ * <li>for AIP XML its version and ID of SIP: id of XML is in form aipId_xml_versionNumber</li>
+ * </ul>
+ */
 @Slf4j
 public class CephS3StorageService implements StorageService {
 

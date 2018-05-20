@@ -25,6 +25,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 
+/**
+ * implementation used by {@link FsAdapter} to provide {@link ZfsStorageService} and {@link FsStorageService} with methods
+ * for access to the remote FS/ZFS over SFTP
+ */
 @Slf4j
 public class RemoteFsProcessor implements StorageService {
 

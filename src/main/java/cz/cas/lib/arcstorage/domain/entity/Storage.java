@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import javax.persistence.*;
+import javax.validation.constraints.NotNull;
 
 @Getter
 @Setter
@@ -15,16 +16,20 @@ import javax.persistence.*;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Storage extends DomainObject {
+    @NotNull
     String name;
+    @NotNull
     String host;
     int port;
     int priority;
     /**
      * place to save data, folder path for FS, ZFS, bucket name for CEPH S3
      */
+    @NotNull
     String location;
     @Enumerated(EnumType.STRING)
     @Column(name = "type")
+    @NotNull
     StorageType storageType;
     String note;
     /**

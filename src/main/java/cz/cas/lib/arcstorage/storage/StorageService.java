@@ -4,7 +4,6 @@ import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
-import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
 import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 
@@ -19,50 +18,55 @@ import static cz.cas.lib.arcstorage.storage.StorageUtils.checksumComputationPrec
 import static cz.cas.lib.arcstorage.util.Utils.bytesToHexString;
 
 /**
- * Implementation <b>must</b> save files in that way that later it is possible to retrieve:
+ * Interface to be implemented by storage service adapters managing custom types of the logical storages.
+ * Implementation <b>must</b> save objects in that way that later it is possible to retrieve:
  * <ul>
- * <li>initial MD5 sipStorageChecksum of file</li>
- * <li>creation time of file</li>
- * <li>state of file matching {@link ObjectState}, except FAILED state which signalizes fail of storage and thus is not retrievable (thus files marked as FAILED in database may not exist on storage or have PROCESSING state on storage)</li>
+ * <li>initial checksum of the object</li>
+ * <li>creation time of the object</li>
+ * <li>state of object matching {@link ObjectState}, except FAILED state which signalizes fail of storage and thus is not retrievable (thus objects marked as FAILED in database may not exist on storage or have PROCESSING state on storage)</li>
  * <li>for AIP XML its version and ID of SIP</li>
  * </ul>
+ * The implementation class should specify how it fulfill this in the javadoc.
+ * <p>
  * When accessing AIP XML separately (e.g. AIP XML update, AIP XML retrieval) it is treated as general object.
+ * </p>
  */
-
 public interface StorageService {
 
     Storage getStorage();
 
+
     /**
-     * Stores Aip files into storage.
+     * Stores Aip objects into storage.
      * <p>
-     * If rollback is set to true by another thread, this method instance must stop computation as soon as possible.
+     * If rollback is set to true by another thread, this method instance must stop computation/uploading as soon as possible.
      * In this case, throwing exception is optional and is better to avoid, so that the log does not contain exceptions from all threads even if just the first one which set rollback to true is known to be the error one.
      * </p>
      * <p>
-     * If file can't be stored, sipStorageChecksum can't be computed or does not match, this method instance must set rollback to true and throw exception, so that other threads can follow the routine described above.
+     * If object can't be stored, checksum can't be computed or does not match, this method instance must set rollback to true and throw exception, so that other threads can follow the routine described above.
      * </p>
      * <p>
-     * If the file already exists it will be overwritten.
+     * If the object already exists it will be overwritten.
      * </p>
      * <p>
-     * This operation may take a while and therefore sets file state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set state to PROCESSING before calling this method and to desired state after the method is done.
+     * This operation may take a while and therefore sets object state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set DB state to PROCESSING before calling this method and to desired state after the method is done.
      * </p>
      *
-     * @throws StorageException
+     * @param aipDto   DTO with open and readable input streams of objects
+     * @param rollback flag watched for rollback signal
+     * @throws StorageException in the case of error
      */
     void storeAip(AipDto aipDto, AtomicBoolean rollback) throws StorageException;
 
     /**
-     * Retrieves reference to Aip files. Caller is responsible for calling {@link AipRetrievalResource#close()} once the stream is not needed anymore.
+     * Retrieves reference to AIP objects. Caller is responsible for calling {@link AipRetrievalResource#close()} once the streams are not needed anymore.
      *
-     * @param sipId
+     * @param aipId       id of AIP
      * @param xmlVersions specifies which XML versions should be retrieved, typically all or the latest only
-     * @return list with opened file streams where first item is SIP inputStream and others are XML streams in the same order as was passed in {@code xmlVersions} parameter
-     * @throws StorageException
-     * @throws cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException
+     * @return {@link AipRetrievalResource} with opened object streams of SIP and XMLs, XMLs are grouped by the version
+     * @throws StorageException in the case of error
      */
-    AipRetrievalResource getAip(String sipId, Integer... xmlVersions) throws FileDoesNotExistException, StorageException;
+    AipRetrievalResource getAip(String aipId, Integer... xmlVersions) throws StorageException;
 
     /**
      * Stores object into storage.
@@ -71,107 +75,107 @@ public interface StorageService {
      * In this case, throwing exception is optional and is better to avoid, so that the log does not contain exceptions from all threads even if just the first one which set rollback to true is known to be the error one.
      * </p>
      * <p>
-     * If file can't be stored, sipStorageChecksum can't be computed or does not match, this method instance must set rollback to true and throw exception, so that other threads can follow the routine described above.
+     * If object can't be stored, sipStorageChecksum can't be computed or does not match, this method instance must set rollback to true and throw exception, so that other threads can follow the routine described above.
      * </p>
      * <p>
-     * If the file already exists it will be overwritten.
+     * If the object already exists it will be overwritten.
      * </p>
      * * <p>
-     * This operation may take a while and therefore sets file state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set state to PROCESSING before calling this method and to desired state after the method is done.
+     * This operation may take a while and therefore sets object state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set DB state to PROCESSING before calling this method and to desired state after the method is done.
      * </p>
+     *
+     * @param objectDto DTO with open and readable input stream of the object
+     * @param rollback  flag watched for rollback signal
+     * @throws StorageException in the case of error
      */
     void storeObject(ArchivalObjectDto objectDto, AtomicBoolean rollback) throws StorageException;
 
     /**
-     * Retrieves reference to object. Caller is responsible for calling {@link ObjectRetrievalResource#close()} once the stream is not needed anymore.
+     * Retrieves reference to the object. Caller is responsible for calling {@link ObjectRetrievalResource#close()} once the streams are not needed anymore.
      *
-     * @param id object storage id
-     * @return file stream
-     * @throws StorageException
-     * @throws cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException
+     * @param id of the object
+     * @return {@link ObjectRetrievalResource} with opened stream of object
+     * @throws StorageException in the case of error
      */
-    ObjectRetrievalResource getObject(String id) throws FileDoesNotExistException, StorageException;
+    ObjectRetrievalResource getObject(String id) throws StorageException;
 
     /**
-     * Deletes SIP file from storage. Must not fail if SIP package is already physically deleted.
+     * Deletes SIP object from storage. Must not fail if SIP is already physically deleted.
      * <p>
-     * This operation may take a while and therefore sets file state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set state to PROCESSING before calling this method and to desired state after the method is done.
+     * This operation may take a while and therefore sets object state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set state to PROCESSING before calling this method and to desired state after the method is done.
      * </p>
      *
-     * @param id
-     * @throws StorageException
-     * @throws cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException if metadata of SIP does not exist
+     * @param id of the SIP
+     * @throws StorageException in the case of error
      */
     void deleteSip(String id) throws StorageException;
 
     /**
      * Logically removes SIP. Must not fail if SIP is already removed.
      *
-     * @param id
-     * @throws StorageException
-     * @throws cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException if metadata of SIP does not exist
+     * @param id of the SIP
+     * @throws StorageException in the case of error
      */
     void remove(String id) throws StorageException;
 
     /**
      * Renews logically removed SIP. Must not fail if SIP is already renewed, i.e. in ARCHIVED state.
      *
-     * @param id
-     * @throws StorageException
-     * @throws cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException if metadata of SIP does not exist
+     * @param id of the SIP
+     * @throws StorageException in the case of error
      */
     void renew(String id) throws StorageException;
 
     /**
-     * Rollbacks AIP and its first XML file from storage. Used only in case of cleaning process after storage/application failure.
+     * Rollbacks AIP and its first XML object from storage. Used in case of cleaning process after storage/application failure.
      * <p>
-     * In any case (file not found / already rolled back / file which was never actually stored / inconsistent ...) this method has to set ROLLED_BACK state in metadata and deleteAip the file (if exists).
+     * In any case (object not found / already rolled back / object which was never actually stored / inconsistent ...) this method has to set ROLLED_BACK state in metadata and delete the object (if exists).
      * </p>
      * <p>
-     * This operation may take a while and therefore sets file state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set state to PROCESSING before calling this method and to desired state after the method is done.
+     * This operation may take a while and therefore sets object state to PROCESSING when it starts.
      * </p>
      *
-     * @param sipId
-     * @throws StorageException
+     * @param sipId if of the SIP
+     * @throws StorageException in the case of error
      */
     void rollbackAip(String sipId) throws StorageException;
 
     /**
-     * Rollbacks object from storage. Used only in case of cleaning process after storage/application failure.
+     * Rollbacks object from storage. Used in case of cleaning process after storage/application failure.
      * <p>
-     * In any case (file not found / already rolled back / file which was never actually stored / inconsistent ...) this method has to set ROLLED_BACK state in metadata and deleteAip the file (if exists).
+     * In any case (object not found / already rolled back / object which was never actually stored / inconsistent ...) this method has to set ROLLED_BACK state in metadata and delete the object (if exists).
      * </p>
      * <p>
-     * This operation may take a while and therefore sets file state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set state to PROCESSING before calling this method and to desired state after the method is done.
+     * This operation may take a while and therefore sets object state to PROCESSING when it starts.
      * </p>
      *
-     * @param id object storageId
-     * @throws StorageException
+     * @param id of the object
+     * @throws StorageException in the case of error
      */
     void rollbackObject(String id) throws StorageException;
 
     /**
-     * Retrieves information about AIP such as its state etc. and also info about SIP and XMLs fixity.
+     * Retrieves information about AIP such as its state etc. and also info about SIP and XMLs checksums.
      *
-     * @param sipId
-     * @param sipChecksum expected sipStorageChecksum to be compared with storage sipStorageChecksum to verify fixity
-     * @param objectState state of the AIP in database (it is used to get clue if it make sense to look for the fixity of the file e.g. when it is deleted)
+     * @param aipId       id of the AIP
+     * @param sipChecksum expected checksum to be compared with storage checksum to verify fixity
+     * @param objectState state of the AIP in database (it is used to get clue if it make sense to look for the fixity of the object e.g. when it is deleted)
      * @param xmlVersions map of xml version numbers and their expected checksums
      * @return AipStateInfoDto object
-     * @throws StorageException
-     * @throws cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException if the file is missing and thus its fixity can't be verified
+     * @throws StorageException in the case of error
      */
-    AipStateInfoDto getAipInfo(String sipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions) throws StorageException;
+    AipStateInfoDto getAipInfo(String aipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions) throws StorageException;
 
     /**
      * Returns state of currently used storage.
      *
-     * @return
+     * @return StorageStateDto
+     * @throws StorageException in the case of error
      */
     StorageStateDto getStorageState() throws StorageException;
 
     /**
-     * Tests if storage is reachable.
+     * Quick test if storage is reachable.
      *
      * @return true if storage is reachable, false otherwise
      */
@@ -183,17 +187,17 @@ public interface StorageService {
      * If there is an error during computation or checksums do not match, rollback flag is set to true.
      * </p>
      *
-     * @param fileStream
-     * @param expectedChecksum
-     * @param rollback
-     * @return
-     * @throws IOStorageException in case of any {@link IOException}
-     * @throws GeneralException   in case of any unexpected error
+     * @param objectStream     opened stream of object to verify
+     * @param expectedChecksum checksum used for comparison
+     * @param rollback         flag watched for rollback signal (if set by other thread, the computation ends to do not waste resources)
+     * @return True if sipStorageChecksum matches but throws exception when it does not. False is returned when the computation is interrupted by rollback flag.
+     * @throws IOStorageException               in case of any {@link IOException}
+     * @throws FileCorruptedAfterStoreException in case the verification fails
      */
-    default boolean verifyChecksum(InputStream fileStream, Checksum expectedChecksum, AtomicBoolean rollback) throws IOStorageException, FileCorruptedAfterStoreException {
+    default boolean verifyChecksum(InputStream objectStream, Checksum expectedChecksum, AtomicBoolean rollback) throws IOStorageException, FileCorruptedAfterStoreException {
         try {
             Checksum checksum = null;
-            checksum = computeChecksumRollbackAware(fileStream, expectedChecksum.getType(), rollback);
+            checksum = computeChecksumRollbackAware(objectStream, expectedChecksum.getType(), rollback);
             if (checksum == null)
                 return false;
             if (!checksum.getValue().equalsIgnoreCase(expectedChecksum.getValue())) {
@@ -213,17 +217,17 @@ public interface StorageService {
     }
 
     /**
-     * Computes sipStorageChecksum using buffer.
+     * Computes checksum using buffer.
      *
-     * @param fileStream   stream
-     * @param checksumType sipStorageChecksum type
-     * @param rollback     rollback flag
-     * @return sipStorageChecksum of the stream or null, if rollback flag was set to true by another thread
-     * @throws IOException
+     * @param objectStream stream
+     * @param checksumType checksum type
+     * @param rollback     flag watched for rollback signal (if set by other thread, the computation ends to do not waste resources)
+     * @return checksum of the stream or null, if rollback flag was set to true by another thread
+     * @throws IOException in case of error
      */
-    default Checksum computeChecksumRollbackAware(InputStream fileStream, ChecksumType checksumType, AtomicBoolean rollback) throws IOException {
-        MessageDigest complete = checksumComputationPrecheck(fileStream, checksumType);
-        try (BufferedInputStream bis = new BufferedInputStream(fileStream)) {
+    default Checksum computeChecksumRollbackAware(InputStream objectStream, ChecksumType checksumType, AtomicBoolean rollback) throws IOException {
+        MessageDigest complete = checksumComputationPrecheck(objectStream, checksumType);
+        try (BufferedInputStream bis = new BufferedInputStream(objectStream)) {
             byte[] buffer = new byte[8192];
             int numRead;
             do {

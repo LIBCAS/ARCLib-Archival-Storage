@@ -29,17 +29,14 @@ import static cz.cas.lib.arcstorage.storage.StorageUtils.isLocalhost;
 
 
 /**
- * File System implementation of {@link StorageService}. Files are stored to filesystem into <i>sip</i> and <i>xml</i> folders in <i>working directory</i>.
- * <p>Data are distributed into three level folder structure based on their uuid. E.g. sip file with id <i>38a4a26f-67fd-4e4c-8af3-1fd0f26465f6</i> will be stored into sip/38/a4/a2 folder</p>
- * <p>
- * Store files in that way that later it is possible to retrieve:
+ * File System implementation of {@link StorageService}.
+ * <p>Data are distributed into three level folder structure based on their uuid. E.g. sip file with id <i>38a4a26f-67fd-4e4c-8af3-1fd0f26465f6</i> will be stored into /38/a4/a2 folder</p>
+ * Fulfillment of the requirements on the metadata storing specified by the interface:
  * <ul>
- * <li>initial checksum of file and its type: checksums are stored during creation to the same directory as file into text file with file name and <i>.{@link ChecksumType}</i> suffix</li>
- * <li>creation time of file: provided by filesystem</li>
- * <li>info if file is being processed: new empty file with original file name and <i>.PROCESSING</i> suffix is created when processing starts and deleted when it ends</li>
- * <li>for SIP its ID and info if is {@link ObjectState#DELETED} or {@link ObjectState#REMOVED}:
- * SIP ID is its file name, when SIP is DELETED its files are no longer stored, when its REMOVED new empty file with SIP ID and <i>.REMOVED</i> sufffix is created</li>
- * <li>for XML its version and ID of SIP: XML file name follows <i>'SIPID'_xml_'XMLVERSION'</i> pattern</li>
+ * <li>initial checksum of the object: checksums are stored during creation to the same directory as file into text file with file name and <i>.{@link ChecksumType}</i> suffix</li>
+ * <li>creation time of the object: provided by filesystem</li>
+ * <li>state of object matching {@link ObjectState}: states are handled by empty files with original file name and <i>.STATE</i> suffix (e.g. fileId.PROCESSING)</li>
+ * <li>for AIP XML its version and ID of SIP: id of XML is in form aipId_xml_versionNumber</li>
  * </ul>
  */
 @Transactional

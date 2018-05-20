@@ -27,7 +27,6 @@ import org.junit.rules.TestName;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
@@ -117,7 +116,7 @@ public class ArchivalDbServiceTest extends DbTest {
 
     @Test
     public void registerXmlUpdate() {
-        AipXml xmlEntity = service.registerXmlUpdate(SIP_ID, aipXmlChecksum, Optional.empty());
+        AipXml xmlEntity = service.registerXmlUpdate(SIP_ID, aipXmlChecksum, null);
         assertThat(xmlStore.find(xmlEntity.getId()).getState(), equalTo(ObjectState.PROCESSING));
         assertThat(sipStore.find(SIP_ID).getState(), equalTo(ObjectState.ARCHIVED));
         assertThat(xmlEntity.getVersion(), is(3));
@@ -243,7 +242,7 @@ public class ArchivalDbServiceTest extends DbTest {
     @Test
     public void notFoundTest() {
         assertThrown(() -> service.registerSipDeletion(S)).isInstanceOf(MissingObject.class);
-        assertThrown(() -> service.registerXmlUpdate(XML1_ID, aipXmlChecksum, Optional.empty())).isInstanceOf(MissingObject.class);
+        assertThrown(() -> service.registerXmlUpdate(XML1_ID, aipXmlChecksum, null)).isInstanceOf(MissingObject.class);
         assertThrown(() -> service.getAip(S)).isInstanceOf(MissingObject.class);
         assertThrown(() -> service.removeAip(S)).isInstanceOf(MissingObject.class);
     }
@@ -264,14 +263,14 @@ public class ArchivalDbServiceTest extends DbTest {
 
     @Test
     public void xmlCantBeOverwritten() {
-        assertThrown(() -> service.registerXmlUpdate(SIP_ID, aipXmlChecksum, Optional.of(1)))
+        assertThrown(() -> service.registerXmlUpdate(SIP_ID, aipXmlChecksum, 1))
                 .isInstanceOf(ConflictObject.class);
     }
 
     @Test
     public void xmlCanBeOverwritten() {
         xmlStore.save(new AipXml(XML1_ID, aipXmlChecksum, sip, 3, ObjectState.FAILED));
-        service.registerXmlUpdate(SIP_ID, aipXmlChecksum, Optional.of(3));
+        service.registerXmlUpdate(SIP_ID, aipXmlChecksum, 3);
         AipXml retrieved = xmlStore.findBySipAndVersion(SIP_ID, 3);
         assertThat(retrieved.getState(), is(ObjectState.PROCESSING));
     }

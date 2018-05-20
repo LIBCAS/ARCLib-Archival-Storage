@@ -37,6 +37,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -182,17 +183,17 @@ public class AipApiTest extends DbTest implements ApiTest {
         when(cephS3StorageService.getStorageState()).thenReturn(storageStateDto);
 
         AipStateInfoDto aipStateInfoFsDto = new AipStateInfoDto(fsStorageService.getStorage().getName(),
-                StorageType.FS, sip.getState(), sip.getChecksum());
+                StorageType.FS, sip.getState(), sip.getChecksum(),true);
         when(fsStorageService.getAipInfo(anyString(), anyObject(), anyObject(), anyObject()))
                 .thenReturn(aipStateInfoFsDto);
 
         AipStateInfoDto aipStateInfoZfsDto = new AipStateInfoDto(zfsStorageService.getStorage().getName(),
-                StorageType.ZFS, sip.getState(), sip.getChecksum());
+                StorageType.ZFS, sip.getState(), sip.getChecksum(),true);
         when(zfsStorageService.getAipInfo(anyString(), anyObject(), anyObject(), anyObject()))
                 .thenReturn(aipStateInfoZfsDto);
 
         AipStateInfoDto aipStateInfoCephDto = new AipStateInfoDto(cephS3StorageService.getStorage().getName(),
-                StorageType.CEPH, sip.getState(), sip.getChecksum());
+                StorageType.CEPH, sip.getState(), sip.getChecksum(),true);
         when(cephS3StorageService.getAipInfo(anyString(), anyObject(), anyObject(), anyObject()))
                 .thenReturn(aipStateInfoCephDto);
 
@@ -360,7 +361,7 @@ public class AipApiTest extends DbTest implements ApiTest {
      */
     @Test
     public void saveIdProvided() throws Exception {
-        String aipId = "testaipId";
+        String aipId = UUID.randomUUID().toString();
         String xmlId = "testXmlId";
 
         MockMultipartFile sipFile = new MockMultipartFile(
@@ -628,20 +629,20 @@ public class AipApiTest extends DbTest implements ApiTest {
                 .andExpect(jsonPath("$.storageType", equalTo("FS")));
     }
 
-    /**
-     * Send request for storage state and verify response contains number of used and available bytes.
-     *
-     * @throws Exception
-     */
-    @Test
-    @Ignore
-    public void getStorageState() throws Exception {
-        mvc(api)
-                .perform(MockMvcRequestBuilders.get(BASE + "/state"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.[0].storageStateData.available").value("2345"))
-                .andExpect(jsonPath("$.[0].storageStateData.used").value("1234"));
-    }
+//    /**
+//     * Send request for storage state and verify response contains number of used and available bytes.
+//     *
+//     * @throws Exception
+//     */
+//    @Test
+//    @Ignore
+//    public void getStorageState() throws Exception {
+//        mvc(api)
+//                .perform(MockMvcRequestBuilders.get(BASE + "/state"))
+//                .andExpect(status().isOk())
+//                .andExpect(jsonPath("$.[0].storageStateData.available").value("2345"))
+//                .andExpect(jsonPath("$.[0].storageStateData.used").value("1234"));
+//    }
 
     /**
      * Send request with invalid MD5 and verify that response contains BAD_REQUEST error status.
