@@ -30,8 +30,6 @@ public class JwtTokenProvider implements AuthenticationProvider {
 
     private Long expiration;
 
-    private Long refresh;
-
     private JwtHandler handler;
 
     @Override
@@ -78,29 +76,6 @@ public class JwtTokenProvider implements AuthenticationProvider {
     }
 
     /**
-     * Generates {@link JwtToken} serialized into {@link String} if the provided {@link JwtToken} is not fresh enough.
-     *
-     * <p>
-     *     Freshness of {@link JwtToken} is based on difference between token creation date and configuration value
-     *     for freshness.
-     * </p>
-     * @param jwt Provided {@link JwtToken}
-     * @return newly created serialized token or null if not necessary
-     */
-    public String refreshIfNeeded(JwtToken jwt) {
-        Date issuedAt = jwt.getClaims().getIssuedAt();
-
-        Instant refreshAt = Instant.ofEpochMilli(issuedAt.getTime()).plusSeconds(refresh);
-        Instant now = Instant.now();
-
-        if (refreshAt.isBefore(now)) {
-            return generateToken(jwt.getDetails());
-        } else {
-            return null;
-        }
-    }
-
-    /**
      * Sets the secret used for token signing.
      *
      * @param secret Provided secret
@@ -117,15 +92,6 @@ public class JwtTokenProvider implements AuthenticationProvider {
     @Inject
     public void setExpiration(@Value("${security.jwt.expiration:300}") Long expiration) {
         this.expiration = expiration;
-    }
-
-    /**
-     * Sets the token fresh duration
-     * @param refresh Provided fresh in seconds
-     */
-    @Inject
-    public void setRefresh(@Value("${security.jwt.refresh:30}") Long refresh) {
-        this.refresh = refresh;
     }
 
     @Inject

@@ -10,6 +10,8 @@ import springfox.documentation.service.ApiInfo;
 import springfox.documentation.service.Contact;
 import springfox.documentation.spi.DocumentationType;
 import springfox.documentation.spring.web.plugins.Docket;
+import springfox.documentation.swagger.web.ApiKeyVehicle;
+import springfox.documentation.swagger.web.SecurityConfiguration;
 import springfox.documentation.swagger2.annotations.EnableSwagger2;
 
 import java.util.ArrayList;
@@ -23,18 +25,24 @@ public class SwaggerConfig {
     @Bean
     public Docket api() {
         return new Docket(DocumentationType.SWAGGER_2)
-//                .globalOperationParameters(
-//                        asList(new ParameterBuilder()
-//                                .name("Authorization")
-//                                .modelRef(new ModelRef("string"))
-//                                .parameterType("header")
-//                                .defaultValue("Bearer ")
-//                                .build()))
                 .select()
                 .apis(RequestHandlerSelectors.basePackage("cz.cas.lib"))
                 .paths(PathSelectors.any())
                 .build()
                 .apiInfo(apiInfo());
+    }
+
+    @Bean
+    SecurityConfiguration security() {
+        return new SecurityConfiguration(
+                null,
+                null,
+                null, // realm Needed for authenticate button to work
+                null, // appName Needed for authenticate button to work
+                "Bearer",// apiKeyValue
+                ApiKeyVehicle.HEADER,
+                "Authorization", //apiKeyName
+                null);
     }
 
     private ApiInfo apiInfo() {
@@ -44,6 +52,6 @@ public class SwaggerConfig {
                 "v1",
                 null,
                 new Contact("", "", ""),
-                null, null, new ArrayList<>());
+                null, null);
     }
 }

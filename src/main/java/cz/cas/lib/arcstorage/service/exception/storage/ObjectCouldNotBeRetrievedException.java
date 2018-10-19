@@ -2,7 +2,7 @@ package cz.cas.lib.arcstorage.service.exception.storage;
 
 import cz.cas.lib.arcstorage.domain.entity.AipSip;
 import cz.cas.lib.arcstorage.domain.entity.AipXml;
-import cz.cas.lib.arcstorage.storage.StorageService;
+import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
@@ -12,25 +12,26 @@ import java.util.List;
  * message. Those which were not reachable are not contained.
  */
 @Slf4j
-public class FilesCorruptedAtStoragesException extends Exception {
+public class ObjectCouldNotBeRetrievedException extends Exception {
     private AipSip invalidChecksumSip;
+    private ArchivalObjectDto archivalObject;
     private List<AipXml> invalidChecksumXmls;
-    private List<StorageService> storages;
 
-    public FilesCorruptedAtStoragesException(AipSip invalidChecksumSip, List<AipXml> invalidChecksumXmls, List<StorageService> storages) {
+    public ObjectCouldNotBeRetrievedException(AipSip invalidChecksumSip, List<AipXml> invalidChecksumXmls) {
         this.invalidChecksumSip = invalidChecksumSip;
         this.invalidChecksumXmls = invalidChecksumXmls;
-        this.storages = storages;
     }
 
-    public FilesCorruptedAtStoragesException(List<AipXml> invalidChecksumXmls, List<StorageService> storages) {
+    public ObjectCouldNotBeRetrievedException(List<AipXml> invalidChecksumXmls) {
         this.invalidChecksumXmls = invalidChecksumXmls;
-        this.storages = storages;
     }
 
-    public FilesCorruptedAtStoragesException(AipSip invalidChecksumSip, List<StorageService> storages) {
+    public ObjectCouldNotBeRetrievedException(ArchivalObjectDto archivalObject) {
+        this.archivalObject = archivalObject;
+    }
+
+    public ObjectCouldNotBeRetrievedException(AipSip invalidChecksumSip) {
         this.invalidChecksumSip = invalidChecksumSip;
-        this.storages = storages;
     }
 
     @Override
@@ -40,13 +41,13 @@ public class FilesCorruptedAtStoragesException extends Exception {
             corruptedObjects = "invalidChecksumSip=" + invalidChecksumSip + ", invalidChecksumXmls=" + invalidChecksumXmls;
         } else if (invalidChecksumSip != null) {
             corruptedObjects = "invalidChecksumSip=" + invalidChecksumSip;
-        } else {
+        } else if (invalidChecksumXmls != null) {
             corruptedObjects = "invalidChecksumXmls=" + invalidChecksumXmls;
-        }
+        } else
+            corruptedObjects = "invalidChecksumObject=" + archivalObject;
 
-        return "FilesCorruptedAtStoragesException{" +
+        return "ObjectCouldNotBeRetrievedException{" +
                 corruptedObjects +
-                ", storages=" + storages +
                 '}';
     }
 }

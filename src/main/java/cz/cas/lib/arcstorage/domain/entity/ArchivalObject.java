@@ -2,6 +2,7 @@ package cz.cas.lib.arcstorage.domain.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import cz.cas.lib.arcstorage.domain.store.InstantGenerator;
+import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
 import cz.cas.lib.arcstorage.dto.Checksum;
 import cz.cas.lib.arcstorage.dto.ObjectState;
 import lombok.Getter;
@@ -29,17 +30,36 @@ public class ArchivalObject extends DomainObject {
             @AttributeOverride(name = "type", column = @Column(name = "checksumType")),
             @AttributeOverride(name = "value", column = @Column(name = "checksumValue"))
     })
-    protected Checksum checksum;
+    private Checksum checksum;
 
     @Column(updatable = false)
     @GeneratorType(type = InstantGenerator.class, when = GenerationTime.INSERT)
-    protected Instant created;
+    private Instant created;
 
     @Enumerated(EnumType.STRING)
     private ObjectState state;
 
-    public ArchivalObject(Checksum checksum, ObjectState state) {
+    @ManyToOne
+    private User owner;
+
+    public ArchivalObject(Checksum checksum, User owner, ObjectState state) {
         this.checksum = checksum;
         this.state = state;
+        this.owner=owner;
+    }
+
+    public ArchivalObjectDto toDto() {
+        return new ArchivalObjectDto(id, id, checksum, getOwner(), null, state, created);
+    }
+
+    @Override
+    public String toString() {
+        return "ArchivalObject{" +
+                "id='" + id + '\'' +
+                ", checksum=" + checksum +
+                ", created=" + created +
+                ", state=" + state +
+                ", owner=" + owner +
+                '}';
     }
 }

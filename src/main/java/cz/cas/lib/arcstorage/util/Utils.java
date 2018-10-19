@@ -3,12 +3,14 @@ package cz.cas.lib.arcstorage.util;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.io.ByteSource;
 import com.google.common.io.Resources;
-import cz.cas.lib.arcstorage.exception.GeneralException;
-import cz.cas.lib.arcstorage.exception.BadRequestException;
 import cz.cas.lib.arcstorage.domain.entity.DomainObject;
+import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.dto.Checksum;
+import cz.cas.lib.arcstorage.exception.BadRequestException;
+import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.service.exception.ConfigParserException;
+import cz.cas.lib.arcstorage.storage.StorageService;
 import org.apache.commons.io.IOUtils;
 import org.springframework.aop.framework.Advised;
 import org.springframework.aop.support.AopUtils;
@@ -18,6 +20,7 @@ import java.math.BigDecimal;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.time.*;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -451,5 +454,21 @@ public class Utils {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         IOUtils.copy(ios, baos);
         return baos.toByteArray();
+    }
+
+    public static List<Storage> servicesToEntities(List<StorageService> storageServices) {
+        if (storageServices == null)
+            return null;
+        return storageServices.stream().map(StorageService::getStorage).collect(Collectors.toList());
+    }
+
+    public static LocalDate extractDate(Instant instant) {
+        ZonedDateTime zdt = instant.atZone(ZoneId.systemDefault());
+        return zdt.toLocalDate();
+    }
+
+    public static LocalTime extractTime(Instant instant) {
+        ZonedDateTime zdt = instant.atZone(ZoneId.systemDefault());
+        return zdt.toLocalTime();
     }
 }

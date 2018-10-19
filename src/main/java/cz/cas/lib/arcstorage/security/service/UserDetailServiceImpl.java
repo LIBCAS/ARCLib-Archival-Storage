@@ -20,7 +20,7 @@ public class UserDetailServiceImpl implements UserDetailsService {
     public UserDetails loadUserById(String id) {
         User user = userStore.find(id);
         notNull(user, () -> new MissingObject(User.class, id));
-        return new UserDelegate(user, true);
+        return new UserDelegate(user);
     }
 
     @Override
@@ -29,7 +29,7 @@ public class UserDetailServiceImpl implements UserDetailsService {
         User user = userStore.findByUsername(username);
         notNull(user, () -> new MissingObject(User.class, username));
 
-        return new UserDelegate(user, true);
+        return new UserDelegate(user);
     }
 
     @Inject

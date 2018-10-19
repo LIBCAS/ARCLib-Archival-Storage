@@ -1,10 +1,12 @@
 package cz.cas.lib.arcstorage.dto;
 
+import cz.cas.lib.arcstorage.domain.entity.User;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.io.InputStream;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -28,7 +30,7 @@ public class AipDto {
      */
     @Setter
     @Getter
-    private SipDto sip;
+    private ArchivalObjectDto sip;
 
     /**
      * List with DTOs of XML objects related to this AIP. THIS MAY NOT CONTAIN ALL XMLS AND ORDER IS NOT GUARANTEED.
@@ -39,9 +41,9 @@ public class AipDto {
     /**
      * Constructor used when transferring this DTO from service layer to storage layer. One XML with version 1 and generated databaseId is added.
      */
-    public AipDto(String sipId, InputStream sipStream, Checksum sipChecksum, InputStream aipXmlStream, Checksum xmlChecksum) {
-        sip = new SipDto(sipId, sipStream, sipChecksum);
-        xmls.add(new ArchivalObjectDto(UUID.randomUUID().toString(), toXmlId(sipId, 1), aipXmlStream, xmlChecksum));
+    public AipDto(String ownerId, String sipId, InputStream sipStream, Checksum sipChecksum, InputStream aipXmlStream, Checksum xmlChecksum) {
+        sip = new ArchivalObjectDto(sipId, sipId, sipChecksum, new User(ownerId), sipStream, ObjectState.PRE_PROCESSING, Instant.now());
+        xmls.add(new ArchivalObjectDto(toXmlId(sipId, 1), UUID.randomUUID().toString(), xmlChecksum, new User(ownerId), aipXmlStream, ObjectState.PRE_PROCESSING, Instant.now()));
     }
 
     /**
@@ -49,8 +51,8 @@ public class AipDto {
      * Used for example when there is a need to send the same AIP to multiple storages where every storage needs own instance of AIP input streams.
      */
     public AipDto(AipDto aipDto, InputStream sipIs, InputStream xmlIs) {
-        sip = new SipDto(aipDto.getSip().getId(), sipIs, aipDto.getSip().getChecksum());
-        xmls.add(new ArchivalObjectDto(aipDto.getXml().getDatabaseId(), aipDto.getXml().getStorageId(), xmlIs, aipDto.getXml().getChecksum()));
+        sip = new ArchivalObjectDto(aipDto.getSip(), sipIs);
+        xmls.add(new ArchivalObjectDto(aipDto.getXml(), xmlIs));
     }
 
     public List<ArchivalObjectDto> getXmls() {

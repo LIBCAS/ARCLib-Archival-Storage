@@ -1,14 +1,20 @@
 package cz.cas.lib.arcstorage.domain.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import cz.cas.lib.arcstorage.dto.ObjectState;
+import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
 import cz.cas.lib.arcstorage.dto.Checksum;
+import cz.cas.lib.arcstorage.dto.ObjectState;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.BatchSize;
 
-import javax.persistence.*;
+import javax.persistence.Entity;
+import javax.persistence.JoinColumn;
+import javax.persistence.ManyToOne;
+import javax.persistence.Table;
+
+import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 
 /**
  * XML database entity.
@@ -30,10 +36,15 @@ public class AipXml extends ArchivalObject {
     /**
      * Creates entity with assigned id.
      */
-    public AipXml(String id, Checksum checksum, AipSip sip, int version, ObjectState state) {
-        super(checksum, state);
-        this.id=id;
+    public AipXml(String id, Checksum checksum, User owner, AipSip sip, int version, ObjectState state) {
+        super(checksum, owner, state);
+        this.id = id;
         this.sip = sip;
         this.version = version;
+    }
+
+    @Override
+    public ArchivalObjectDto toDto() {
+        return new ArchivalObjectDto(toXmlId(sip.getId(), version), id, getChecksum(), getOwner(), null, getState(), getCreated());
     }
 }

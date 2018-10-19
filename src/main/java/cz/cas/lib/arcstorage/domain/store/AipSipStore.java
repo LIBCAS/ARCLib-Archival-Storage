@@ -13,16 +13,15 @@ public class AipSipStore extends DomainStore<AipSip, QAipSip> {
         super(AipSip.class, QAipSip.class);
     }
 
-    /**
-     * @return all SIPs in processing || failed state
-     */
-    public List<AipSip> findUnfinishedSips() {
-        QAipSip sip = qObject();
-        return (List<AipSip>) query().where(sip.state.in(ObjectState.PROCESSING, ObjectState.FAILED)).fetch();
+    @Override
+    @Transactional
+    public AipSip save(AipSip entity) {
+        return super.save(entity);
     }
 
-    public void rollbackUnfinishedSipsRecords() {
-        QAipSip sip = qObject();
-        queryFactory.update(sip).where(sip.state.in(ObjectState.PROCESSING, ObjectState.FAILED)).set(sip.state, ObjectState.ROLLED_BACK).execute();
+    @Override
+    @Transactional
+    public void delete(AipSip entity) {
+        super.delete(entity);
     }
 }

@@ -10,7 +10,10 @@ import java.util.Objects;
  */
 public interface UserDetails extends org.springframework.security.core.userdetails.UserDetails {
     default String getId() {
-        return getUsername();
+        return null;
+    }
+    default String getDataSpace() {
+        return null;
     }
 
     /**

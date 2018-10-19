@@ -2,6 +2,7 @@ package helper;
 
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import cz.cas.lib.arcstorage.domain.store.DomainStore;
+import lombok.Getter;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.hibernate.internal.SessionImpl;
@@ -18,6 +19,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 
 public abstract class DbTest {
+    @Getter
     private static EntityManagerFactory factory;
 
     private EntityManager em;

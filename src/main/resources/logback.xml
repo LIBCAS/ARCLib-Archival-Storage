@@ -1,0 +1,28 @@
+<configuration>
+    <logger name="org.hibernate" level="WARN"/>
+    <logger name="org.hibernate.SQL" level="WARN"/>
+    <logger name="com.mysema" level="WARN"/>
+    <!--<logger name="org.springframework.data.solr.core.SolrTemplate" level="DEBUG"/>-->
+
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    <root level="INFO">
+        <appender-ref ref="STDOUT"/>
+    </root>
+
+    <appender name="ARCSTORAGE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %boldGreen(%msg%n)</pattern>
+            <charset>utf8</charset>
+        </encoder>
+    </appender>
+
+    <logger name="cz.cas.lib.arcstorage" level="TRACE" additivity="false">
+        <appender-ref ref="ARCSTORAGE"/>
+    </logger>
+
+    <logger name="org.apache.http.wire" level="INFO" additivity="false"/>
+</configuration>

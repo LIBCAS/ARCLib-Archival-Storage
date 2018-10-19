@@ -2,6 +2,7 @@ package cz.cas.lib.arcstorage.storage.fs;
 
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.storage.StorageService;
+import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 
 import java.util.Map;
@@ -23,52 +24,57 @@ public interface FsAdapter extends StorageService {
     }
 
     @Override
-    default void storeAip(AipDto aipDto, AtomicBoolean rollback) throws StorageException {
-        getFsProcessor().storeAip(aipDto, rollback);
+    default void storeAip(AipDto aipDto, AtomicBoolean rollback, String dataSpace) throws StorageException {
+        getFsProcessor().storeAip(aipDto, rollback,dataSpace);
     }
 
     @Override
-    default AipRetrievalResource getAip(String aipId, Integer... xmlVersions) throws StorageException {
-        return getFsProcessor().getAip(aipId, xmlVersions);
+    default AipRetrievalResource getAip(String aipId, String dataSpace, Integer... xmlVersions) throws StorageException {
+        return getFsProcessor().getAip(aipId,dataSpace, xmlVersions);
     }
 
     @Override
-    default void storeObject(ArchivalObjectDto archivalObjectDto, AtomicBoolean rollback) throws StorageException {
-        getFsProcessor().storeObject(archivalObjectDto, rollback);
+    default void storeObject(ArchivalObjectDto archivalObjectDto, AtomicBoolean rollback, String dataSpace) throws StorageException {
+        getFsProcessor().storeObject(archivalObjectDto, rollback,dataSpace);
     }
 
     @Override
-    default ObjectRetrievalResource getObject(String id) throws StorageException {
-        return getFsProcessor().getObject(id);
+    default ObjectRetrievalResource getObject(String id, String dataSpace) throws StorageException {
+        return getFsProcessor().getObject(id,dataSpace);
     }
 
     @Override
-    default void deleteSip(String id) throws StorageException {
-        getFsProcessor().deleteSip(id);
+    default void delete(String id, String dataSpace) throws StorageException {
+        getFsProcessor().delete(id,dataSpace);
     }
 
     @Override
-    default void remove(String id) throws StorageException {
-        getFsProcessor().remove(id);
+    default void remove(String id, String dataSpace) throws StorageException {
+        getFsProcessor().remove(id,dataSpace);
     }
 
     @Override
-    default void renew(String id) throws StorageException {
-        getFsProcessor().renew(id);
+    default void renew(String id, String dataSpace) throws StorageException {
+        getFsProcessor().renew(id,dataSpace);
     }
 
     @Override
-    default void rollbackAip(String sipId) throws StorageException {
-        getFsProcessor().rollbackAip(sipId);
+    default void rollbackAip(String sipId, String dataSpace) throws StorageException {
+        getFsProcessor().rollbackAip(sipId,dataSpace);
     }
 
     @Override
-    default void rollbackObject(String sipId) throws StorageException {
-        getFsProcessor().rollbackObject(sipId);
+    default void rollbackObject(String sipId, String dataSpace) throws StorageException {
+        getFsProcessor().rollbackObject(sipId,dataSpace);
     }
 
     @Override
-    default AipStateInfoDto getAipInfo(String aipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions) throws StorageException {
-        return getFsProcessor().getAipInfo(aipId, sipChecksum, objectState, xmlVersions);
+    default AipStateInfoDto getAipInfo(String aipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions, String dataSpace) throws StorageException {
+        return getFsProcessor().getAipInfo(aipId, sipChecksum, objectState, xmlVersions,dataSpace);
+    }
+
+    @Override
+    default void createNewDataSpace(String dataSpace) throws IOStorageException {
+        getFsProcessor().createNewDataSpace(dataSpace);
     }
 }

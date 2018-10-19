@@ -48,21 +48,23 @@ public class FsStorageService implements FsAdapter {
     @Getter
     private StorageService fsProcessor;
     private String keyFilePath;
+    private String rootDirPath;
 
-    public FsStorageService(Storage storage, String keyFilePath, int connectionTimeout) {
+    public FsStorageService(Storage storage, String rootDirPath, String keyFilePath, int connectionTimeout) {
         this.storage = storage;
         this.keyFilePath = keyFilePath;
-        String separator = storage.getLocation().startsWith("/") ? "/" : "\\";
+        String separator = rootDirPath.startsWith("/") ? "/" : "\\";
         if (isLocalhost(storage))
-            this.fsProcessor = new LocalFsProcessor(storage);
+            this.fsProcessor = new LocalFsProcessor(storage, rootDirPath);
         else
-            this.fsProcessor = new RemoteFsProcessor(storage, separator, keyFilePath, connectionTimeout);
+            this.fsProcessor = new RemoteFsProcessor(storage, rootDirPath, separator, keyFilePath, connectionTimeout);
+        this.rootDirPath = rootDirPath;
     }
 
     @Override
     public StorageStateDto getStorageState() throws StorageException {
         if (isLocalhost(storage)) {
-            File anchor = new File(storage.getLocation());
+            File anchor = new File(rootDirPath);
             long capacity = anchor.getTotalSpace();
             long free = anchor.getFreeSpace();
             Map<String, String> storageStateData = new HashMap<>();
@@ -76,19 +78,21 @@ public class FsStorageService implements FsAdapter {
             ssh.connect(storage.getHost(), storage.getPort());
             ssh.authPublickey("arcstorage", keyFilePath);
             try (Session s = ssh.startSession()) {
-                dfResult = IOUtils.toString(s.exec("df -Ph " + storage.getLocation()).getInputStream(), Charset.defaultCharset()).split("\\n");
+                dfResult = IOUtils.toString(s.exec("df -Ph " + rootDirPath).getInputStream(), Charset.defaultCharset()).split("\\n");
             }
         } catch (IOException e) {
             throw new SshException(e);
         }
         if (dfResult.length < 2)
-            throw new CmdOutputParsingException("df -Ph " + storage.getLocation(), Arrays.asList(dfResult));
+            throw new CmdOutputParsingException("df -Ph " + rootDirPath, Arrays.asList(dfResult));
         Matcher m = Pattern.compile("\\S+\\s+\\S+\\s+(\\S+)\\s+(\\S+)").matcher(dfResult[1]);
         if (!m.find())
-            throw new CmdOutputParsingException("df -Ph " + storage.getLocation(), Arrays.asList(dfResult));
+            throw new CmdOutputParsingException("df -Ph " + rootDirPath, Arrays.asList(dfResult));
         Map<String, String> storageStateData = new HashMap<>();
         storageStateData.put("used", m.group(1));
         storageStateData.put("available", m.group(2));
         return new StorageStateDto(storage, storageStateData);
     }
+
+
 }

@@ -2,13 +2,18 @@ package cz.cas.lib.arcstorage.api;
 
 import cz.cas.lib.arcstorage.exception.BadRequestException;
 import cz.cas.lib.arcstorage.exception.ConflictObject;
+import cz.cas.lib.arcstorage.exception.ForbiddenByConfigException;
 import cz.cas.lib.arcstorage.exception.MissingObject;
+import cz.cas.lib.arcstorage.service.exception.BadXmlVersionProvidedException;
 import cz.cas.lib.arcstorage.service.exception.InvalidChecksumException;
+import cz.cas.lib.arcstorage.service.exception.ReadOnlyStateException;
 import cz.cas.lib.arcstorage.service.exception.state.StateException;
-import cz.cas.lib.arcstorage.service.exception.storage.FilesCorruptedAtStoragesException;
+import cz.cas.lib.arcstorage.service.exception.storage.ObjectCouldNotBeRetrievedException;
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageReachableException;
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
+import cz.cas.lib.arcstorage.storagesync.StorageStillProcessObjectsException;
+import cz.cas.lib.arcstorage.storagesync.SynchronizationInProgressException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindException;
@@ -55,8 +60,8 @@ public class ResourceExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(e.toString());
     }
 
-    @ExceptionHandler(FilesCorruptedAtStoragesException.class)
-    public ResponseEntity fileCorruptedAtAllStoragesException(FilesCorruptedAtStoragesException e) {
+    @ExceptionHandler(ObjectCouldNotBeRetrievedException.class)
+    public ResponseEntity fileCorruptedAtAllStoragesException(ObjectCouldNotBeRetrievedException e) {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.toString());
     }
 
@@ -73,5 +78,30 @@ public class ResourceExceptionHandler {
     @ExceptionHandler(NoLogicalStorageReachableException.class)
     public ResponseEntity noLogicalStorageReachableException(NoLogicalStorageReachableException e) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(e.toString());
+    }
+
+    @ExceptionHandler(BadXmlVersionProvidedException.class)
+    public ResponseEntity badXmlVersionProvidedException(BadXmlVersionProvidedException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(e.toString());
+    }
+
+    @ExceptionHandler(ForbiddenByConfigException.class)
+    public ResponseEntity forbiddenByConfigException(ForbiddenByConfigException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.toString());
+    }
+
+    @ExceptionHandler(SynchronizationInProgressException.class)
+    public ResponseEntity synchronizationInProgessException(SynchronizationInProgressException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.toString());
+    }
+
+    @ExceptionHandler(ReadOnlyStateException.class)
+    public ResponseEntity readOnlyStateException(ReadOnlyStateException e) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(e.toString());
+    }
+
+    @ExceptionHandler(StorageStillProcessObjectsException.class)
+    public ResponseEntity storageStillProcessObjectsException(StorageStillProcessObjectsException e) {
+        return ResponseEntity.status(566).body(e.toString());
     }
 }

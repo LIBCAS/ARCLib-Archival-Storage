@@ -36,14 +36,16 @@ public class RemoteFsProcessor implements StorageService {
     private Storage storage;
     private String S;
     private String keyFilePath;
+    private String rootDirPath;
     private static final String USER = "arcstorage";
     private int connectionTimeout;
 
-    public RemoteFsProcessor(Storage storage, String separator, String keyFilePath, int connectionTimeout) {
+    public RemoteFsProcessor(Storage storage, String rootDirPath, String separator, String keyFilePath, int connectionTimeout) {
         this.storage = storage;
         this.S = separator;
         this.keyFilePath = keyFilePath;
         this.connectionTimeout = connectionTimeout;
+        this.rootDirPath = rootDirPath;
     }
 
     public String getSeparator() {
@@ -55,7 +57,7 @@ public class RemoteFsProcessor implements StorageService {
         try (SSHClient ssh = new SSHClient()) {
             connect(ssh);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
-                Set<net.schmizz.sshj.xfer.FilePermission> perms = sftp.perms(storage.getLocation());
+                Set<net.schmizz.sshj.xfer.FilePermission> perms = sftp.perms(rootDirPath);
                 return (perms.contains(FilePermission.GRP_R) || perms.contains(FilePermission.USR_R)) &&
                         perms.contains(FilePermission.GRP_W) || perms.contains(FilePermission.USR_W);
             }
@@ -66,14 +68,14 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public void storeAip(AipDto aip, AtomicBoolean rollback) throws StorageException {
-        String folder = getFolderPath(aip.getSip().getId());
+    public void storeAip(AipDto aip, AtomicBoolean rollback, String dataSpace) throws StorageException {
+        String folder = getFolderPath(aip.getSip().getDatabaseId(), dataSpace);
         try (SSHClient ssh = new SSHClient()) {
             connect(ssh);
             listenForRollbackToKillSession(ssh, rollback);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
-                storeFile(sftp, folder, toXmlId(aip.getSip().getId(), 1), aip.getXml().getInputStream(), aip.getXml().getChecksum(), rollback);
-                storeFile(sftp, folder, aip.getSip().getId(), aip.getSip().getInputStream(), aip.getSip().getChecksum(), rollback);
+                storeFile(sftp, folder, toXmlId(aip.getSip().getDatabaseId(), 1), aip.getXml().getInputStream(), aip.getXml().getChecksum(), rollback);
+                storeFile(sftp, folder, aip.getSip().getDatabaseId(), aip.getSip().getInputStream(), aip.getSip().getChecksum(), rollback);
             }
         } catch (IOException e) {
             rollback.set(true);
@@ -85,14 +87,14 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public AipRetrievalResource getAip(String aipId, Integer... xmlVersions) throws FileDoesNotExistException, StorageException {
+    public AipRetrievalResource getAip(String aipId, String dataSpace, Integer... xmlVersions) throws FileDoesNotExistException, StorageException {
         SSHClient ssh = null;
         try {
             ssh = new SSHClient();
             connect(ssh);
             SFTPClient sftp = ssh.newSFTPClient();
             AipRetrievalResource aip = new AipRetrievalResource(ssh);
-            String folder = getFolderPath(aipId);
+            String folder = getFolderPath(aipId, dataSpace);
             aip.setSip(getFile(ssh, sftp, folder + S + aipId));
             for (Integer xmlVersion : xmlVersions) {
                 aip.addXml(xmlVersion, getFile(ssh, sftp, folder + S + toXmlId(aipId, xmlVersion)));
@@ -117,13 +119,34 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public void storeObject(ArchivalObjectDto archivalObjectDto, AtomicBoolean rollback) throws StorageException {
+    public void storeObject(ArchivalObjectDto objectDto, AtomicBoolean rollback, String dataSpace) throws StorageException {
         try (SSHClient ssh = new SSHClient()) {
             connect(ssh);
             listenForRollbackToKillSession(ssh, rollback);
-            String objId = archivalObjectDto.getStorageId();
+            String objId = objectDto.getStorageId();
+            String folderPath = getFolderPath(objId, dataSpace);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
-                storeFile(sftp, getFolderPath(objId), objId, archivalObjectDto.getInputStream(), archivalObjectDto.getChecksum(), rollback);
+
+                switch (objectDto.getState()) {
+                    case ARCHIVAL_FAILURE:
+                        throw new IllegalArgumentException("trying to store object " + objId + " which is in failed state");
+                    case DELETION_FAILURE:
+                        objectDto.setState(ObjectState.DELETED);
+                    case ROLLED_BACK:
+                    case DELETED:
+                        setState(sftp, folderPath, objId, objectDto.getState());
+                        break;
+                    case REMOVED:
+                        storeFile(sftp, folderPath, objId, objectDto.getInputStream(), objectDto.getChecksum(), rollback);
+                        remove(objId, dataSpace);
+                        break;
+                    case ARCHIVED:
+                    case PROCESSING:
+                        storeFile(sftp, folderPath, objId, objectDto.getInputStream(), objectDto.getChecksum(), rollback);
+                        break;
+                    default:
+                        throw new IllegalStateException(objectDto.toString());
+                }
             }
         } catch (IOException e) {
             rollback.set(true);
@@ -132,8 +155,8 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public ObjectRetrievalResource getObject(String id) throws FileDoesNotExistException, StorageException {
-        String objectFilePath = getFolderPath(id) + S + id;
+    public ObjectRetrievalResource getObject(String id, String dataSpace) throws FileDoesNotExistException, StorageException {
+        String objectFilePath = getFolderPath(id, dataSpace) + S + id;
         SSHClient ssh = null;
         try {
             ssh = new SSHClient();
@@ -160,8 +183,8 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public void deleteSip(String sipId) throws StorageException {
-        String sipFolder = getFolderPath(sipId);
+    public void delete(String sipId, String dataSpace) throws StorageException {
+        String sipFolder = getFolderPath(sipId, dataSpace);
         String sipFilePath = sipFolder + S + sipId;
         try (SSHClient ssh = new SSHClient()) {
             connect(ssh);
@@ -176,8 +199,8 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public void remove(String sipId) throws StorageException {
-        String sipFolder = getFolderPath(sipId);
+    public void remove(String sipId, String dataSpace) throws StorageException {
+        String sipFolder = getFolderPath(sipId, dataSpace);
         try (SSHClient ssh = new SSHClient()) {
             connect(ssh);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
@@ -189,8 +212,8 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public void renew(String sipId) throws StorageException {
-        String sipFolder = getFolderPath(sipId);
+    public void renew(String sipId, String dataSpace) throws StorageException {
+        String sipFolder = getFolderPath(sipId, dataSpace);
         try (SSHClient ssh = new SSHClient()) {
             connect(ssh);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
@@ -203,8 +226,8 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public void rollbackAip(String sipId) throws StorageException {
-        String folder = getFolderPath(sipId);
+    public void rollbackAip(String sipId, String dataSpace) throws StorageException {
+        String folder = getFolderPath(sipId, dataSpace);
         String xmlId = toXmlId(sipId, 1);
         try (SSHClient ssh = new SSHClient()) {
             connect(ssh);
@@ -218,8 +241,8 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public void rollbackObject(String id) throws StorageException {
-        String folder = getFolderPath(id);
+    public void rollbackObject(String id, String dataSpace) throws StorageException {
+        String folder = getFolderPath(id, dataSpace);
         try (SSHClient ssh = new SSHClient()) {
             connect(ssh);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
@@ -231,8 +254,8 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public AipStateInfoDto getAipInfo(String aipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions) throws StorageException {
-        String folder = getFolderPath(aipId);
+    public AipStateInfoDto getAipInfo(String aipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions, String dataSpace) throws StorageException {
+        String folder = getFolderPath(aipId, dataSpace);
         AipStateInfoDto info = new AipStateInfoDto(storage.getName(), storage.getStorageType(), objectState, sipChecksum, true);
         try (SSHClient ssh = new SSHClient()) {
             connect(ssh);
@@ -261,6 +284,18 @@ public class RemoteFsProcessor implements StorageService {
     @Override
     public StorageStateDto getStorageState() {
         throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void createNewDataSpace(String dataSpace) throws IOStorageException {
+        try (SSHClient ssh = new SSHClient()) {
+            connect(ssh);
+            try (SFTPClient sftp = ssh.newSFTPClient()) {
+                sftp.mkdirs(rootDirPath + S + dataSpace);
+            }
+        } catch (IOException e) {
+            throw new IOStorageException(e);
+        }
     }
 
     private InputStream getFile(SSHClient ssh, SFTPClient sftp, String pathToFile) throws IOException, FileDoesNotExistException {
@@ -331,7 +366,7 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     /**
-     * Called by save methods. Checks for rollback flag each second and if rollback is set to true,
+     * Called by saveAip methods. Checks for rollback flag each second and if rollback is set to true,
      * kills ssh connection so that method using that connection will immediately stop with ssh connection exception.
      *
      * @param ssh
@@ -363,8 +398,8 @@ public class RemoteFsProcessor implements StorageService {
             sftp.rm(filePath);
     }
 
-    String getFolderPath(String fileName) {
-        return storage.getLocation() + S + fileName.substring(0, 2) + S + fileName.substring(2, 4) + S + fileName.substring(4, 6);
+    String getFolderPath(String fileName, String dataSpace) {
+        return rootDirPath + S + dataSpace + S + fileName.substring(0, 2) + S + fileName.substring(2, 4) + S + fileName.substring(4, 6);
     }
 
     void checkFileExists(SSHClient ssh, SFTPClient sftp, String pathToFile) throws FileDoesNotExistException, SSHException {

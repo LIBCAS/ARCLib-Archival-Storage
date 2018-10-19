@@ -1,28 +1,33 @@
 package cz.cas.lib.arcstorage.dto;
 
+import cz.cas.lib.arcstorage.domain.entity.User;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.io.InputStream;
+import java.time.Instant;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * DTO for archive file containing its id, checksum and input stream.
+ * DTO for archive file containing its id, checksum and optionally input stream and other data.
  * <p>{@link #storageId} and {@link #databaseId} differs only in case of XML object</p>
  */
 @Setter
 @Getter
+@AllArgsConstructor
 public class ArchivalObjectDto {
     private String storageId;
     private String databaseId;
     private Checksum checksum;
-    private InputStream inputStream;
+    /**
+     * object may be populated just with id
+     */
+    private User owner;
 
-    public ArchivalObjectDto(String databaseId, String storageId, InputStream inputStream, Checksum checksum) {
-        this.databaseId = databaseId;
-        this.storageId = storageId;
-        this.checksum = checksum;
-        this.inputStream = inputStream;
-    }
+    private InputStream inputStream;
+    private ObjectState state;
+    private Instant created;
 
     @Override
     public boolean equals(Object o) {
@@ -41,6 +46,33 @@ public class ArchivalObjectDto {
         int result = getStorageId() != null ? getStorageId().hashCode() : 0;
         result = 31 * result + (getDatabaseId() != null ? getDatabaseId().hashCode() : 0);
         return result;
+    }
+
+    /**
+     * copies the object and assigns new stream to it
+     * @param oldDto
+     * @param newInputStream
+     */
+    public ArchivalObjectDto(ArchivalObjectDto oldDto, InputStream newInputStream){
+        this.storageId = oldDto.storageId;
+        this.databaseId = oldDto.databaseId;
+        this.checksum = oldDto.checksum;
+        this.owner = oldDto.owner;
+        this.inputStream = newInputStream;
+        this.state = oldDto.state;
+        this.created = oldDto.created;
+    }
+
+    @Override
+    public String toString() {
+        return "ArchivalObjectDto{" +
+                "storageId='" + storageId + '\'' +
+                ", databaseId='" + databaseId + '\'' +
+                ", checksum=" + checksum +
+                ", owner=" + owner +
+                ", state=" + state +
+                ", created=" + created +
+                '}';
     }
 }
 

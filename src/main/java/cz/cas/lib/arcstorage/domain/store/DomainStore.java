@@ -256,7 +256,7 @@ public abstract class DomainStore<T extends DomainObject, Q extends EntityPathBa
      * Non existing instance is silently skipped.
      * </p>
      *
-     * @param entity Instance to deleteAip
+     * @param entity Instance to delete
      * @throws IllegalArgumentException If entity is NULL
      */
     public void delete(T entity) {
@@ -269,10 +269,6 @@ public abstract class DomainStore<T extends DomainObject, Q extends EntityPathBa
         }
     }
 
-    public void deleteAll() {
-        queryFactory.delete(qObject).execute();
-    }
-
     /**
      * Creates QueryDSL query object.
      *
@@ -283,7 +279,7 @@ public abstract class DomainStore<T extends DomainObject, Q extends EntityPathBa
     }
 
     /**
-     * Creates QueryDSL query object for other entity than the save one.
+     * Creates QueryDSL query object for other entity than the store one.
      *
      * @return Query object
      */

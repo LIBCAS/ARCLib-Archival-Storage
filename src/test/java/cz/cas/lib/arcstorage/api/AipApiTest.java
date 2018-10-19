@@ -1,23 +1,31 @@
 package cz.cas.lib.arcstorage.api;
 
-import com.querydsl.jpa.impl.JPAQueryFactory;
-import cz.cas.lib.arcstorage.domain.entity.AipSip;
-import cz.cas.lib.arcstorage.domain.entity.AipXml;
-import cz.cas.lib.arcstorage.domain.entity.Storage;
+import cz.cas.lib.arcstorage.domain.entity.*;
 import cz.cas.lib.arcstorage.domain.store.AipSipStore;
 import cz.cas.lib.arcstorage.domain.store.AipXmlStore;
-import cz.cas.lib.arcstorage.domain.store.StorageStore;
+import cz.cas.lib.arcstorage.domain.store.ConfigurationStore;
 import cz.cas.lib.arcstorage.dto.*;
+import cz.cas.lib.arcstorage.security.Role;
+import cz.cas.lib.arcstorage.security.user.UserStore;
+import cz.cas.lib.arcstorage.service.ArchivalDbService;
 import cz.cas.lib.arcstorage.service.StorageProvider;
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
+import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageReachableException;
+import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.ceph.CephS3StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.storage.fs.FsStorageService;
 import cz.cas.lib.arcstorage.storage.fs.ZfsStorageService;
+import cz.cas.lib.arcstorage.storagesync.AuditedOperation;
+import cz.cas.lib.arcstorage.storagesync.ObjectAudit;
+import cz.cas.lib.arcstorage.storagesync.ObjectAuditStore;
 import helper.ApiTest;
-import helper.DbTest;
+import helper.auth.WithMockCustomUser;
 import org.apache.commons.io.FileUtils;
-import org.junit.*;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -26,8 +34,10 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.junit4.SpringRunner;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
+import org.springframework.transaction.TransactionTimedOutException;
 
 import javax.inject.Inject;
+import javax.persistence.PersistenceException;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
@@ -42,6 +52,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 import static cz.cas.lib.arcstorage.util.Utils.*;
+import static helper.ThrowableAssertion.assertThrown;
 import static java.lang.String.valueOf;
 import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.assertThat;
@@ -58,7 +69,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @RunWith(SpringRunner.class)
 @SpringBootTest
-public class AipApiTest extends DbTest implements ApiTest {
+@WithMockCustomUser(id = "1fa68a7e-eb66-44fd-b492-d4d55e1a95d5")
+public class AipApiTest implements ApiTest {
 
     private Path tmpFolder;
 
@@ -69,8 +81,6 @@ public class AipApiTest extends DbTest implements ApiTest {
     private AipSipStore sipStore;
     @Inject
     private AipXmlStore xmlStore;
-    @Inject
-    private StorageStore storageStore;
 
     @MockBean
     private FsStorageService fsStorageService;
@@ -84,6 +94,16 @@ public class AipApiTest extends DbTest implements ApiTest {
     @MockBean
     private StorageProvider storageProvider;
 
+    @Inject
+    private ConfigurationStore configurationStore;
+    @Inject
+    private ObjectAuditStore objectAuditStore;
+    @Inject
+    private ArchivalDbService archivalDbService;
+
+    @Inject
+    private UserStore userStore;
+
     private static final String SIP_ID = "8f719ff7-8756-4101-9e87-42391ced37f1";
     private static final String SIP_HASH = "bc196bfdd827cf371a2ccca02be989ce";
 
@@ -95,7 +115,9 @@ public class AipApiTest extends DbTest implements ApiTest {
 
     private static final String BASE = "/api/storage";
     private static final Path SIP_SOURCE_PATH = Paths.get("src/test/resources", "KPW01169310.ZIP");
-
+    private static final Configuration CONFIG = new Configuration(2, false);
+    private static final String USER_ID = "1fa68a7e-eb66-44fd-b492-d4d55e1a95d5";
+    private static final String DATA_SPACE = "dataspace";
     private static AipSip sip;
     private static AipXml aipXml1;
     private static AipXml aipXml2;
@@ -110,8 +132,9 @@ public class AipApiTest extends DbTest implements ApiTest {
         s1.setName("local fs");
         s1.setPriority(1);
         s1.setStorageType(StorageType.FS);
-        s1.setLocation("localFsFolder");
         s1.setReachable(true);
+        s1.setConfig("{\"rootDirPath\":\"localFsFolder\"}");
+
 
         s2 = new Storage();
         s2.setHost("192.168.0.60");
@@ -119,9 +142,8 @@ public class AipApiTest extends DbTest implements ApiTest {
         s2.setPort(22);
         s2.setPriority(1);
         s2.setStorageType(StorageType.ZFS);
-        s2.setLocation("/arcpool/arcfs");
         s2.setReachable(true);
-        s2.setConfig("{\"pool\":\"\", \"dataset\":\"\"}");
+        s2.setConfig("{\"rootDirPath\":\"/arcpool/arcfs\"}");
 
         s3 = new Storage();
         s3.setHost("192.168.10.60");
@@ -129,7 +151,6 @@ public class AipApiTest extends DbTest implements ApiTest {
         s3.setPort(7480);
         s3.setPriority(1);
         s3.setStorageType(StorageType.CEPH);
-        s3.setLocation("arclib.bucket1");
         s3.setConfig("{\"adapterType\":\"S3\",\"userKey\":\"BLZBGL9ZDD23WD0GL8V8\",\"userSecret\":\"pPYbINKQxEBLdxhzbycUI00UmTD4uaHjDel1IPui\"}");
         s3.setReachable(true);
     }
@@ -141,32 +162,32 @@ public class AipApiTest extends DbTest implements ApiTest {
     }
 
     @Before
-    public void before() throws StorageException, IOException, NoLogicalStorageAttachedException {
+    public void before() throws StorageException, IOException, NoLogicalStorageAttachedException, NoLogicalStorageReachableException {
         Files.createDirectories(tmpFolder);
+        archivalDbService.setTransactionTemplateTimeout(5);
+        for (AipXml aipXml : xmlStore.findAll()) {
+            xmlStore.delete(aipXml);
+        }
+        for (AipSip aipSip : sipStore.findAll()) {
+            sipStore.delete(aipSip);
+        }
 
+        configurationStore.save(CONFIG);
+        User user = new User(USER_ID, "user", "pwd", DATA_SPACE, Role.ROLE_READ_WRITE, null);
+        userStore.save(user);
 
         FileInputStream sipContent = new FileInputStream(SIP_SOURCE_PATH.toFile());
         FileInputStream xml1InputStream = new FileInputStream(Paths.get("./src/test/resources/aip/xml1.xml").toFile());
         FileInputStream xml2InputStream = new FileInputStream(Paths.get("./src/test/resources/aip/xml2.xml").toFile());
 
-        sip = new AipSip(SIP_ID, new Checksum(ChecksumType.MD5, SIP_HASH), ObjectState.ARCHIVED);
-        aipXml1 = new AipXml(XML1_ID, new Checksum(ChecksumType.MD5, XML1_HASH), sip, 1, ObjectState.ARCHIVED);
-        aipXml2 = new AipXml(XML2_ID, new Checksum(ChecksumType.MD5, XML2_HASH), sip, 2, ObjectState.ARCHIVED);
-
-        xmlStore.setEntityManager(getEm());
-        xmlStore.setQueryFactory(new JPAQueryFactory(getEm()));
-
-        sipStore.setEntityManager(getEm());
-        sipStore.setQueryFactory(new JPAQueryFactory(getEm()));
+        sip = new AipSip(SIP_ID, new Checksum(ChecksumType.MD5, SIP_HASH), user, ObjectState.ARCHIVED);
+        aipXml1 = new AipXml(XML1_ID, new Checksum(ChecksumType.MD5, XML1_HASH), user, sip, 1, ObjectState.ARCHIVED);
+        aipXml2 = new AipXml(XML2_ID, new Checksum(ChecksumType.MD5, XML2_HASH), user, sip, 2, ObjectState.ARCHIVED);
 
         sipStore.save(sip);
 
         xmlStore.save(aipXml1);
         xmlStore.save(aipXml2);
-
-        storageStore.save(s2);
-        storageStore.save(s1);
-        storageStore.save(s3);
 
         when(fsStorageService.testConnection()).thenReturn(true);
         when(zfsStorageService.testConnection()).thenReturn(true);
@@ -183,23 +204,25 @@ public class AipApiTest extends DbTest implements ApiTest {
         when(cephS3StorageService.getStorageState()).thenReturn(storageStateDto);
 
         AipStateInfoDto aipStateInfoFsDto = new AipStateInfoDto(fsStorageService.getStorage().getName(),
-                StorageType.FS, sip.getState(), sip.getChecksum(),true);
-        when(fsStorageService.getAipInfo(anyString(), anyObject(), anyObject(), anyObject()))
+                StorageType.FS, sip.getState(), sip.getChecksum(), true);
+        when(fsStorageService.getAipInfo(anyString(), anyObject(), anyObject(), anyObject(), anyString()))
                 .thenReturn(aipStateInfoFsDto);
 
         AipStateInfoDto aipStateInfoZfsDto = new AipStateInfoDto(zfsStorageService.getStorage().getName(),
-                StorageType.ZFS, sip.getState(), sip.getChecksum(),true);
-        when(zfsStorageService.getAipInfo(anyString(), anyObject(), anyObject(), anyObject()))
+                StorageType.ZFS, sip.getState(), sip.getChecksum(), true);
+        when(zfsStorageService.getAipInfo(anyString(), anyObject(), anyObject(), anyObject(), anyString()))
                 .thenReturn(aipStateInfoZfsDto);
 
         AipStateInfoDto aipStateInfoCephDto = new AipStateInfoDto(cephS3StorageService.getStorage().getName(),
-                StorageType.CEPH, sip.getState(), sip.getChecksum(),true);
-        when(cephS3StorageService.getAipInfo(anyString(), anyObject(), anyObject(), anyObject()))
+                StorageType.CEPH, sip.getState(), sip.getChecksum(), true);
+        when(cephS3StorageService.getAipInfo(anyString(), anyObject(), anyObject(), anyObject(), anyString()))
                 .thenReturn(aipStateInfoCephDto);
 
         when(storageProvider.createAllAdapters()).thenReturn(asList(fsStorageService, zfsStorageService,
                 cephS3StorageService));
 
+        List<StorageService> serviceList = asList(fsStorageService, zfsStorageService, cephS3StorageService);
+        when(storageProvider.getReachableStorageServicesByPriorities()).thenReturn(serviceList);
 
         when(storageProvider.createAdapter(s1.getId())).thenReturn(fsStorageService);
 
@@ -207,29 +230,29 @@ public class AipApiTest extends DbTest implements ApiTest {
         aip1.setSip(sipContent);
         aip1.addXml(1, xml1InputStream);
         aip1.addXml(2, xml2InputStream);
-        when(fsStorageService.getAip(SIP_ID, 1, 2)).thenReturn(aip1);
-        when(zfsStorageService.getAip(SIP_ID, 1, 2)).thenReturn(aip1);
-        when(cephS3StorageService.getAip(SIP_ID, 1, 2)).thenReturn(aip1);
+        when(fsStorageService.getAip(SIP_ID, DATA_SPACE, 1, 2)).thenReturn(aip1);
+        when(zfsStorageService.getAip(SIP_ID, DATA_SPACE, 1, 2)).thenReturn(aip1);
+        when(cephS3StorageService.getAip(SIP_ID, DATA_SPACE, 1, 2)).thenReturn(aip1);
 
         AipRetrievalResource aip2 = new AipRetrievalResource(sipContent.getChannel());
         aip2.setSip(sipContent);
         aip2.addXml(2, xml2InputStream);
-        when(fsStorageService.getAip(SIP_ID, 2)).thenReturn(aip2);
-        when(zfsStorageService.getAip(SIP_ID, 2)).thenReturn(aip2);
-        when(cephS3StorageService.getAip(SIP_ID, 2)).thenReturn(aip2);
+        when(fsStorageService.getAip(SIP_ID, DATA_SPACE, 2)).thenReturn(aip2);
+        when(zfsStorageService.getAip(SIP_ID, DATA_SPACE, 2)).thenReturn(aip2);
+        when(cephS3StorageService.getAip(SIP_ID, DATA_SPACE, 2)).thenReturn(aip2);
 
         String xml1Id = toXmlId(SIP_ID, 1);
         ObjectRetrievalResource xml1res = new ObjectRetrievalResource(xml1InputStream, xml1InputStream.getChannel());
         String xmll2Id = toXmlId(SIP_ID, 2);
         ObjectRetrievalResource xml2res = new ObjectRetrievalResource(xml2InputStream, xml2InputStream.getChannel());
 
-        when(fsStorageService.getObject(xml1Id)).thenReturn(xml1res);
-        when(zfsStorageService.getObject(xml1Id)).thenReturn(xml1res);
-        when(cephS3StorageService.getObject(xml1Id)).thenReturn(xml1res);
+        when(fsStorageService.getObject(xml1Id, DATA_SPACE)).thenReturn(xml1res);
+        when(zfsStorageService.getObject(xml1Id, DATA_SPACE)).thenReturn(xml1res);
+        when(cephS3StorageService.getObject(xml1Id, DATA_SPACE)).thenReturn(xml1res);
 
-        when(fsStorageService.getObject(xmll2Id)).thenReturn(xml2res);
-        when(zfsStorageService.getObject(xmll2Id)).thenReturn(xml2res);
-        when(cephS3StorageService.getObject(xmll2Id)).thenReturn(xml2res);
+        when(fsStorageService.getObject(xmll2Id, DATA_SPACE)).thenReturn(xml2res);
+        when(zfsStorageService.getObject(xmll2Id, DATA_SPACE)).thenReturn(xml2res);
+        when(cephS3StorageService.getObject(xmll2Id, DATA_SPACE)).thenReturn(xml2res);
     }
 
     /**
@@ -254,7 +277,7 @@ public class AipApiTest extends DbTest implements ApiTest {
                 packedFiles.add(entry.getName());
             }
         }
-        assertThat(packedFiles, containsInAnyOrder(SIP_ID, toXmlId(SIP_ID, 2)));
+        assertThat(packedFiles, containsInAnyOrder(SIP_ID + ".zip", toXmlId(SIP_ID, 2) + ".xml"));
     }
 
     /**
@@ -282,7 +305,7 @@ public class AipApiTest extends DbTest implements ApiTest {
         }
         int tmpFilesAfterRetrieval = tmpFolder.toFile().listFiles().length;
         assertThat(tmpFilesAfterRetrieval, is(tmpFilesBeforeRetrieval));
-        assertThat(packedFiles, containsInAnyOrder(SIP_ID, toXmlId(SIP_ID, 1), toXmlId(SIP_ID, 2)));
+        assertThat(packedFiles, containsInAnyOrder(SIP_ID + ".zip", toXmlId(SIP_ID, 1) + ".xml", toXmlId(SIP_ID, 2) + ".xml"));
     }
 
     /**
@@ -534,8 +557,8 @@ public class AipApiTest extends DbTest implements ApiTest {
         doAnswer(invocation -> {
             Thread.sleep(500);
             throw new IllegalStateException("whatever exception");
-        }).when(cephS3StorageService).storeObject(anyObject(), anyObject());
-        when(storageProvider.createReachableAdapters()).thenReturn(asList(cephS3StorageService));
+        }).when(cephS3StorageService).storeObject(anyObject(), anyObject(), anyString());
+        when(storageProvider.createAdaptersForWriteOperation()).thenReturn(asList(cephS3StorageService));
 
         AipSip aipSip = sipStore.find(SIP_ID);
         int countOfXmlVersions = aipSip.getXmls().size();
@@ -558,7 +581,7 @@ public class AipApiTest extends DbTest implements ApiTest {
     }
 
     /**
-     * Sends AIP removeAip (soft deleteAip) request then sends AIP state request and verifies state change.
+     * Sends AIP removeObject (soft delete) request then sends AIP state request and verifies state change.
      *
      * @throws Exception
      */
@@ -570,6 +593,12 @@ public class AipApiTest extends DbTest implements ApiTest {
         Thread.sleep(2000);
         AipSip aipSip = sipStore.find(SIP_ID);
         assertThat(aipSip.getState(), is(ObjectState.REMOVED));
+        List<ObjectAudit> operationsOfObject = objectAuditStore.findOperationsOfObject(SIP_ID);
+        ObjectAudit latestAudit = operationsOfObject.get(operationsOfObject.size() - 1);
+        assertThat(latestAudit.getObjectType(), is(ObjectType.SIP));
+        assertThat(latestAudit.getOperation(), is(AuditedOperation.REMOVAL));
+        assertThat(latestAudit.getUser(), is(new User(USER_ID)));
+        assertThat(latestAudit.getObjectId(), is(SIP_ID));
     }
 
     /**
@@ -594,7 +623,7 @@ public class AipApiTest extends DbTest implements ApiTest {
     }
 
     /**
-     * Send deleteAip request on created AIP verify its status code.
+     * Send delete request on created AIP verify its status code.
      * At the end send request for AIP data and verify that 404 error status is retrieved.
      *
      * @throws Exception
@@ -620,9 +649,9 @@ public class AipApiTest extends DbTest implements ApiTest {
      * @throws Exception
      */
     @Test
-    public void getAipState() throws Exception {
+    public void getAipInfo() throws Exception {
         mvc(api)
-                .perform(MockMvcRequestBuilders.get(BASE + "/{aipId}/state", SIP_ID).param("storageId",
+                .perform(MockMvcRequestBuilders.get(BASE + "/{aipId}/info", SIP_ID).param("storageId",
                         s1.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.objectState").value("ARCHIVED"))
@@ -638,7 +667,7 @@ public class AipApiTest extends DbTest implements ApiTest {
 //    @Ignore
 //    public void getStorageState() throws Exception {
 //        mvc(api)
-//                .perform(MockMvcRequestBuilders.get(BASE + "/state"))
+//                .perform(MockMvcRequestBuilders.getAip(BASE + "/state"))
 //                .andExpect(status().isOk())
 //                .andExpect(jsonPath("$.[0].storageStateData.available").value("2345"))
 //                .andExpect(jsonPath("$.[0].storageStateData.used").value("1234"));
@@ -662,6 +691,17 @@ public class AipApiTest extends DbTest implements ApiTest {
                 .andExpect(status().is(400));
     }
 
+    @Test
+    public void checkAipSaved() throws Exception {
+        String stateRetrieved = mvc(api)
+                .perform(MockMvcRequestBuilders.get(BASE + "/{aipId}/state", SIP_ID))
+                .andExpect(status().is(200))
+                .andReturn().getResponse()
+                .getContentAsString();
+
+        assertThat(stateRetrieved.replace("\"", ""), is(ObjectState.ARCHIVED.toString()));
+    }
+
     /**
      * Send request with invalid UUID and verify that response contains BAD_REQUEST error status.
      *
@@ -674,6 +714,20 @@ public class AipApiTest extends DbTest implements ApiTest {
                 .andExpect(status().is(400));
     }
 
+    /**
+     * in order to work, the methods handled with {@link org.springframework.transaction.support.TransactionTemplate}
+     * should not be nested in any method with {@link cz.cas.lib.arcstorage.domain.store.Transactional} annotation
+     */
+    @Test
+    public void transactionTimeoutsTest() {
+        archivalDbService.setTransactionTemplateTimeout(0);
+        assertThrown(() -> updateXml()).messageContains("TransactionTimedOutException");
+        assertThrown(() -> remove()).messageContains("TransactionTimedOutException");
+        assertThrown(() -> renew()).messageContains("TransactionTimedOutException");
+        assertThrown(() -> saveIdProvided()).messageContains("TransactionTimedOutException");
+        assertThrown(() -> delete()).messageContains("TransactionTimedOutException");
+    }
+
     private static String toXmlId(String aipId, int version) {
         return String.format("%s_xml_%d", aipId, version);
     }
@@ -681,5 +735,10 @@ public class AipApiTest extends DbTest implements ApiTest {
     @Inject
     public void setTmpFolder(@Value("${arcstorage.tmp-folder}") String path) {
         this.tmpFolder = Paths.get(path);
+    }
+
+    @Inject
+    public void setObjectAuditStore(ObjectAuditStore objectAuditStore) {
+        this.objectAuditStore = objectAuditStore;
     }
 }

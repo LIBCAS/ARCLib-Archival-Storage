@@ -2,22 +2,29 @@ package cz.cas.lib.arcstorage.api;
 
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.BadRequestException;
+import cz.cas.lib.arcstorage.security.Roles;
+import cz.cas.lib.arcstorage.security.user.UserDetails;
 import cz.cas.lib.arcstorage.service.ArchivalService;
+import cz.cas.lib.arcstorage.service.exception.BadXmlVersionProvidedException;
+import cz.cas.lib.arcstorage.service.exception.ReadOnlyStateException;
 import cz.cas.lib.arcstorage.service.exception.state.*;
-import cz.cas.lib.arcstorage.service.exception.storage.FilesCorruptedAtStoragesException;
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageReachableException;
+import cz.cas.lib.arcstorage.service.exception.storage.ObjectCouldNotBeRetrievedException;
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
+import cz.cas.lib.arcstorage.util.Utils;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import io.swagger.annotations.ApiResponse;
 import io.swagger.annotations.ApiResponses;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.IOUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.annotation.security.RolesAllowed;
 import javax.inject.Inject;
 import javax.servlet.http.HttpServletResponse;
 import java.io.BufferedInputStream;
@@ -35,12 +42,14 @@ import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 import static cz.cas.lib.arcstorage.util.Utils.checkChecksumFormat;
 import static cz.cas.lib.arcstorage.util.Utils.checkUUID;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/storage")
 public class AipApi {
 
     private ArchivalService archivalService;
     private Path tmpFolder;
+    private UserDetails userDetails;
 
     @ApiOperation(value = "Return specified AIP as a ZIP package")
     @RequestMapping(value = "/{aipId}", method = RequestMethod.GET)
@@ -51,33 +60,40 @@ public class AipApi {
             @ApiResponse(code = 503, message = "all attached logical storages are currently unreachable"),
             @ApiResponse(code = 500, message = "file is corrupted at all storages, no logical storage attached, or other internal server error")
     })
+    @RolesAllowed(Roles.READ_WRITE)
     public void getAip(
             @ApiParam(value = "AIP ID", required = true) @PathVariable("aipId") String aipId,
             @ApiParam(value = "true to return all XMLs, otherwise only the latest is returned") @RequestParam(value = "all", defaultValue = "false") boolean all,
             HttpServletResponse response)
             throws IOException, RollbackStateException, DeletedStateException, StillProcessingStateException,
-            FailedStateException, FilesCorruptedAtStoragesException, BadRequestException, RemovedStateException,
+            FailedStateException, ObjectCouldNotBeRetrievedException, BadRequestException, RemovedStateException,
             NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
         checkUUID(aipId);
 
-        AipRetrievalResource aipRetrievalResource = archivalService.get(aipId, all);
+        AipRetrievalResource aipRetrievalResource = archivalService.getAip(aipId, all);
         response.setContentType("application/zip");
         response.setStatus(200);
         response.addHeader("Content-Disposition", "attachment; filename=aip_" + aipId + ".zip");
 
         try (ZipOutputStream zipOut = new ZipOutputStream(new BufferedOutputStream(response.getOutputStream()));
              InputStream sipIs = new BufferedInputStream(aipRetrievalResource.getSip())) {
-            zipOut.putNextEntry(new ZipEntry(aipId));
+            zipOut.putNextEntry(new ZipEntry(aipId + ".zip"));
             IOUtils.copyLarge(sipIs, zipOut);
             zipOut.closeEntry();
             for (Integer xmlVersion : aipRetrievalResource.getXmls().keySet()) {
-                zipOut.putNextEntry(new ZipEntry(toXmlId(aipId, xmlVersion)));
-                IOUtils.copyLarge(new BufferedInputStream(aipRetrievalResource.getXmls().get(xmlVersion)), zipOut);
-                zipOut.closeEntry();
+                try (InputStream xmlIs = new BufferedInputStream(aipRetrievalResource.getXmls().get(xmlVersion))) {
+                    zipOut.putNextEntry(new ZipEntry(toXmlId(aipId, xmlVersion) + ".xml"));
+                    IOUtils.copyLarge(xmlIs, zipOut);
+                    zipOut.closeEntry();
+                }
             }
         } finally {
             aipRetrievalResource.close();
-            tmpFolder.resolve(aipRetrievalResource.getId()).toFile().delete();
+            String tmpFileId = aipRetrievalResource.getId();
+            tmpFolder.resolve(tmpFileId).toFile().delete();
+            for (Integer v : aipRetrievalResource.getXmls().keySet()) {
+                tmpFolder.resolve(toXmlId(tmpFileId, v)).toFile().delete();
+            }
         }
     }
 
@@ -90,18 +106,23 @@ public class AipApi {
             @ApiResponse(code = 503, message = "all attached logical storages are currently unreachable"),
             @ApiResponse(code = 500, message = "file is corrupted at all storages, no logical storage attached, or other internal server error")
     })
+    @RolesAllowed(Roles.READ_WRITE)
     public void getXml(
             @ApiParam(value = "AIP ID", required = true) @PathVariable("aipId") String aipId,
             @ApiParam(value = "version number of XML, if not set the latest version is returned") @RequestParam(value = "v", defaultValue = "") Integer version,
             HttpServletResponse response) throws StillProcessingStateException,
-            RollbackStateException, IOException, FailedStateException, FilesCorruptedAtStoragesException,
+            RollbackStateException, IOException, FailedStateException, ObjectCouldNotBeRetrievedException,
             BadRequestException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
         checkUUID(aipId);
-        ArchivalObjectDto xml = archivalService.getXml(aipId, version);
+        Utils.Pair<Integer, ObjectRetrievalResource> retrievedXml = archivalService.getXml(aipId, version);
         response.setContentType("application/xml");
         response.setStatus(200);
-        response.addHeader("Content-Disposition", "attachment; filename=" + xml.getStorageId() + ".xml");
-        IOUtils.copyLarge(xml.getInputStream(), response.getOutputStream());
+        response.addHeader("Content-Disposition", "attachment; filename=" + toXmlId(aipId, retrievedXml.getL()) + ".xml");
+        try (InputStream is = new BufferedInputStream(retrievedXml.getR().getInputStream())) {
+            IOUtils.copyLarge(is, response.getOutputStream());
+        } finally {
+            tmpFolder.resolve(retrievedXml.getR().getId()).toFile().delete();
+        }
     }
 
     @ApiOperation(value = "Stores AIP parts (SIP and AIP XML) into Archival Storage and returns the AIP ID.", response = String.class)
@@ -110,9 +131,10 @@ public class AipApi {
             @ApiResponse(code = 200, message = "AIP successfully stored"),
             @ApiResponse(code = 400, message = "bad request, e.g. the specified id is not a valid UUID"),
             @ApiResponse(code = 422, message = "the checksum computed after the transfer does not match the provided checksum"),
-            @ApiResponse(code = 503, message = "some attached logical storage is currently not reachable"),
+            @ApiResponse(code = 503, message = "some attached logical storage is currently not reachable or system is in readonly state"),
             @ApiResponse(code = 500, message = "no logical storage attached, or other internal server error")
     })
+    @RolesAllowed(Roles.READ_WRITE)
     public String save(
             @ApiParam(value = "SIP file", required = true) @RequestParam("sip") MultipartFile sip,
             @ApiParam(value = "AIP XML file", required = true) @RequestParam("aipXml") MultipartFile aipXml,
@@ -121,7 +143,7 @@ public class AipApi {
             @ApiParam(value = "value of the AIP XML checksum", required = true) @RequestParam("aipXmlChecksumValue") String aipXmlChecksumValue,
             @ApiParam(value = "type of the AIP XML checksum", required = true) @RequestParam("aipXmlChecksumType") ChecksumType aipXmlChecksumType,
             @ApiParam(value = "UUID of the AIP, generated if not specifies") @RequestParam(value = "UUID", defaultValue = "") String id)
-            throws IOException, SomeLogicalStoragesNotReachableException, BadRequestException, NoLogicalStorageAttachedException {
+            throws IOException, SomeLogicalStoragesNotReachableException, BadRequestException, NoLogicalStorageAttachedException, ReadOnlyStateException {
         String aipId;
         if (id == null || id.isEmpty())
             aipId = UUID.randomUUID().toString();
@@ -136,31 +158,41 @@ public class AipApi {
         Checksum aipXmlChecksum = new Checksum(aipXmlChecksumType, aipXmlChecksumValue);
         checkChecksumFormat(aipXmlChecksum);
 
-        AipDto aipDto = new AipDto(aipId, sip.getInputStream(), sipChecksum, aipXml.getInputStream(), aipXmlChecksum);
-        archivalService.save(aipDto);
+        AipDto aipDto = new AipDto(userDetails.getId(), aipId, sip.getInputStream(), sipChecksum, aipXml.getInputStream(), aipXmlChecksum);
+        archivalService.saveAip(aipDto);
         return aipId;
     }
 
-    @ApiOperation(value = "Versioning of the AIP XML: stores new AIP XML into Archival Storage.")
+    @ApiOperation(value = "Versioning of the AIP XML: stores new AIP XML into Archival Storage.", notes =
+            "Sync flag is set to false for batch AIP XML updates from Ingest. Sync flag is set to true for AIP XML" +
+                    " updates invoked from user's interaction with the AIP XML editor in GUI.")
     @RequestMapping(value = "/{aipId}/update", method = RequestMethod.POST)
     @ApiResponses(value = {
             @ApiResponse(code = 200, message = "AIP XML successfully stored"),
             @ApiResponse(code = 400, message = "bad request, e.g. the specified id is not a valid UUID"),
+            @ApiResponse(code = 403, message = "operation forbidden with respect to the current AIP state"),
+            @ApiResponse(code = 409, message = "bad XML version number provided (not following the sequence)"),
             @ApiResponse(code = 422, message = "the checksum computed after the transfer does not match the provided checksum"),
-            @ApiResponse(code = 503, message = "some attached logical storage is currently not reachable"),
+            @ApiResponse(code = 503, message = "some attached logical storage is currently not reachable or system is in readonly state"),
             @ApiResponse(code = 500, message = "no logical storage attached, or other internal server error")
     })
+    @RolesAllowed(Roles.READ_WRITE)
     public void saveXml(
             @ApiParam(value = "AIP id", required = true) @PathVariable("aipId") String aipId, @RequestParam("xml") MultipartFile xml,
             @ApiParam(value = "AIP XML checksum value", required = true) @RequestParam("checksumValue") String checksumValue,
             @ApiParam(value = "AIP XML checksum type", required = true) @RequestParam("checksumType") ChecksumType checksumType,
-            @ApiParam(value = "version number of the AIP XML, is automatically set to the lastVersion+1 if not specified") @RequestParam(value = "v", defaultValue = "") Integer version) throws IOException,
-            SomeLogicalStoragesNotReachableException, BadRequestException, NoLogicalStorageAttachedException {
+            @ApiParam(value = "synchronous/asynchronous processing flag") @RequestParam(value = "sync", defaultValue = "false") boolean sync,
+            @ApiParam(value = "version number of the AIP XML, is automatically set to the lastVersion+1 if not specified")
+            @RequestParam(value = "v", defaultValue = "") Integer version) throws IOException, SomeLogicalStoragesNotReachableException,
+            BadRequestException, NoLogicalStorageAttachedException, StillProcessingStateException, FailedStateException, RollbackStateException,
+            DeletedStateException, BadXmlVersionProvidedException, ReadOnlyStateException {
         checkUUID(aipId);
         Checksum checksum = new Checksum(checksumType, checksumValue);
         checkChecksumFormat(checksum);
-
-        archivalService.saveXml(aipId, xml.getInputStream(), checksum, version);
+        if (sync)
+            archivalService.saveXmlSynchronously(aipId, xml.getInputStream(), checksum, version);
+        else
+            archivalService.saveXmlAsynchronously(aipId, xml.getInputStream(), checksum, version);
     }
 
     @ApiOperation(value = "Logically removes AIP by setting its state to REMOVED.")
@@ -169,15 +201,16 @@ public class AipApi {
             @ApiResponse(code = 200, message = "AIP successfully removed"),
             @ApiResponse(code = 403, message = "operation forbidden with respect to the current AIP state"),
             @ApiResponse(code = 400, message = "bad request, e.g. the specified id is not a valid UUID"),
-            @ApiResponse(code = 503, message = "some attached logical storage is currently not reachable"),
+            @ApiResponse(code = 503, message = "some attached logical storage is currently not reachable or system is in readonly state"),
             @ApiResponse(code = 500, message = "no logical storage attached, or other internal server error")
     })
+    @RolesAllowed(Roles.READ_WRITE)
     public void remove(
             @ApiParam(value = "AIP id", required = true) @PathVariable("aipId") String aipId) throws DeletedStateException, StillProcessingStateException,
             RollbackStateException, StorageException, FailedStateException, SomeLogicalStoragesNotReachableException,
-            BadRequestException, NoLogicalStorageAttachedException {
+            BadRequestException, NoLogicalStorageAttachedException, ReadOnlyStateException {
         checkUUID(aipId);
-        archivalService.remove(aipId);
+        archivalService.removeObject(aipId);
     }
 
     @ApiOperation(value = "Renews logically removed AIP by setting its state to ARCHIVED.")
@@ -186,13 +219,14 @@ public class AipApi {
             @ApiResponse(code = 200, message = "AIP successfully renewed"),
             @ApiResponse(code = 403, message = "operation forbidden with respect to the current AIP state"),
             @ApiResponse(code = 400, message = "bad request, e.g. the specified id is not a valid UUID"),
-            @ApiResponse(code = 503, message = "some attached logical storage is currently not reachable"),
+            @ApiResponse(code = 503, message = "some attached logical storage is currently not reachable or system is in readonly state"),
             @ApiResponse(code = 500, message = "no logical storage attached, or other internal server error")
     })
+    @RolesAllowed(Roles.READ_WRITE)
     public void renew(
             @ApiParam(value = "AIP id", required = true) @PathVariable("aipId") String aipId) throws DeletedStateException, StillProcessingStateException,
             RollbackStateException, StorageException, FailedStateException, SomeLogicalStoragesNotReachableException,
-            BadRequestException, NoLogicalStorageAttachedException {
+            BadRequestException, NoLogicalStorageAttachedException, ReadOnlyStateException {
         checkUUID(aipId);
         archivalService.renew(aipId);
     }
@@ -203,12 +237,13 @@ public class AipApi {
             @ApiResponse(code = 200, message = "AIP successfully deleted"),
             @ApiResponse(code = 403, message = "operation forbidden with respect to the current AIP state"),
             @ApiResponse(code = 400, message = "bad request, e.g. the specified id is not a valid UUID"),
-            @ApiResponse(code = 503, message = "some attached logical storage is currently not reachable"),
+            @ApiResponse(code = 503, message = "some attached logical storage is currently not reachable or system is in readonly state"),
             @ApiResponse(code = 500, message = "no logical storage attached, or other internal server error")
     })
+    @RolesAllowed(Roles.READ_WRITE)
     public void delete(
             @ApiParam(value = "AIP id", required = true) @PathVariable("aipId") String aipId) throws StillProcessingStateException, RollbackStateException,
-            StorageException, FailedStateException, SomeLogicalStoragesNotReachableException, BadRequestException, NoLogicalStorageAttachedException {
+            FailedStateException, SomeLogicalStoragesNotReachableException, BadRequestException, NoLogicalStorageAttachedException, ReadOnlyStateException {
         checkUUID(aipId);
         archivalService.delete(aipId);
     }
@@ -219,13 +254,26 @@ public class AipApi {
             @ApiResponse(code = 400, message = "bad request, e.g. the specified id is not a valid UUID"),
             @ApiResponse(code = 500, message = "internal server error")
     })
-    @RequestMapping(value = "/{aipId}/state", method = RequestMethod.GET)
-    public AipStateInfoDto getAipState(
+    @RolesAllowed(Roles.READ_WRITE)
+    @RequestMapping(value = "/{aipId}/info", method = RequestMethod.GET)
+    public AipStateInfoDto getAipInfo(
             @ApiParam(value = "AIP id", required = true) @PathVariable("aipId") String aipId,
             @ApiParam(value = "id of the logical storage", required = true) @RequestParam(value = "storageId") String storageId)
             throws BadRequestException, StorageException {
         checkUUID(aipId);
-        return archivalService.getAipState(aipId, storageId);
+        return archivalService.getAipInfo(aipId, storageId);
+    }
+
+    @ApiOperation(notes = "Retrieves the state of AIP stored in database.",
+            value = "State of AIP.", response = Boolean.class)
+    @ApiResponses(value = {
+            @ApiResponse(code = 200, message = "state of AIP successfully retrieved"),
+            @ApiResponse(code = 404, message = "AIP with the id not found"),
+    })
+    @RequestMapping(value = "/{aipId}/state", method = RequestMethod.GET)
+    @RolesAllowed({Roles.READ, Roles.READ_WRITE})
+    public ObjectState getAipState(@ApiParam(value = "AIP id", required = true) @PathVariable("aipId") String aipId) {
+        return archivalService.getAipState(aipId);
     }
 
     /**
@@ -246,5 +294,10 @@ public class AipApi {
     @Inject
     public void setTmpFolder(@Value("${arcstorage.tmp-folder}") String path) {
         this.tmpFolder = Paths.get(path);
+    }
+
+    @Inject
+    public void setUserDetails(UserDetails userDetails) {
+        this.userDetails = userDetails;
     }
 }

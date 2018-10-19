@@ -8,6 +8,23 @@
     <property name="now" value="now()" dbms="postgresql"/>
 
     <changeSet id="arcstorage:1" author="tomasek">
+
+        <createTable tableName="arcstorage_user">
+            <column name="id" type="varchar(255)">
+                <constraints primaryKey="true" primaryKeyName="arcstorage_user_pkey" nullable="false"/>
+            </column>
+
+            <column name="created" type="datetime"/>
+            <column name="updated" type="datetime"/>
+            <column name="deleted" type="datetime"/>
+
+            <column name="username" type="nvarchar(255)"/>
+            <column name="password" type="varchar(255)"/>
+            <column name="data_space" type="varchar(255)"/>
+            <column name="user_role" type="varchar(32)"/>
+            <column name="email" type="varchar(255)"/>
+        </createTable>
+
         <createTable tableName="arcstorage_aip_sip">
             <column name="id" type="varchar(255)">
                 <constraints primaryKey="true" primaryKeyName="arcstorage_aip_sip_pkey" nullable="false"/>
@@ -21,6 +38,10 @@
             </column>
             <column name="state" type="varchar(32)">
                 <constraints nullable="false"/>
+            </column>
+            <column name="owner_id" type="varchar(255)">
+                <constraints nullable="false" deleteCascade="false" foreignKeyName="arcstorage_sip_owner_fk"
+                             referencedTableName="arcstorage_user" referencedColumnNames="id"/>
             </column>
         </createTable>
 
@@ -45,6 +66,10 @@
             <column name="state" type="varchar(32)">
                 <constraints nullable="false"/>
             </column>
+            <column name="owner_id" type="varchar(255)">
+                <constraints nullable="false" deleteCascade="false" foreignKeyName="arcstorage_xml_owner_fk"
+                             referencedTableName="arcstorage_user" referencedColumnNames="id"/>
+            </column>
         </createTable>
 
         <createTable tableName="arcstorage_object">
@@ -61,6 +86,10 @@
             <column name="state" type="varchar(32)">
                 <constraints nullable="false"/>
             </column>
+            <column name="owner_id" type="varchar(255)">
+                <constraints nullable="false" deleteCascade="false" foreignKeyName="arcstorage_object_owner_fk"
+                             referencedTableName="arcstorage_user" referencedColumnNames="id"/>
+            </column>
         </createTable>
 
         <createTable tableName="arcstorage_storage">
@@ -71,9 +100,6 @@
                 <constraints nullable="false"/>
             </column>
             <column name="host" type="varchar(64)">
-                <constraints nullable="false"/>
-            </column>
-            <column name="location" type="varchar(255)">
                 <constraints nullable="false"/>
             </column>
             <column name="port" type="int">
@@ -88,25 +114,62 @@
             <column name="note" type="varchar(2000)"/>
             <column name="config" type="varchar(2000)"/>
             <column name="reachable" type="boolean"/>
+            <column name="write_only" type="boolean"/>
         </createTable>
 
-        <createTable tableName="arcstorage_user">
+        <createTable tableName="arcstorage_configuration">
             <column name="id" type="varchar(255)">
-                <constraints primaryKey="true" primaryKeyName="arcstorage_user_pkey" nullable="false"/>
+                <constraints primaryKey="true" primaryKeyName="arcstorage_configuration_pkey" nullable="false"/>
             </column>
+            <column type="int" name="min_storage_count"/>
+            <column type="boolean" name="read_only"/>
+        </createTable>
 
+        <createTable tableName="arcstorage_storage_sync_status">
+            <column name="id" type="varchar(255)">
+                <constraints primaryKey="true" primaryKeyName="arcstorage_storage_sync_status_pkey" nullable="false"/>
+            </column>
             <column name="created" type="datetime"/>
             <column name="updated" type="datetime"/>
-            <column name="deleted" type="datetime"/>
+            <column name="stuck_at" type="datetime"/>
+            <column name="phase" type="varchar(32)"/>
+            <column type="bigint" name="total_in_this_phase"/>
+            <column type="bigint" name="done_in_this_phase"/>
+            <column name="exception_class" type="varchar(255)"/>
+            <column name="exception_msg" type="text"/>
 
-            <column name="username" type="nvarchar(255)"/>
-            <column name="password" type="varchar(255)"/>
+            <column name="storage_id" type="varchar(255)">
+                <constraints nullable="false" deleteCascade="true" foreignKeyName="arcstorage_sync_status_storage_fk"
+                             referencedTableName="arcstorage_storage" referencedColumnNames="id"/>
+            </column>
         </createTable>
 
-        <addUniqueConstraint
-                columnNames="arcstorage_aip_sip_id, version"
-                constraintName="unique_version"
-                tableName="arcstorage_aip_xml"/>
+        <createTable tableName="arcstorage_sync_waiting_object">
+            <column name="id" type="varchar(255)">
+                <constraints primaryKey="true" primaryKeyName="arcstorage_sync_waiting_object_pkey" nullable="false"/>
+            </column>
+
+            <column name="object_id" type="varchar(255)"/>
+            <column name="object_type" type="varchar(32)"/>
+            <column name="storage_sync_status_id" type="varchar(255)">
+                <constraints nullable="false" deleteCascade="true" foreignKeyName="arcstorage_sync_waiting_status_fk"
+                             referencedTableName="arcstorage_storage_sync_status" referencedColumnNames="id"/>
+            </column>
+        </createTable>
+
+        <createTable tableName="arcstorage_object_audit">
+            <column name="id" type="varchar(255)">
+                <constraints primaryKey="true" primaryKeyName="arcstorag_object_audit_pkey" nullable="false"/>
+            </column>
+            <column name="created" type="datetime"/>
+            <column name="object_id" type="varchar(255)"/>
+            <column name="object_type" type="varchar(32)"/>
+            <column name="operation" type="varchar(32)"/>
+            <column name="user_id" type="varchar(255)">
+                <constraints nullable="false" deleteCascade="true" foreignKeyName="arcstorage_object_audit_user_fk"
+                             referencedTableName="arcstorage_user" referencedColumnNames="id"/>
+            </column>
+        </createTable>
     </changeSet>
 
 </databaseChangeLog>

@@ -13,24 +13,17 @@ public class UserDelegate implements UserDetails {
 
     private Set<GrantedAuthority> authorities = new HashSet<>();
 
-    private boolean enabled;
-
-    public UserDelegate(User user, Boolean enabled) {
-        this(user, enabled, null);
+    public UserDelegate(User user) {
+        this(user, null);
     }
 
-    public UserDelegate(User user, Boolean enabled, Collection<? extends GrantedAuthority> additionalAuthorities) {
+    public UserDelegate(User user, Collection<? extends GrantedAuthority> additionalAuthorities) {
         this.user = user;
-
-            authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
-
+        if(user.getRole()!=null)
+            authorities.add(new SimpleGrantedAuthority(user.getRole().toString()));
 
         if (additionalAuthorities != null) {
             authorities.addAll(additionalAuthorities);
-        }
-
-        if (enabled != null) {
-            this.enabled = enabled;
         }
     }
 
@@ -42,6 +35,12 @@ public class UserDelegate implements UserDetails {
     public String getPassword() {
         return user.getPassword();
     }
+
+    @Override
+    public String getDataSpace() {
+        return user.getDataSpace();
+    }
+
 
     @Override
     public String getUsername() {
@@ -78,7 +77,7 @@ public class UserDelegate implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return enabled;
+        return true;
     }
 
     @Override

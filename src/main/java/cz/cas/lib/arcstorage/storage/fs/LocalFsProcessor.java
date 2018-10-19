@@ -31,15 +31,17 @@ public class LocalFsProcessor implements StorageService {
 
     @Getter
     private Storage storage;
+    private String rootDirPath;
 
-    public LocalFsProcessor(Storage storage) {
+    public LocalFsProcessor(Storage storage, String rootDirPath) {
         this.storage = storage;
+        this.rootDirPath = rootDirPath;
     }
 
     @Override
     public boolean testConnection() {
         try {
-            Path path = Paths.get(storage.getLocation());
+            Path path = Paths.get(rootDirPath);
             if (Files.isWritable(path) && Files.isReadable(path))
                 return true;
             return false;
@@ -50,22 +52,22 @@ public class LocalFsProcessor implements StorageService {
     }
 
     @Override
-    public void storeAip(AipDto aip, AtomicBoolean rollback) throws StorageException {
-        Path folder = getFolderPath(aip.getSip().getId());
-        storeFile(folder, toXmlId(aip.getSip().getId(), 1), aip.getXml().getInputStream(), aip.getXml().getChecksum(), rollback);
-        storeFile(folder, aip.getSip().getId(), aip.getSip().getInputStream(), aip.getSip().getChecksum(), rollback);
+    public void storeAip(AipDto aip, AtomicBoolean rollback, String dataSpace) throws StorageException {
+        Path folder = getFolderPath(aip.getSip().getDatabaseId(), dataSpace);
+        storeFile(folder, toXmlId(aip.getSip().getDatabaseId(), 1), aip.getXml().getInputStream(), aip.getXml().getChecksum(), rollback);
+        storeFile(folder, aip.getSip().getDatabaseId(), aip.getSip().getInputStream(), aip.getSip().getChecksum(), rollback);
     }
 
     @Override
-    public AipRetrievalResource getAip(String aipId, Integer... xmlVersions) throws FileDoesNotExistException {
+    public AipRetrievalResource getAip(String aipId, String dataSpace, Integer... xmlVersions) throws FileDoesNotExistException {
         String fileToOpen = aipId;
         AipRetrievalResource aip = new AipRetrievalResource(null);
         try {
-            File sipFile = getFolderPath(aipId).resolve(aipId).toFile();
+            File sipFile = getFolderPath(aipId, dataSpace).resolve(aipId).toFile();
             aip.setSip(new FileInputStream(sipFile));
             for (int version : xmlVersions) {
                 fileToOpen = toXmlId(aipId, version);
-                aip.addXml(version, new FileInputStream(getFolderPath(aipId).resolve(fileToOpen).toFile()));
+                aip.addXml(version, new FileInputStream(getFolderPath(aipId, dataSpace).resolve(fileToOpen).toFile()));
             }
         } catch (FileNotFoundException e) {
             for (InputStream ref : aip.getXmls().values()) {
@@ -81,23 +83,48 @@ public class LocalFsProcessor implements StorageService {
     }
 
     @Override
-    public void storeObject(ArchivalObjectDto objectDto, AtomicBoolean rollback) throws StorageException {
+    public void storeObject(ArchivalObjectDto objectDto, AtomicBoolean rollback, String dataSpace) throws StorageException {
         String id = objectDto.getStorageId();
-        storeFile(getFolderPath(id), id, objectDto.getInputStream(), objectDto.getChecksum(), rollback);
+        Path folder = getFolderPath(id, dataSpace);
+        try {
+            switch (objectDto.getState()) {
+                case ARCHIVAL_FAILURE:
+                    throw new IllegalArgumentException("trying to store object " + id + " which is in failed state");
+                case DELETION_FAILURE:
+                    objectDto.setState(ObjectState.DELETED);
+                case ROLLED_BACK:
+                case DELETED:
+                    setState(folder, id, objectDto.getState());
+                    break;
+                case REMOVED:
+                    storeFile(getFolderPath(id, dataSpace), id, objectDto.getInputStream(), objectDto.getChecksum(), rollback);
+                    remove(id, dataSpace);
+                    break;
+                case ARCHIVED:
+                case PROCESSING:
+                    storeFile(getFolderPath(id, dataSpace), id, objectDto.getInputStream(), objectDto.getChecksum(), rollback);
+                break;
+                default:
+                    throw new IllegalStateException(objectDto.toString());
+            }
+        } catch (IOException e) {
+            rollback.set(true);
+            throw new IOStorageException(e);
+        }
     }
 
     @Override
-    public ObjectRetrievalResource getObject(String id) throws FileDoesNotExistException {
+    public ObjectRetrievalResource getObject(String id, String dataSpace) throws FileDoesNotExistException {
         try {
-            return new ObjectRetrievalResource(new FileInputStream(getFolderPath(id).resolve(id).toFile()), null);
+            return new ObjectRetrievalResource(new FileInputStream(getFolderPath(id, dataSpace).resolve(id).toFile()), null);
         } catch (FileNotFoundException e) {
             throw new FileDoesNotExistException(strSX(storage.getName(), id));
         }
     }
 
     @Override
-    public void deleteSip(String sipId) throws IOStorageException, FileDoesNotExistException {
-        Path sipFolder = getFolderPath(sipId);
+    public void delete(String sipId, String dataSpace) throws IOStorageException, FileDoesNotExistException {
+        Path sipFolder = getFolderPath(sipId, dataSpace);
         Path sipFilePath = sipFolder.resolve(sipId);
         try {
             setState(sipFolder, sipId, ObjectState.PROCESSING);
@@ -109,8 +136,8 @@ public class LocalFsProcessor implements StorageService {
     }
 
     @Override
-    public void remove(String sipId) throws IOStorageException, FileDoesNotExistException {
-        Path sipFolder = getFolderPath(sipId);
+    public void remove(String sipId, String dataSpace) throws IOStorageException, FileDoesNotExistException {
+        Path sipFolder = getFolderPath(sipId, dataSpace);
         try {
             transitState(sipFolder, sipId, ObjectState.ARCHIVED, ObjectState.REMOVED);
         } catch (FileAlreadyExistsException e) {
@@ -120,8 +147,8 @@ public class LocalFsProcessor implements StorageService {
     }
 
     @Override
-    public void renew(String sipId) throws IOStorageException, FileDoesNotExistException {
-        Path sipFolder = getFolderPath(sipId);
+    public void renew(String sipId, String dataSpace) throws IOStorageException, FileDoesNotExistException {
+        Path sipFolder = getFolderPath(sipId, dataSpace);
         try {
             transitState(sipFolder, sipId, ObjectState.REMOVED, ObjectState.ARCHIVED);
         } catch (FileAlreadyExistsException e) {
@@ -131,28 +158,28 @@ public class LocalFsProcessor implements StorageService {
     }
 
     @Override
-    public void rollbackAip(String sipId) throws StorageException {
+    public void rollbackAip(String sipId, String dataSpace) throws StorageException {
         try {
-            rollbackFile(getFolderPath(sipId), sipId);
-            rollbackFile(getFolderPath(sipId), toXmlId(sipId, 1));
+            rollbackFile(getFolderPath(sipId, dataSpace), sipId);
+            rollbackFile(getFolderPath(sipId, dataSpace), toXmlId(sipId, 1));
         } catch (IOException e) {
             throw new IOStorageException(e);
         }
     }
 
     @Override
-    public void rollbackObject(String id) throws StorageException {
+    public void rollbackObject(String id, String dataSpace) throws StorageException {
         try {
-            rollbackFile(getFolderPath(id), id);
+            rollbackFile(getFolderPath(id, dataSpace), id);
         } catch (IOException e) {
             throw new IOStorageException(e);
         }
     }
 
     @Override
-    public AipStateInfoDto getAipInfo(String aipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions) throws StorageException {
-        Path folder = getFolderPath(aipId);
-        AipStateInfoDto info = new AipStateInfoDto(storage.getName(), storage.getStorageType(), objectState, sipChecksum,true);
+    public AipStateInfoDto getAipInfo(String aipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions, String dataSpace) throws StorageException {
+        Path folder = getFolderPath(aipId, dataSpace);
+        AipStateInfoDto info = new AipStateInfoDto(storage.getName(), storage.getStorageType(), objectState, sipChecksum, true);
         if (objectState == ObjectState.ARCHIVED || objectState == ObjectState.REMOVED) {
             try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(folder.resolve(aipId).toFile()))) {
                 Checksum storageSipChecksum = StorageUtils.computeChecksum(bis, sipChecksum.getType());
@@ -187,6 +214,15 @@ public class LocalFsProcessor implements StorageService {
         throw new UnsupportedOperationException();
     }
 
+    @Override
+    public void createNewDataSpace(String dataSpace) throws IOStorageException {
+        try {
+            Files.createDirectories(Paths.get(rootDirPath).resolve(dataSpace));
+        } catch (IOException e) {
+            throw new IOStorageException(e);
+        }
+    }
+
     /**
      * Stores file and then reads it and verifies its fixity.
      * <p>
@@ -200,7 +236,6 @@ public class LocalFsProcessor implements StorageService {
         if (rollback.get())
             return;
         try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(folder.resolve(id).toFile()))) {
-            Files.createDirectories(folder);
             setState(folder, id, ObjectState.PROCESSING);
             Files.copy(new ByteArrayInputStream(checksum.getValue().getBytes()), folder.resolve(id + "." + checksum.getType()), StandardCopyOption.REPLACE_EXISTING);
 
@@ -239,8 +274,8 @@ public class LocalFsProcessor implements StorageService {
         transitState(folder, fileId, ObjectState.PROCESSING, ObjectState.ROLLED_BACK);
     }
 
-    Path getFolderPath(String fileName) {
-        Path path = Paths.get(storage.getLocation()).resolve(fileName.substring(0, 2)).resolve(fileName.substring(2, 4)).resolve(fileName.substring(4, 6));
+    Path getFolderPath(String fileName, String dataSpace) {
+        Path path = Paths.get(rootDirPath).resolve(dataSpace).resolve(fileName.substring(0, 2)).resolve(fileName.substring(2, 4)).resolve(fileName.substring(4, 6));
         try {
             Files.createDirectories(path);
         } catch (IOException e) {

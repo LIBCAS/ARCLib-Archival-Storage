@@ -1,21 +1,30 @@
 package cz.cas.lib.arcstorage.service;
 
-import cz.cas.lib.arcstorage.domain.entity.AipSip;
-import cz.cas.lib.arcstorage.domain.entity.AipXml;
-import cz.cas.lib.arcstorage.domain.entity.ArchivalObject;
-import cz.cas.lib.arcstorage.domain.entity.ObjectType;
+import cz.cas.lib.arcstorage.domain.entity.*;
 import cz.cas.lib.arcstorage.domain.store.*;
+import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
 import cz.cas.lib.arcstorage.dto.Checksum;
 import cz.cas.lib.arcstorage.dto.ObjectState;
 import cz.cas.lib.arcstorage.exception.ConflictObject;
 import cz.cas.lib.arcstorage.exception.MissingObject;
+import cz.cas.lib.arcstorage.security.user.UserDetails;
+import cz.cas.lib.arcstorage.security.user.UserStore;
+import cz.cas.lib.arcstorage.service.exception.BadXmlVersionProvidedException;
+import cz.cas.lib.arcstorage.service.exception.ReadOnlyStateException;
 import cz.cas.lib.arcstorage.service.exception.state.DeletedStateException;
 import cz.cas.lib.arcstorage.service.exception.state.FailedStateException;
 import cz.cas.lib.arcstorage.service.exception.state.RollbackStateException;
 import cz.cas.lib.arcstorage.service.exception.state.StillProcessingStateException;
+import cz.cas.lib.arcstorage.storagesync.AuditedOperation;
+import cz.cas.lib.arcstorage.storagesync.ObjectAudit;
+import cz.cas.lib.arcstorage.storagesync.ObjectAuditStore;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.inject.Inject;
 import java.util.List;
@@ -23,31 +32,49 @@ import java.util.UUID;
 
 import static cz.cas.lib.arcstorage.util.Utils.notNull;
 
-
 /**
  * Class used for communication with Archival Storage database which contains transactional data about Archival Storage packages.
  */
 @Service
-@Transactional
 @Slf4j
 public class ArchivalDbService {
 
     private AipSipStore aipSipStore;
     private AipXmlStore aipXmlStore;
     private ArchivalObjectStore archivalObjectStore;
+    private ObjectAuditStore objectAuditStore;
+    private UserDetails userDetails;
+    private UserStore userStore;
+    private ConfigurationStore configurationStore;
+    private TransactionTemplate transactionTemplate;
 
     /**
      * Registers that AIP creation process has started. Stores AIP records to database and sets their state to <i>processing</i>.
      */
-    @org.springframework.transaction.annotation.Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void registerAipCreation(String sipId, Checksum sipChecksum, String xmlId, Checksum xmlChecksum) {
+    public AipSip registerAipCreation(String sipId, Checksum sipChecksum, String xmlId, Checksum xmlChecksum) throws ReadOnlyStateException {
         AipSip existingSip = aipSipStore.find(sipId);
-        if (existingSip != null && !existingSip.getState().equals(ObjectState.ROLLED_BACK) && !existingSip.getState().equals(ObjectState.FAILED))
+        if (existingSip != null &&
+                !existingSip.getState().equals(ObjectState.ROLLED_BACK) &&
+                !existingSip.getState().equals(ObjectState.ARCHIVAL_FAILURE))
             throw new ConflictObject(existingSip);
-        AipSip sip = new AipSip(sipId, sipChecksum, ObjectState.PROCESSING);
-        AipXml xml = new AipXml(xmlId, xmlChecksum, sip, 1, ObjectState.PROCESSING);
-        aipSipStore.save(sip);
-        aipXmlStore.save(xml);
+        User user = userStore.find(userDetails.getId());
+        AipSip sip = new AipSip(sipId, sipChecksum, user, ObjectState.PRE_PROCESSING);
+        AipXml xml;
+        if (existingSip != null && existingSip.getXml(0) != null)
+            xml = existingSip.getXml(0);
+        else
+            xml = new AipXml(xmlId, xmlChecksum, new User(userDetails.getId()), sip, 1, ObjectState.PRE_PROCESSING);
+        return transactionTemplate.execute(new TransactionCallback<AipSip>() {
+            @Override
+            public AipSip doInTransaction(TransactionStatus status) {
+                if (configurationStore.get().isReadOnly())
+                    throw new ReadOnlyStateException();
+                aipSipStore.save(sip);
+                aipXmlStore.save(xml);
+                log.info("Creation of AIP with id " + sip + " has been registered.");
+                return sip;
+            }
+        });
     }
 
     /**
@@ -56,9 +83,10 @@ public class ArchivalDbService {
      * @param sipId
      * @param xmlId
      */
+    @Transactional
     public void finishAipCreation(String sipId, String xmlId) {
-        setObjectState(sipId, ObjectType.SIP, ObjectState.ARCHIVED);
-        setObjectState(xmlId, ObjectType.XML, ObjectState.ARCHIVED);
+        setObjectState(sipId, ObjectState.ARCHIVED);
+        setObjectState(xmlId, ObjectState.ARCHIVED);
     }
 
     /**
@@ -68,72 +96,112 @@ public class ArchivalDbService {
      * @param xmlChecksum
      * @return created XML entity filled ID and version
      */
-    @org.springframework.transaction.annotation.Transactional(propagation = Propagation.REQUIRES_NEW)
-    public AipXml registerXmlUpdate(String sipId, Checksum xmlChecksum, Integer version) {
-        if (version != null && version != 0) {
-            AipXml existingXml = aipXmlStore.findBySipAndVersion(sipId, version);
-            if (existingXml != null && !existingXml.getState().equals(ObjectState.ROLLED_BACK) && !existingXml.getState().equals(ObjectState.FAILED))
-                throw new ConflictObject(existingXml);
-            if (existingXml == null)
-                existingXml = new AipXml(UUID.randomUUID().toString(), xmlChecksum, new AipSip(sipId), version, ObjectState.PROCESSING);
-            else
-                existingXml.setState(ObjectState.PROCESSING);
-            aipXmlStore.save(existingXml);
-            return existingXml;
-        } else {
-            int xmlVersion = aipXmlStore.getNextXmlVersionNumber(sipId);
-            AipXml newVersion = new AipXml(UUID.randomUUID().toString(), xmlChecksum, new AipSip(sipId), xmlVersion, ObjectState.PROCESSING);
-            aipXmlStore.save(newVersion);
-            return newVersion;
-        }
-    }
-
-    /**
-     * Registers that AIP SIP deletion process has started.
-     *
-     * @param sipId
-     * @throws RollbackStateException
-     * @throws StillProcessingStateException
-     */
-    public void registerSipDeletion(String sipId) throws StillProcessingStateException, RollbackStateException, FailedStateException {
+    public AipXml registerXmlUpdate(String sipId, Checksum xmlChecksum, Integer version) throws StillProcessingStateException, FailedStateException, RollbackStateException, DeletedStateException, BadXmlVersionProvidedException, ReadOnlyStateException {
         AipSip sip = aipSipStore.find(sipId);
-        notNull(sip, () -> {
-            log.warn("Could not find AIP: " + sipId);
-            return new MissingObject(AipSip.class, sipId);
-        });
+        notNull(sip, () -> new MissingObject(AipSip.class, sipId));
         switch (sip.getState()) {
             case PROCESSING:
+            case PRE_PROCESSING:
                 throw new StillProcessingStateException(sip);
-            case FAILED:
+            case ARCHIVAL_FAILURE:
                 throw new FailedStateException(sip);
             case ROLLED_BACK:
                 throw new RollbackStateException(sip);
+            case DELETED:
+            case DELETION_FAILURE:
+                throw new DeletedStateException(sip);
         }
-        sip.setState(ObjectState.PROCESSING);
-        aipSipStore.save(sip);
+        AipXml latestXml = sip.getLatestXml();
+        if (version != null && version != 0) {
+            switch (latestXml.getState()) {
+                case ARCHIVED:
+                    if (latestXml.getVersion() != version - 1)
+                        throw new BadXmlVersionProvidedException(version, latestXml.getVersion());
+                    break;
+                case PROCESSING:
+                case PRE_PROCESSING:
+                    throw new StillProcessingStateException(latestXml);
+                case ARCHIVAL_FAILURE:
+                case ROLLED_BACK:
+                    if (latestXml.getVersion() != version)
+                        throw new BadXmlVersionProvidedException(version, latestXml.getVersion() - 1);
+                    break;
+                default:
+                    throw new IllegalStateException("unsupported state: " + latestXml.getState() + " of AIP XML with ID: " + latestXml.getId());
+            }
+        } else {
+            if (latestXml.getState() == ObjectState.ARCHIVED)
+                version = latestXml.getVersion() + 1;
+            else
+                version = latestXml.getVersion();
+        }
+        int xmlVersion = version;
+        return transactionTemplate.execute(new TransactionCallback<AipXml>() {
+            @Override
+            public AipXml doInTransaction(TransactionStatus status) {
+                if (configurationStore.get().isReadOnly())
+                    throw new ReadOnlyStateException();
+                AipXml save = aipXmlStore.save(new AipXml(UUID.randomUUID().toString(), xmlChecksum, new User(userDetails.getId()), new AipSip(sipId), xmlVersion, ObjectState.PRE_PROCESSING));
+                return save;
+            }
+        });
+    }
+
+    /**
+     * Registers object deletion.
+     *
+     * @param id
+     * @throws RollbackStateException
+     * @throws StillProcessingStateException
+     */
+    public ArchivalObject registerObjectDeletion(String id) throws StillProcessingStateException, RollbackStateException, FailedStateException, ReadOnlyStateException {
+        ArchivalObject obj = archivalObjectStore.find(id);
+        notNull(obj, () -> {
+            log.warn("Could not find object: " + id);
+            return new MissingObject(ArchivalObjectDto.class, id);
+        });
+        switch (obj.getState()) {
+            case PROCESSING:
+            case PRE_PROCESSING:
+                throw new StillProcessingStateException(obj);
+            case ARCHIVAL_FAILURE:
+                throw new FailedStateException(obj);
+            case ROLLED_BACK:
+                throw new RollbackStateException(obj);
+        }
+        obj.setState(ObjectState.DELETED);
+        return transactionTemplate.execute(new TransactionCallback<ArchivalObject>() {
+            @Override
+            public ArchivalObject doInTransaction(TransactionStatus status) {
+                if (configurationStore.get().isReadOnly())
+                    throw new ReadOnlyStateException();
+                archivalObjectStore.save(obj);
+                objectAuditStore.save(new ObjectAudit(id, new User(userDetails.getId()), getObjectType(obj), AuditedOperation.DELETION));
+                return obj;
+            }
+        });
     }
 
     /**
      * Sets state of object.
      */
-    public void setObjectState(String databaseId, ObjectType objectType, ObjectState state) {
-        DomainStore store;
-        switch (objectType) {
-            case SIP:
-                store = aipSipStore;
-                break;
-            case XML:
-                store = aipXmlStore;
-                break;
-            case OBJECT:
-                store = archivalObjectStore;
-                break;
-            default:
-                throw new IllegalArgumentException("null object type");
-        }
-        ArchivalObject object = (ArchivalObject) store.find(databaseId);
+    @Transactional
+    public void setObjectState(String databaseId, ObjectState state) {
+        ArchivalObject object = archivalObjectStore.find(databaseId);
         object.setState(state);
-        store.save(object);
+        archivalObjectStore.save(object);
+        log.info("State of object with id " + databaseId + " has changed to " + state + ".");
+    }
+
+    @Transactional
+    public void saveObject(ArchivalObject object) {
+        archivalObjectStore.save(object);
+    }
+
+    @Transactional
+    public void setObjectsState(ObjectState state, List<String> ids) {
+        archivalObjectStore.setObjectsState(state, ids);
+        log.info("State of objects with ids " + ids.toString() + " has changed to " + state + ".");
     }
 
     /**
@@ -142,13 +210,14 @@ public class ArchivalDbService {
      * @param sipId
      * @param xmlId
      */
+    @Transactional
     public void setAipFailed(String sipId, String xmlId) {
         AipSip sip = aipSipStore.find(sipId);
         notNull(sip, () -> {
             log.warn("Could not find AIP: " + sipId);
             return new MissingObject(AipSip.class, sipId);
         });
-        sip.setState(ObjectState.FAILED);
+        sip.setState(ObjectState.ARCHIVAL_FAILURE);
         aipSipStore.save(sip);
 
         AipXml xml = aipXmlStore.find(xmlId);
@@ -156,64 +225,86 @@ public class ArchivalDbService {
             log.warn("Could not find XML: " + xmlId);
             return new MissingObject(AipXml.class, xmlId);
         });
-        xml.setState(ObjectState.FAILED);
+        xml.setState(ObjectState.ARCHIVAL_FAILURE);
         aipXmlStore.save(xml);
     }
 
     /**
-     * Logically removes SIP i.e. sets its state to {@link ObjectState#REMOVED} in the database.
+     * Logically removes object i.e. sets its state to {@link ObjectState#REMOVED} in the database.
      *
-     * @param sipId
-     * @throws DeletedStateException         if SIP is deleted
+     * @param id
+     * @throws DeletedStateException         if object is deleted
      * @throws RollbackStateException
      * @throws StillProcessingStateException
      */
-    public void removeAip(String sipId) throws DeletedStateException, RollbackStateException, StillProcessingStateException, FailedStateException {
-        AipSip sip = aipSipStore.find(sipId);
-        notNull(sip, () -> {
-            log.warn("Could not find AIP: " + sipId);
-            return new MissingObject(AipSip.class, sipId);
+    public ArchivalObject removeObject(String id) throws DeletedStateException, RollbackStateException, StillProcessingStateException, FailedStateException, ReadOnlyStateException {
+        ArchivalObject obj = archivalObjectStore.find(id);
+        notNull(obj, () -> {
+            log.warn("Could not find object: " + id);
+            return new MissingObject(ArchivalObjectDto.class, id);
         });
-        switch (sip.getState()) {
+        switch (obj.getState()) {
             case ROLLED_BACK:
-                throw new RollbackStateException(sip);
+                throw new RollbackStateException(obj);
             case DELETED:
-                throw new DeletedStateException(sip);
+            case DELETION_FAILURE:
+                throw new DeletedStateException(obj);
             case PROCESSING:
-                throw new StillProcessingStateException(sip);
-            case FAILED:
-                throw new FailedStateException(sip);
+            case PRE_PROCESSING:
+                throw new StillProcessingStateException(obj);
+            case ARCHIVAL_FAILURE:
+                throw new FailedStateException(obj);
         }
-        sip.setState(ObjectState.REMOVED);
-        aipSipStore.save(sip);
+        obj.setState(ObjectState.REMOVED);
+        return transactionTemplate.execute(new TransactionCallback<ArchivalObject>() {
+            @Override
+            public ArchivalObject doInTransaction(TransactionStatus status) {
+                if (configurationStore.get().isReadOnly())
+                    throw new ReadOnlyStateException();
+                archivalObjectStore.save(obj);
+                objectAuditStore.save(new ObjectAudit(id, new User(userDetails.getId()), getObjectType(obj), AuditedOperation.REMOVAL));
+                return obj;
+            }
+        });
     }
 
     /**
-     * Renews logically removed SIP i.e. sets its state to {@link ObjectState#REMOVED} in the database.
+     * Renews logically removed object i.e. sets its state to {@link ObjectState#ARCHIVED} in the database.
      *
-     * @param sipId
-     * @throws DeletedStateException         if SIP is deleted
+     * @param id
+     * @throws DeletedStateException         if object is deleted
      * @throws RollbackStateException
      * @throws StillProcessingStateException
      */
-    public void renewAip(String sipId) throws DeletedStateException, RollbackStateException, StillProcessingStateException, FailedStateException {
-        AipSip sip = aipSipStore.find(sipId);
-        notNull(sip, () -> {
-            log.warn("Could not find AIP: " + sipId);
-            return new MissingObject(AipSip.class, sipId);
+    public ArchivalObject renewObject(String id) throws DeletedStateException, RollbackStateException, StillProcessingStateException, FailedStateException, ReadOnlyStateException {
+        ArchivalObject obj = archivalObjectStore.find(id);
+        notNull(obj, () -> {
+            log.warn("Could not find object: " + id);
+            return new MissingObject(ArchivalObjectDto.class, id);
         });
-        switch (sip.getState()) {
+        switch (obj.getState()) {
             case ROLLED_BACK:
-                throw new RollbackStateException(sip);
+                throw new RollbackStateException(obj);
             case DELETED:
-                throw new DeletedStateException(sip);
+            case DELETION_FAILURE:
+                throw new DeletedStateException(obj);
             case PROCESSING:
-                throw new StillProcessingStateException(sip);
-            case FAILED:
-                throw new FailedStateException(sip);
+            case PRE_PROCESSING:
+                throw new StillProcessingStateException(obj);
+            case ARCHIVAL_FAILURE:
+                throw new FailedStateException(obj);
         }
-        sip.setState(ObjectState.ARCHIVED);
-        aipSipStore.save(sip);
+        obj.setState(ObjectState.ARCHIVED);
+        return transactionTemplate.execute(new TransactionCallback<ArchivalObject>() {
+            @Override
+            public ArchivalObject doInTransaction(TransactionStatus status) {
+                if (configurationStore.get().isReadOnly())
+                    throw new ReadOnlyStateException();
+                archivalObjectStore.save(obj);
+                objectAuditStore.save(new ObjectAudit(id, new User(userDetails.getId()), getObjectType(obj), AuditedOperation.RENEWAL));
+                return obj;
+            }
+        });
     }
 
     /**
@@ -225,10 +316,25 @@ public class ArchivalDbService {
     public AipSip getAip(String sipId) {
         AipSip sip = aipSipStore.find(sipId);
         notNull(sip, () -> {
-            log.warn("Could not find AIP: %s" + sipId);
+            log.warn("Could not find AIP: " + sipId);
             return new MissingObject(AipSip.class, sipId);
         });
         return sip;
+    }
+
+    /**
+     * Retrieves general object entity.
+     *
+     * @param id
+     * @return ArchivalObject entity
+     */
+    public ArchivalObject getObject(String id) {
+        ArchivalObject archivalObject = archivalObjectStore.find(id);
+        notNull(archivalObject, () -> {
+            log.warn("Could not find object: " + id);
+            return new MissingObject(ArchivalObject.class, id);
+        });
+        return archivalObject;
     }
 
     /**
@@ -236,29 +342,28 @@ public class ArchivalDbService {
      *
      * @param id
      */
+    @Transactional
     public void rollbackAip(String id, String xmlId) {
-        setObjectState(id, ObjectType.SIP, ObjectState.ROLLED_BACK);
-        setObjectState(xmlId, ObjectType.XML, ObjectState.ROLLED_BACK);
+        setObjectState(id, ObjectState.ROLLED_BACK);
+        setObjectState(xmlId, ObjectState.ROLLED_BACK);
     }
 
-    /**
-     * Fill initialized lists passed as parameters with records of files in processing state.
-     *
-     * @param unfinishedSips
-     * @param unfinishedXmls
-     */
-    public void fillUnfinishedFilesLists(List<AipSip> unfinishedSips, List<AipXml> unfinishedXmls) {
-        unfinishedSips.addAll(aipSipStore.findUnfinishedSips());
-        unfinishedXmls.addAll(aipXmlStore.findUnfinishedXmls());
+    public List<ArchivalObject> findObjectsForCleanup(boolean alsoProcessing) {
+        return archivalObjectStore.findObjectsForCleanup(alsoProcessing);
     }
 
-    /**
-     * Deletes records of files in processing state.
-     */
-    public void rollbackUnfinishedFilesRecords() {
-        aipSipStore.rollbackUnfinishedSipsRecords();
-        aipXmlStore.rollbackUnfinishedXmlsRecords();
+    public long getObjectsTotalCount() {
+        return archivalObjectStore.countAll();
     }
+
+    private ObjectType getObjectType(ArchivalObject obj) {
+        if (obj instanceof AipXml)
+            return ObjectType.XML;
+        if (obj instanceof AipSip)
+            return ObjectType.SIP;
+        return ObjectType.OBJECT;
+    }
+
 
     @Inject
     public void setArchivalObjectStore(ArchivalObjectStore archivalObjectStore) {
@@ -273,5 +378,35 @@ public class ArchivalDbService {
     @Inject
     public void setAipXmlStore(AipXmlStore store) {
         this.aipXmlStore = store;
+    }
+
+    @Inject
+    public void setObjectAuditStore(ObjectAuditStore objectAuditStore) {
+        this.objectAuditStore = objectAuditStore;
+    }
+
+    @Inject
+    public void setUserDetails(UserDetails userDetails) {
+        this.userDetails = userDetails;
+    }
+
+    @Inject
+    public void setConfigurationStore(ConfigurationStore configurationStore) {
+        this.configurationStore = configurationStore;
+    }
+
+    @Inject
+    public void setTransactionTemplate(PlatformTransactionManager transactionManager, @Value("${arcstorage.state-change-transaction-timeout}") int timeout) {
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
+        transactionTemplate.setTimeout(timeout);
+    }
+
+    @Inject
+    public void setUserStore(UserStore userStore) {
+        this.userStore = userStore;
+    }
+
+    public void setTransactionTemplateTimeout(int timeout) {
+        transactionTemplate.setTimeout(timeout);
     }
 }

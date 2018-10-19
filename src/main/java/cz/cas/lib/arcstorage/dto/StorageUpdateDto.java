@@ -13,4 +13,5 @@ public class StorageUpdateDto {
     int priority;
     String name;
     String note;
+    boolean writeOnly;
 }

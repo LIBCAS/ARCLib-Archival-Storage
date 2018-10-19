@@ -39,13 +39,13 @@ public class ZfsStorageService implements FsAdapter {
      * @param storage     storage
      * @param keyFilePath path to private key used for authentication to remote server
      */
-    public ZfsStorageService(Storage storage, String keyFilePath,int connectionTimeout) {
+    public ZfsStorageService(Storage storage, String rootDirPath, String keyFilePath, int connectionTimeout) {
         this.storage = storage;
-        String separator = storage.getLocation().startsWith("/") ? "/" : "\\";
+        String separator = rootDirPath.startsWith("/") ? "/" : "\\";
         if (isLocalhost(storage))
-            this.fsProcessor = new LocalFsProcessor(storage);
+            this.fsProcessor = new LocalFsProcessor(storage, rootDirPath);
         else
-            this.fsProcessor = new RemoteFsProcessor(storage, separator, keyFilePath,connectionTimeout);
+            this.fsProcessor = new RemoteFsProcessor(storage, rootDirPath, separator, keyFilePath, connectionTimeout);
     }
 
     @Override

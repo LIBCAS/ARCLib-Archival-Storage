@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * SIP database entity. Its id is used in API calls and is projected into storage layer.
@@ -38,8 +39,8 @@ public class AipSip extends ArchivalObject {
         this.id = id;
     }
 
-    public AipSip(String id, Checksum checksum, ObjectState state) {
-        super(checksum, state);
+    public AipSip(String id, Checksum checksum, User owner, ObjectState state) {
+        super(checksum, owner, state);
         this.id = id;
     }
 
@@ -57,6 +58,25 @@ public class AipSip extends ArchivalObject {
 
     @JsonIgnore
     public AipXml getLatestXml() {
-        return this.xmls.stream().max(Comparator.comparingInt(AipXml::getVersion)).get();
+        return this.xmls.stream().max((a, b) -> {
+            if (a.getCreated().isAfter(b.getCreated()))
+                return 1;
+            else
+                return -1;
+        }).get();
+    }
+
+    @JsonIgnore
+    public List<AipXml> getArchivedXmls() {
+        return this.xmls.stream()
+                .filter(xml -> xml.getState() == ObjectState.ARCHIVED)
+                .collect(Collectors.toList());
+    }
+
+    @JsonIgnore
+    public AipXml getLatestArchivedXml() {
+        return this.xmls.stream()
+                .filter(xml -> xml.getState() == ObjectState.ARCHIVED)
+                .max(Comparator.comparingInt(AipXml::getVersion)).get();
     }
 }

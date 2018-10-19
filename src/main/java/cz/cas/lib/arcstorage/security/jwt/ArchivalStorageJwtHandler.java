@@ -32,7 +32,7 @@ public class ArchivalStorageJwtHandler implements JwtHandler {
 
         User user = store.find(userId);
         if (user != null) {
-            return new UserDelegate(user, true, authorities);
+            return new UserDelegate(user, authorities);
         }
 
         return null;
