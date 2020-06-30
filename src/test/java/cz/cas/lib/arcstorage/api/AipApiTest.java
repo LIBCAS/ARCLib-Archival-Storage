@@ -1,9 +1,11 @@
 package cz.cas.lib.arcstorage.api;
 
+import cz.cas.lib.arcstorage.Initializer;
 import cz.cas.lib.arcstorage.domain.entity.*;
 import cz.cas.lib.arcstorage.domain.store.AipSipStore;
 import cz.cas.lib.arcstorage.domain.store.AipXmlStore;
-import cz.cas.lib.arcstorage.domain.store.ConfigurationStore;
+import cz.cas.lib.arcstorage.domain.store.SystemStateStore;
+import cz.cas.lib.arcstorage.domain.store.Transactional;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.security.Role;
 import cz.cas.lib.arcstorage.security.user.UserStore;
@@ -34,10 +36,9 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.junit4.SpringRunner;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
-import org.springframework.transaction.TransactionTimedOutException;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.inject.Inject;
-import javax.persistence.PersistenceException;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
@@ -45,6 +46,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -52,7 +54,6 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 import static cz.cas.lib.arcstorage.util.Utils.*;
-import static helper.ThrowableAssertion.assertThrown;
 import static java.lang.String.valueOf;
 import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.assertThat;
@@ -60,6 +61,7 @@ import static org.mockito.Matchers.anyObject;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
@@ -68,8 +70,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Most of POST and DELETE requests run asynchronously.
  */
 @RunWith(SpringRunner.class)
-@SpringBootTest
+@SpringBootTest(classes = Initializer.class)
 @WithMockCustomUser(id = "1fa68a7e-eb66-44fd-b492-d4d55e1a95d5")
+@Transactional
 public class AipApiTest implements ApiTest {
 
     private Path tmpFolder;
@@ -95,11 +98,13 @@ public class AipApiTest implements ApiTest {
     private StorageProvider storageProvider;
 
     @Inject
-    private ConfigurationStore configurationStore;
+    private SystemStateStore systemStateStore;
     @Inject
     private ObjectAuditStore objectAuditStore;
     @Inject
     private ArchivalDbService archivalDbService;
+    @Inject
+    private TransactionTemplate transactionTemplate;
 
     @Inject
     private UserStore userStore;
@@ -107,15 +112,16 @@ public class AipApiTest implements ApiTest {
     private static final String SIP_ID = "8f719ff7-8756-4101-9e87-42391ced37f1";
     private static final String SIP_HASH = "bc196bfdd827cf371a2ccca02be989ce";
 
-    private static final String XML1_ID = "XML1testID";
-    private static final String XML2_ID = "XML2testID";
+    private static final String XML1_ID = "d16d05b6-ff4f-44e7-b029-572e2a03fe84";
+    private static final String XML1_CONTENT = "XML1testID";
+    private static final String XML2_ID = "27df45cc-4f93-4ff7-9898-43b51bd50fd5";
+    private static final String XML2_CONTENT = "XML2testID";
 
     private static final String XML1_HASH = "F09E5F27526A0ED7EC5B2D9D5C0B53CF";
     private static final String XML2_HASH = "D5B6402517014CF00C223D6A785A4230";
 
     private static final String BASE = "/api/storage";
     private static final Path SIP_SOURCE_PATH = Paths.get("src/test/resources", "KPW01169310.ZIP");
-    private static final Configuration CONFIG = new Configuration(2, false);
     private static final String USER_ID = "1fa68a7e-eb66-44fd-b492-d4d55e1a95d5";
     private static final String DATA_SPACE = "dataspace";
     private static AipSip sip;
@@ -151,13 +157,13 @@ public class AipApiTest implements ApiTest {
         s3.setPort(7480);
         s3.setPriority(1);
         s3.setStorageType(StorageType.CEPH);
-        s3.setConfig("{\"adapterType\":\"S3\",\"userKey\":\"BLZBGL9ZDD23WD0GL8V8\",\"userSecret\":\"pPYbINKQxEBLdxhzbycUI00UmTD4uaHjDel1IPui\"}");
+        s3.setConfig("{\"adapterType\":\"S3\",\"userKey\":\"somekey\",\"userSecret\":\"somesecret\"}");
         s3.setReachable(true);
     }
 
 
     @After
-    public void after() throws IOException {
+    public void after() throws IOException, SQLException {
         FileUtils.cleanDirectory(tmpFolder.toFile());
     }
 
@@ -165,29 +171,35 @@ public class AipApiTest implements ApiTest {
     public void before() throws StorageException, IOException, NoLogicalStorageAttachedException, NoLogicalStorageReachableException {
         Files.createDirectories(tmpFolder);
         archivalDbService.setTransactionTemplateTimeout(5);
-        for (AipXml aipXml : xmlStore.findAll()) {
-            xmlStore.delete(aipXml);
-        }
-        for (AipSip aipSip : sipStore.findAll()) {
-            sipStore.delete(aipSip);
-        }
+        transactionTemplate.execute(s -> {
+            for (AipXml aipXml : xmlStore.findAll()) {
+                xmlStore.delete(aipXml);
+            }
+            return null;
+        });
+        transactionTemplate.execute(s -> {
+            for (AipSip aipSip : sipStore.findAll()) {
+                sipStore.delete(aipSip);
+            }
+            return null;
+        });
+        transactionTemplate.execute(s -> {
+            User user = new User(USER_ID, "user", "pwd", DATA_SPACE, Role.ROLE_READ_WRITE, null);
+            userStore.save(user);
 
-        configurationStore.save(CONFIG);
-        User user = new User(USER_ID, "user", "pwd", DATA_SPACE, Role.ROLE_READ_WRITE, null);
-        userStore.save(user);
+            sip = new AipSip(SIP_ID, new Checksum(ChecksumType.MD5, SIP_HASH), user, ObjectState.ARCHIVED);
+            aipXml1 = new AipXml(XML1_ID, new Checksum(ChecksumType.MD5, XML1_HASH), user, sip, 1, ObjectState.ARCHIVED);
+            aipXml2 = new AipXml(XML2_ID, new Checksum(ChecksumType.MD5, XML2_HASH), user, sip, 2, ObjectState.ARCHIVED);
 
+            sipStore.save(sip);
+
+            xmlStore.save(aipXml1);
+            xmlStore.save(aipXml2);
+            return null;
+        });
         FileInputStream sipContent = new FileInputStream(SIP_SOURCE_PATH.toFile());
         FileInputStream xml1InputStream = new FileInputStream(Paths.get("./src/test/resources/aip/xml1.xml").toFile());
         FileInputStream xml2InputStream = new FileInputStream(Paths.get("./src/test/resources/aip/xml2.xml").toFile());
-
-        sip = new AipSip(SIP_ID, new Checksum(ChecksumType.MD5, SIP_HASH), user, ObjectState.ARCHIVED);
-        aipXml1 = new AipXml(XML1_ID, new Checksum(ChecksumType.MD5, XML1_HASH), user, sip, 1, ObjectState.ARCHIVED);
-        aipXml2 = new AipXml(XML2_ID, new Checksum(ChecksumType.MD5, XML2_HASH), user, sip, 2, ObjectState.ARCHIVED);
-
-        sipStore.save(sip);
-
-        xmlStore.save(aipXml1);
-        xmlStore.save(aipXml2);
 
         when(fsStorageService.testConnection()).thenReturn(true);
         when(zfsStorageService.testConnection()).thenReturn(true);
@@ -203,26 +215,30 @@ public class AipApiTest implements ApiTest {
         when(zfsStorageService.getStorageState()).thenReturn(storageStateDto);
         when(cephS3StorageService.getStorageState()).thenReturn(storageStateDto);
 
-        AipStateInfoDto aipStateInfoFsDto = new AipStateInfoDto(fsStorageService.getStorage().getName(),
-                StorageType.FS, sip.getState(), sip.getChecksum(), true);
-        when(fsStorageService.getAipInfo(anyString(), anyObject(), anyObject(), anyObject(), anyString()))
+        ObjectConsistencyVerificationResultDto aipState = new ObjectConsistencyVerificationResultDto();
+        aipState.setState(ObjectState.ARCHIVED);
+        aipState.setDatabaseChecksum(sip.getChecksum());
+
+        AipConsistencyVerificationResultDto aipStateInfoFsDto = new AipConsistencyVerificationResultDto(fsStorageService.getStorage().getName(),
+                StorageType.FS, true);
+        aipStateInfoFsDto.setAipState(aipState);
+        when(fsStorageService.getAipInfo(anyObject(), anyObject(), anyString()))
                 .thenReturn(aipStateInfoFsDto);
 
-        AipStateInfoDto aipStateInfoZfsDto = new AipStateInfoDto(zfsStorageService.getStorage().getName(),
-                StorageType.ZFS, sip.getState(), sip.getChecksum(), true);
-        when(zfsStorageService.getAipInfo(anyString(), anyObject(), anyObject(), anyObject(), anyString()))
+        AipConsistencyVerificationResultDto aipStateInfoZfsDto = new AipConsistencyVerificationResultDto(zfsStorageService.getStorage().getName(),
+                StorageType.ZFS, true);
+        aipStateInfoZfsDto.setAipState(aipState);
+        when(zfsStorageService.getAipInfo(anyObject(), anyObject(), anyString()))
                 .thenReturn(aipStateInfoZfsDto);
 
-        AipStateInfoDto aipStateInfoCephDto = new AipStateInfoDto(cephS3StorageService.getStorage().getName(),
-                StorageType.CEPH, sip.getState(), sip.getChecksum(), true);
-        when(cephS3StorageService.getAipInfo(anyString(), anyObject(), anyObject(), anyObject(), anyString()))
+        AipConsistencyVerificationResultDto aipStateInfoCephDto = new AipConsistencyVerificationResultDto(cephS3StorageService.getStorage().getName(),
+                StorageType.CEPH, true);
+        aipStateInfoCephDto.setAipState(aipState);
+        when(cephS3StorageService.getAipInfo(anyObject(), anyObject(), anyString()))
                 .thenReturn(aipStateInfoCephDto);
 
-        when(storageProvider.createAllAdapters()).thenReturn(asList(fsStorageService, zfsStorageService,
-                cephS3StorageService));
-
         List<StorageService> serviceList = asList(fsStorageService, zfsStorageService, cephS3StorageService);
-        when(storageProvider.getReachableStorageServicesByPriorities()).thenReturn(serviceList);
+        when(storageProvider.createAdaptersForRead()).thenReturn(serviceList);
 
         when(storageProvider.createAdapter(s1.getId())).thenReturn(fsStorageService);
 
@@ -327,12 +343,12 @@ public class AipApiTest implements ApiTest {
      */
     @Test
     public void getLatestXml() throws Exception {
-        byte[] xmlContent = mvc(api)
+        String xmlContent = mvc(api)
                 .perform(MockMvcRequestBuilders.get(BASE + "/{aipId}/xml", SIP_ID))
                 .andExpect(status().isOk())
                 .andReturn().getResponse()
-                .getContentAsByteArray();
-        assertThat(xmlContent, equalTo(XML2_ID.getBytes()));
+                .getContentAsString();
+        assertThat(xmlContent, equalTo(XML2_CONTENT));
     }
 
     /**
@@ -356,12 +372,12 @@ public class AipApiTest implements ApiTest {
      */
     @Test
     public void getXmlByVersion() throws Exception {
-        byte[] xmlContent = mvc(api)
+        String xmlContent = mvc(api)
                 .perform(MockMvcRequestBuilders.get(BASE + "/{aipId}/xml", SIP_ID).param("v", "1"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse()
-                .getContentAsByteArray();
-        assertThat(xmlContent, equalTo(XML1_ID.getBytes()));
+                .getContentAsString();
+        assertThat(xmlContent, equalTo(XML1_CONTENT));
     }
 
     /**
@@ -459,7 +475,7 @@ public class AipApiTest implements ApiTest {
         MockMultipartFile sipFile = new MockMultipartFile(
                 "sip", "sip", "text/plain", Files.readAllBytes(SIP_SOURCE_PATH));
         MockMultipartFile xmlFile = new MockMultipartFile(
-                "aipXml", "xml", "text/plain", XML1_ID.getBytes());
+                "aipXml", "xml", "text/plain", XML1_CONTENT.getBytes());
 
         mvc(api)
                 .perform(MockMvcRequestBuilders
@@ -481,7 +497,7 @@ public class AipApiTest implements ApiTest {
         MockMultipartFile sipFile = new MockMultipartFile(
                 "sip", "sip", "text/plain", Files.readAllBytes(SIP_SOURCE_PATH));
         MockMultipartFile xmlFile = new MockMultipartFile(
-                "aipXml", "xml", "text/plain", XML1_ID.getBytes());
+                "aipXml", "xml", "text/plain", XML1_CONTENT.getBytes());
 
         mvc(api)
                 .perform(MockMvcRequestBuilders
@@ -505,7 +521,7 @@ public class AipApiTest implements ApiTest {
         int countOfXmlVersions = aipSip.getXmls().size();
 
         MockMultipartFile xmlFile = new MockMultipartFile(
-                "xml", "xml", "text/plain", XML2_ID.getBytes());
+                "xml", "xml", "text/plain", XML2_CONTENT.getBytes());
 
         mvc(api)
                 .perform(MockMvcRequestBuilders.fileUpload(BASE + "/{aipId}/update", SIP_ID).file(xmlFile)
@@ -514,7 +530,7 @@ public class AipApiTest implements ApiTest {
                         .contentType(MediaType.APPLICATION_JSON)
                 )
                 .andExpect(status().isOk());
-        Thread.sleep(2000);
+        Thread.sleep(3000);
 
         aipSip = sipStore.find(SIP_ID);
         assertThat(aipSip.getXmls().size(), is(countOfXmlVersions + 1));
@@ -533,7 +549,7 @@ public class AipApiTest implements ApiTest {
         List<AipXml> xmls = aipSip.getXmls();
 
         MockMultipartFile xmlFile = new MockMultipartFile(
-                "xml", "xml", "text/plain", XML2_ID.getBytes());
+                "xml", "xml", "text/plain", XML2_CONTENT.getBytes());
         mvc(api)
                 .perform(MockMvcRequestBuilders.fileUpload(BASE + "/{aipId}/update", SIP_ID).file(xmlFile)
                         .param("checksumType", ChecksumType.MD5.toString())
@@ -541,7 +557,6 @@ public class AipApiTest implements ApiTest {
                         .contentType(MediaType.APPLICATION_JSON)
                 )
                 .andExpect(status().isUnprocessableEntity());
-        Thread.sleep(4000);
 
         assertThat(asSet(aipSip.getXmls()), is(asSet(xmls)));
     }
@@ -564,7 +579,7 @@ public class AipApiTest implements ApiTest {
         int countOfXmlVersions = aipSip.getXmls().size();
 
         MockMultipartFile xmlFile = new MockMultipartFile(
-                "xml", "xml", "text/plain", XML2_ID.getBytes());
+                "xml", "xml", "text/plain", XML2_CONTENT.getBytes());
         mvc(api)
                 .perform(MockMvcRequestBuilders.fileUpload(BASE + "/{aipId}/update", SIP_ID).file(xmlFile)
                         .param("checksumType", ChecksumType.MD5.toString())
@@ -575,7 +590,7 @@ public class AipApiTest implements ApiTest {
         aipSip = sipStore.find(SIP_ID);
         assertThat(aipSip.getXmls().size(), is(countOfXmlVersions + 1));
         assertThat(aipSip.getLatestXml().getState(), is(ObjectState.PROCESSING));
-        Thread.sleep(1000);
+        Thread.sleep(3000);
         aipSip = sipStore.find(SIP_ID);
         assertThat(aipSip.getLatestXml().getState(), is(ObjectState.ROLLED_BACK));
     }
@@ -590,15 +605,13 @@ public class AipApiTest implements ApiTest {
         mvc(api)
                 .perform(MockMvcRequestBuilders.put(BASE + "/{aipId}/remove", SIP_ID))
                 .andExpect(status().isOk());
-        Thread.sleep(2000);
         AipSip aipSip = sipStore.find(SIP_ID);
         assertThat(aipSip.getState(), is(ObjectState.REMOVED));
         List<ObjectAudit> operationsOfObject = objectAuditStore.findOperationsOfObject(SIP_ID);
         ObjectAudit latestAudit = operationsOfObject.get(operationsOfObject.size() - 1);
-        assertThat(latestAudit.getObjectType(), is(ObjectType.SIP));
         assertThat(latestAudit.getOperation(), is(AuditedOperation.REMOVAL));
         assertThat(latestAudit.getUser(), is(new User(USER_ID)));
-        assertThat(latestAudit.getObjectId(), is(SIP_ID));
+        assertThat(latestAudit.getIdInDatabase(), is(SIP_ID));
     }
 
     /**
@@ -611,15 +624,13 @@ public class AipApiTest implements ApiTest {
     public void renew() throws Exception {
         AipSip aipSip = sipStore.find(SIP_ID);
         aipSip.setState(ObjectState.REMOVED);
-        sipStore.save(aipSip);
+        transactionTemplate.execute(s -> sipStore.save(aipSip));
 
         mvc(api)
                 .perform(MockMvcRequestBuilders.put(BASE + "/{aipId}/renew", SIP_ID))
                 .andExpect(status().isOk());
-        Thread.sleep(2000);
-
-        aipSip = sipStore.find(SIP_ID);
-        assertThat(aipSip.getState(), is(ObjectState.ARCHIVED));
+        AipSip sipAfterRenew = sipStore.find(SIP_ID);
+        assertThat(sipAfterRenew.getState(), is(ObjectState.ARCHIVED));
     }
 
     /**
@@ -633,8 +644,6 @@ public class AipApiTest implements ApiTest {
         mvc(api)
                 .perform(MockMvcRequestBuilders.delete(BASE + "/{aipId}", SIP_ID))
                 .andExpect(status().isOk());
-        Thread.sleep(2000);
-
         AipSip aipSip = sipStore.find(SIP_ID);
         assertThat(aipSip.getState(), is(ObjectState.DELETED));
 
@@ -654,7 +663,8 @@ public class AipApiTest implements ApiTest {
                 .perform(MockMvcRequestBuilders.get(BASE + "/{aipId}/info", SIP_ID).param("storageId",
                         s1.getId()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.objectState").value("ARCHIVED"))
+                .andDo(print())
+                .andExpect(jsonPath("$.aipState.state").value("ARCHIVED"))
                 .andExpect(jsonPath("$.storageType", equalTo("FS")));
     }
 
@@ -667,7 +677,7 @@ public class AipApiTest implements ApiTest {
 //    @Ignore
 //    public void getStorageState() throws Exception {
 //        mvc(api)
-//                .perform(MockMvcRequestBuilders.getAip(BASE + "/state"))
+//                .perform(MockMvcRequestBuilders.get(BASE + "/state"))
 //                .andExpect(status().isOk())
 //                .andExpect(jsonPath("$.[0].storageStateData.available").value("2345"))
 //                .andExpect(jsonPath("$.[0].storageStateData.used").value("1234"));
@@ -681,7 +691,7 @@ public class AipApiTest implements ApiTest {
     @Test
     public void badFormatMD5() throws Exception {
         MockMultipartFile xmlFile = new MockMultipartFile(
-                "xml", "xml", "text/plain", XML2_ID.getBytes());
+                "xml", "xml", "text/plain", XML2_CONTENT.getBytes());
         mvc(api)
                 .perform(MockMvcRequestBuilders.fileUpload(BASE + "/{aipId}/update", SIP_ID).file(xmlFile)
                         .param("checksumType", ChecksumType.MD5.toString())
@@ -719,13 +729,263 @@ public class AipApiTest implements ApiTest {
      * should not be nested in any method with {@link cz.cas.lib.arcstorage.domain.store.Transactional} annotation
      */
     @Test
-    public void transactionTimeoutsTest() {
+    public void transactionTimeoutsTest() throws Exception {
         archivalDbService.setTransactionTemplateTimeout(0);
-        assertThrown(() -> updateXml()).messageContains("TransactionTimedOutException");
-        assertThrown(() -> remove()).messageContains("TransactionTimedOutException");
-        assertThrown(() -> renew()).messageContains("TransactionTimedOutException");
-        assertThrown(() -> saveIdProvided()).messageContains("TransactionTimedOutException");
-        assertThrown(() -> delete()).messageContains("TransactionTimedOutException");
+
+        //updatexml
+        MockMultipartFile xmlFile = new MockMultipartFile(
+                "xml", "xml", "text/plain", XML2_CONTENT.getBytes());
+        String contentAsString = mvc(api)
+                .perform(MockMvcRequestBuilders.fileUpload(BASE + "/{aipId}/update", SIP_ID).file(xmlFile)
+                        .param("checksumType", ChecksumType.MD5.toString())
+                        .param("checksumValue", XML2_HASH)
+                        .contentType(MediaType.APPLICATION_JSON)
+                )
+                .andReturn().getResponse().getContentAsString();
+        assertThat(contentAsString, containsString("TransactionTimedOutException"));
+
+        //delete
+        contentAsString = mvc(api)
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{aipId}", SIP_ID))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(contentAsString, containsString("TransactionTimedOutException"));
+
+        //remove
+        contentAsString = mvc(api)
+                .perform(MockMvcRequestBuilders.put(BASE + "/{aipId}/remove", SIP_ID))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(contentAsString, containsString("TransactionTimedOutException"));
+
+        //renew
+        contentAsString = mvc(api)
+                .perform(MockMvcRequestBuilders.put(BASE + "/{aipId}/renew", SIP_ID))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(contentAsString, containsString("TransactionTimedOutException"));
+
+
+        String aipId = UUID.randomUUID().toString();
+        String xmlId = "testXmlId";
+
+        MockMultipartFile sipFile = new MockMultipartFile(
+                "sip", "sip", "text/plain", Files.readAllBytes(SIP_SOURCE_PATH));
+        xmlFile = new MockMultipartFile(
+                "aipXml", "xml", "text/plain", xmlId.getBytes());
+
+        //save
+        String xmlHash = "af5e897c3cc424f31b84af579b274626";
+        contentAsString = mvc(api)
+                .perform(MockMvcRequestBuilders
+                        .fileUpload(BASE + "/save").file(sipFile).file(xmlFile)
+                        .param("sipChecksumValue", SIP_HASH)
+                        .param("sipChecksumType", valueOf(ChecksumType.MD5))
+                        .param("aipXmlChecksumValue", xmlHash)
+                        .param("aipXmlChecksumType", valueOf(ChecksumType.MD5))
+                        .param("UUID", UUID.randomUUID().toString()))
+                .andReturn().getResponse()
+                .getContentAsString();
+        assertThat(contentAsString, containsString("TransactionTimedOutException"));
+    }
+
+    @Test
+    public void rollbackEndpoint() throws Exception {
+        //can't rollback XML through rollback AIP endpoint
+        mvc(api)
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{aipId}/rollback", XML2_ID))
+                .andExpect(status().is(403));
+        mvc(api)
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{aipId}/rollback", XML1_ID))
+                .andExpect(status().is(403));
+        //can't rollback AIP which has more than one AIP XMLs
+        mvc(api)
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{aipId}/rollback", SIP_ID))
+                .andExpect(status().is(403));
+        //rollback AIP
+        transactionTemplate.execute(t -> {
+            xmlStore.delete(aipXml2);
+            return null;
+        });
+        mvc(api)
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{aipId}/rollback", SIP_ID))
+                .andExpect(status().is(200));
+        assertThat(archivalDbService.getObject(SIP_ID).getState(), is(ObjectState.ROLLED_BACK));
+        assertThat(archivalDbService.getObject(XML1_ID).getState(), is(ObjectState.ROLLED_BACK));
+        mvc(api)
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{aipId}/rollback", SIP_ID))
+                .andExpect(status().is(200));
+        assertThat(archivalDbService.getObject(SIP_ID).getState(), is(ObjectState.ROLLED_BACK));
+        assertThat(archivalDbService.getObject(XML1_ID).getState(), is(ObjectState.ROLLED_BACK));
+
+        //rollback objects in various non-processing states
+        ArchivalObject obj = new ArchivalObject();
+        obj.setChecksum(new Checksum(ChecksumType.MD5, "blah"));
+        obj.setState(ObjectState.ARCHIVAL_FAILURE);
+        archivalDbService.saveObject(obj);
+        mvc(api)
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{aipId}/rollback", obj.getId()))
+                .andExpect(status().is(200));
+        assertThat(archivalDbService.getObject(obj.getId()).getState(), is(ObjectState.ROLLED_BACK));
+
+        obj.setState(ObjectState.ROLLBACK_FAILURE);
+        archivalDbService.saveObject(obj);
+        mvc(api)
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{aipId}/rollback", obj.getId()))
+                .andExpect(status().is(200));
+        assertThat(archivalDbService.getObject(obj.getId()).getState(), is(ObjectState.ROLLED_BACK));
+
+        obj.setState(ObjectState.DELETED);
+        archivalDbService.saveObject(obj);
+        mvc(api)
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{aipId}/rollback", obj.getId()))
+                .andExpect(status().is(200));
+        assertThat(archivalDbService.getObject(obj.getId()).getState(), is(ObjectState.ROLLED_BACK));
+
+        obj.setState(ObjectState.REMOVED);
+        archivalDbService.saveObject(obj);
+        mvc(api)
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{aipId}/rollback", obj.getId()))
+                .andExpect(status().is(200));
+        assertThat(archivalDbService.getObject(obj.getId()).getState(), is(ObjectState.ROLLED_BACK));
+
+        obj.setState(ObjectState.DELETION_FAILURE);
+        archivalDbService.saveObject(obj);
+        mvc(api)
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{aipId}/rollback", obj.getId()))
+                .andExpect(status().is(200));
+        assertThat(archivalDbService.getObject(obj.getId()).getState(), is(ObjectState.ROLLED_BACK));
+    }
+
+    @Test
+    public void rollbackXmlEndpoint() throws Exception {
+        mvc(api)
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{aipId}/rollbackXml/2", SIP_ID))
+                .andExpect(status().is(200));
+        assertThat(archivalDbService.getObject(SIP_ID).getState(), is(ObjectState.ARCHIVED));
+        assertThat(archivalDbService.getObject(XML1_ID).getState(), is(ObjectState.ARCHIVED));
+        assertThat(archivalDbService.getObject(XML2_ID).getState(), is(ObjectState.ROLLED_BACK));
+
+        mvc(api)
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{aipId}/rollbackXml/2", SIP_ID))
+                .andExpect(status().is(200));
+        assertThat(archivalDbService.getObject(SIP_ID).getState(), is(ObjectState.ARCHIVED));
+        assertThat(archivalDbService.getObject(XML1_ID).getState(), is(ObjectState.ARCHIVED));
+        assertThat(archivalDbService.getObject(XML2_ID).getState(), is(ObjectState.ROLLED_BACK));
+
+        transactionTemplate.execute(status -> {
+            xmlStore.delete(aipXml2);
+            return null;
+        });
+
+        mvc(api)
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{aipId}/rollbackXml/1", SIP_ID))
+                .andExpect(status().is(403));
+        assertThat(archivalDbService.getObject(SIP_ID).getState(), is(ObjectState.ARCHIVED));
+        assertThat(archivalDbService.getObject(XML1_ID).getState(), is(ObjectState.ARCHIVED));
+    }
+
+    @Test
+    public void aipRollbackArchiveRollback() throws Exception {
+        ArchivalObject sipAfterRollback = archivalDbService.getObject(SIP_ID);
+        sipAfterRollback.setState(ObjectState.ROLLED_BACK);
+        AipXml xmlAfterRollback = xmlStore.find(XML1_ID);
+        xmlAfterRollback.setState(ObjectState.ROLLED_BACK);
+        transactionTemplate.execute(t -> {
+            archivalDbService.saveObject(sipAfterRollback);
+            xmlStore.save(xmlAfterRollback);
+            return null;
+        });
+        //try invalid archival retry.. archival retry is only allowed when there is exactly one XML
+        MockMultipartFile sipFile = new MockMultipartFile(
+                "sip", "sip", "text/plain", Files.readAllBytes(SIP_SOURCE_PATH));
+        MockMultipartFile xmlFile = new MockMultipartFile(
+                "aipXml", "xml", "text/plain", XML1_CONTENT.getBytes());
+
+        mvc(api)
+                .perform(MockMvcRequestBuilders
+                        .fileUpload(BASE + "/save").file(sipFile).file(xmlFile)
+                        .param("sipChecksumValue", SIP_HASH)
+                        .param("sipChecksumType", valueOf(ChecksumType.MD5))
+                        .param("aipXmlChecksumValue", XML1_HASH)
+                        .param("aipXmlChecksumType", valueOf(ChecksumType.MD5))
+                        .param("UUID", SIP_ID))
+                .andExpect(status().is5xxServerError());
+        transactionTemplate.execute(t -> {
+            xmlStore.delete(aipXml2);
+            return null;
+        });
+        //valid archival retry
+        mvc(api)
+                .perform(MockMvcRequestBuilders
+                        .fileUpload(BASE + "/save").file(sipFile).file(xmlFile)
+                        .param("sipChecksumValue", SIP_HASH)
+                        .param("sipChecksumType", valueOf(ChecksumType.MD5))
+                        .param("aipXmlChecksumValue", XML1_HASH)
+                        .param("aipXmlChecksumType", valueOf(ChecksumType.MD5))
+                        .param("UUID", SIP_ID))
+                .andExpect(status().isOk());
+
+        Thread.sleep(5000);
+        AipSip aipSip = sipStore.find(SIP_ID);
+        assertThat(aipSip.getState(), is(ObjectState.ARCHIVED));
+        assertThat(aipSip.getXmls().size(), is(1));
+        assertThat(aipSip.getXml(0).getState(), is(ObjectState.ARCHIVED));
+        //except of state are metadata equals
+        sipAfterRollback.setState(ObjectState.ARCHIVED);
+        xmlAfterRollback.setState(ObjectState.ARCHIVED);
+        assertThat(aipSip.toDto().metadataEquals(sipAfterRollback.toDto()), is(true));
+        assertThat(aipSip.getLatestXml().toDto().metadataEquals(xmlAfterRollback.toDto()), is(true));
+        sipAfterRollback.setState(ObjectState.ROLLED_BACK);
+        xmlAfterRollback.setState(ObjectState.ROLLED_BACK);
+        //rollback AIP
+        mvc(api)
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{aipId}/rollback", SIP_ID))
+                .andExpect(status().is(200));
+        ArchivalObject sipAfterSndRollback = archivalDbService.getObject(SIP_ID);
+        ArchivalObject xmlAfterSndRollback = archivalDbService.getObject(XML1_ID);
+        assertThat(sipAfterSndRollback.getState(), is(ObjectState.ROLLED_BACK));
+        assertThat(xmlAfterSndRollback.getState(), is(ObjectState.ROLLED_BACK));
+
+        assertThat(sipAfterRollback.toDto().metadataEquals(sipAfterSndRollback.toDto()), is(true));
+        assertThat(xmlAfterRollback.toDto().metadataEquals(xmlAfterSndRollback.toDto()), is(true));
+    }
+
+    @Test
+    public void xmlRollbackArchiveRollback() throws Exception {
+        ArchivalObject sndXmlBeforeRollback = archivalDbService.getObject(XML2_ID);
+        mvc(api)
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{aipId}/rollbackXml/2", SIP_ID))
+                .andExpect(status().is(200));
+        ArchivalObject sndXmlAfterFirstRollback = archivalDbService.getObject(XML2_ID);
+        assertThat(archivalDbService.getObject(SIP_ID).getState(), is(ObjectState.ARCHIVED));
+        assertThat(archivalDbService.getObject(XML1_ID).getState(), is(ObjectState.ARCHIVED));
+        assertThat(sndXmlAfterFirstRollback.getState(), is(ObjectState.ROLLED_BACK));
+        sndXmlBeforeRollback.setState(ObjectState.ROLLED_BACK);
+        assertThat(sndXmlAfterFirstRollback.toDto().metadataEquals(sndXmlBeforeRollback.toDto()), is(true));
+        sndXmlBeforeRollback.setState(ObjectState.ARCHIVED);
+
+        MockMultipartFile xmlFile = new MockMultipartFile(
+                "xml", "xml", "text/plain", XML2_CONTENT.getBytes());
+        mvc(api)
+                .perform(MockMvcRequestBuilders.fileUpload(BASE + "/{aipId}/update", SIP_ID).file(xmlFile)
+                        .param("checksumType", ChecksumType.MD5.toString())
+                        .param("checksumValue", XML2_HASH)
+                        .contentType(MediaType.APPLICATION_JSON)
+                )
+                .andExpect(status().isOk());
+        Thread.sleep(3000);
+
+        AipSip aipSip = sipStore.find(SIP_ID);
+        assertThat(aipSip.getXmls().size(), is(2));
+        AipXml sndXmlAfterArchivalRetry = aipSip.getLatestXml();
+        assertThat(sndXmlAfterArchivalRetry.getState(), is(ObjectState.ARCHIVED));
+        assertThat(sndXmlBeforeRollback.toDto().metadataEquals(sndXmlAfterArchivalRetry.toDto()), is(true));
+
+        mvc(api)
+                .perform(MockMvcRequestBuilders.delete(BASE + "/{aipId}/rollbackXml/2", SIP_ID))
+                .andExpect(status().is(200));
+        assertThat(archivalDbService.getObject(SIP_ID).getState(), is(ObjectState.ARCHIVED));
+        assertThat(archivalDbService.getObject(XML1_ID).getState(), is(ObjectState.ARCHIVED));
+        ArchivalObject sndXmlAfterSndRollback = archivalDbService.getObject(XML2_ID);
+        assertThat(sndXmlAfterSndRollback.toDto().metadataEquals(sndXmlAfterFirstRollback.toDto()), is(true));
     }
 
     private static String toXmlId(String aipId, int version) {
@@ -733,7 +993,7 @@ public class AipApiTest implements ApiTest {
     }
 
     @Inject
-    public void setTmpFolder(@Value("${arcstorage.tmp-folder}") String path) {
+    public void setTmpFolder(@Value("${arcstorage.tmpFolder}") String path) {
         this.tmpFolder = Paths.get(path);
     }
 

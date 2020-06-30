@@ -116,10 +116,21 @@ public class StorageUtils {
         return sipId + "_xml_" + version;
     }
 
+    public static boolean isXmlId(String storageId) {
+        return storageId.contains("_xml_");
+    }
+
     public static int extractXmlVersion(String xmlStorageId) {
         Matcher matcher = Pattern.compile("\\w+_xml_(\\d+)").matcher(xmlStorageId);
         if (!matcher.find())
             throw new GeneralException("trying to extract XML version from string which is not valid XML storageId");
         return Integer.parseInt(matcher.group(1));
+    }
+
+    public static String extractSipId(String xmlStorageId) {
+        Matcher matcher = Pattern.compile("([\\w|\\-]+)_xml_\\d+").matcher(xmlStorageId);
+        if (!matcher.find())
+            throw new GeneralException("trying to extract SIP ID from string which is not valid XML storageId");
+        return matcher.group(1);
     }
 }

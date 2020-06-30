@@ -1,10 +1,11 @@
 package cz.cas.lib.arcstorage.storagesync;
 
+import com.querydsl.jpa.impl.JPAQuery;
 import cz.cas.lib.arcstorage.domain.store.DomainStore;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
-import java.util.List;
+import java.util.*;
 
 @Repository
 public class ObjectAuditStore extends DomainStore<ObjectAudit, QObjectAudit> {
@@ -12,14 +13,34 @@ public class ObjectAuditStore extends DomainStore<ObjectAudit, QObjectAudit> {
         super(ObjectAudit.class, QObjectAudit.class);
     }
 
-    public List<ObjectAudit> findOperationsToBeSyncedInPhase2(Instant from) {
-        List<ObjectAudit> fetch = query()
+    /**
+     * Finds object operations (which should be synced) within specified time range, ordered by operation registration in time ASC.
+     * If there are multiple operations of the same object, only the newest audit is present in the result list.
+     *
+     * @param from null for no lower limit
+     * @param to   null for no upper limit
+     * @return list of operations to sync
+     */
+    public List<ObjectAudit> findAuditsForSync(Instant from, Instant to) {
+        JPAQuery<ObjectAudit> query = query()
                 .select(qObject())
-                .where(qObject().created.goe(from))
-                .where(qObject().operation.in(AuditedOperation.DELETION, AuditedOperation.REMOVAL, AuditedOperation.RENEWAL))
-                .fetch();
+                .orderBy(qObject().created.desc());
+        if (from != null)
+            query.where(qObject().created.goe(from));
+        if (to != null)
+            query.where(qObject().created.loe(to));
+        List<ObjectAudit> fetch = query.fetch();
         detachAll();
-        return fetch;
+        List<ObjectAudit> lastOpsList = new ArrayList<>();
+        Set<String> registeredOps = new HashSet<>();
+        fetch.forEach(op -> {
+            if (!registeredOps.contains(op.getIdInDatabase())) {
+                registeredOps.add(op.getIdInDatabase());
+                lastOpsList.add(op);
+            }
+        });
+        Collections.reverse(lastOpsList);
+        return lastOpsList;
     }
 
     /**
@@ -30,7 +51,7 @@ public class ObjectAuditStore extends DomainStore<ObjectAudit, QObjectAudit> {
     public List<ObjectAudit> findOperationsOfObject(String objectId) {
         List<ObjectAudit> fetch = query()
                 .select(qObject())
-                .where(qObject().objectId.eq(objectId))
+                .where(qObject().idInDatabase.eq(objectId))
                 .orderBy(qObject().created.asc())
                 .fetch();
         detachAll();

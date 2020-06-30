@@ -21,9 +21,15 @@ public class StorageSyncStatusStore extends DomainStore<StorageSyncStatus, QStor
     }
 
     public boolean anyInInitialOrFinishingPhase() {
-        Object o = query().where(qObject().phase.in(StorageSyncPhase.INIT,StorageSyncPhase.FINISHING)).fetchFirst();
+        StorageSyncStatus o = query().select(qObject()).where(qObject().phase.in(StorageSyncPhase.INIT, StorageSyncPhase.POST_SYNC_CHECK)).fetchFirst();
         detachAll();
         return o != null;
+    }
+
+    public StorageSyncStatus anySynchronizing() {
+        StorageSyncStatus s = query().select(qObject()).where(qObject().phase.ne(StorageSyncPhase.DONE)).fetchFirst();
+        detachAll();
+        return s;
     }
 
     @Override

@@ -1,15 +1,23 @@
 package cz.cas.lib.arcstorage.storagesync;
 
 public enum StorageSyncPhase {
+    /** waiting for the quiet time without new writes, creating dataspace on the new storage**/
     INIT,
     /**
-     * those which were already archived when sync started
+     * copying those objects which were already archived when sync started
      */
     COPYING_ARCHIVED_OBJECTS,
     /**
      * propagating REMOVE, RENEW and DELETE operations according to {@link AuditedOperation} log
+     * and setting system to read-only mode at the end
      */
     PROPAGATING_OPERATIONS,
-    FINISHING,
+    /**
+     * checking state of all copied objects at new storage
+     */
+    POST_SYNC_CHECK,
+    /**
+     * done
+     */
     DONE
 }

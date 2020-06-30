@@ -11,8 +11,10 @@ import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.checksumComputationPrecheck;
 import static cz.cas.lib.arcstorage.util.Utils.bytesToHexString;
@@ -23,7 +25,7 @@ import static cz.cas.lib.arcstorage.util.Utils.bytesToHexString;
  * <ul>
  * <li>initial checksum of the object</li>
  * <li>creation time of the object</li>
- * <li>state of object matching {@link ObjectState}, except ARCHIVAL_FAILURE state which signalizes fail of storage and thus is not retrievable (thus objects marked as ARCHIVAL_FAILURE in database may not exist on storage or have PROCESSING state on storage)</li>
+ * <li>state of object matching {@link ObjectState}, except states with {@link ObjectState#metadataMustBeStoredAtLogicalStorage} = false, e.g. {@link ObjectState#ARCHIVAL_FAILURE} which signalizes fail of storage and thus is not retrievable (objects marked with such state in database may not exist on storage or have PROCESSING state on storage)</li>
  * <li>for AIP XML its version and ID of SIP</li>
  * </ul>
  * The implementation class should specify how it fulfill this in the javadoc.
@@ -35,6 +37,19 @@ public interface StorageService {
 
     Storage getStorage();
 
+    /**
+     * Retrieves archival objects data from the dataSpace based on their physical representations in the storage
+     * <p>
+     *      The order is important - if there are any XMLs, first its SIP must appear in a list
+     * </p>
+     * <p>
+     *     Implementation must fill {@link ArchivalObjectDto#objectType}
+     * </p>
+     * @param dataSpace dataSpace
+     * @return archival objects retrieved
+     * @throws StorageException
+     */
+    List<ArchivalObjectDto> createDtosForAllObjects(String dataSpace) throws StorageException;
 
     /**
      * Stores Aip objects into storage.
@@ -49,7 +64,7 @@ public interface StorageService {
      * If the object already exists it will be overwritten.
      * </p>
      * <p>
-     * This operation may take a while and therefore sets object state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set DB state to PROCESSING before calling this method and to desired state after the method is doneInThisPhase.
+     * This operation may take a while and therefore sets object state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set DB state to PROCESSING before calling this method and to desired state after the method is done.
      * </p>
      *
      * @param aipDto    DTO with open and readable input streams of objects
@@ -82,21 +97,26 @@ public interface StorageService {
      * If the object already exists it will be overwritten.
      * </p>
      * <p>
-     * The operation doneInThisPhase by the storage depends on the {@link ArchivalObjectDto#state} value:
+     * The operation done by the storage depends on the {@link ArchivalObjectDto#state} value:
      * <ul>
-     * <li>{@link ObjectState#DELETED},{@link ObjectState#DELETION_FAILURE} or {@link ObjectState#ROLLED_BACK} or NULL -> only the metadata about this state is stored.</li>
+     * <li>{@link ObjectState#DELETED},{@link ObjectState#DELETION_FAILURE}, {@link ObjectState#ARCHIVAL_FAILURE}, {@link ObjectState#ROLLED_BACK}, {@link ObjectState#ROLLBACK_FAILURE} or NULL -> only the metadata about this state is stored.</li>
      * <li>{@link ObjectState#PROCESSING} or {@link ObjectState#ARCHIVED} -> the data and metadata are stored. For both these initial states, the final state stored on the storage is {@link ObjectState#ARCHIVED} (supposed the operation was successful).</li>
      * <li>{@link ObjectState#REMOVED} -> the data and metadata are stored.</li>
-     * <li>{@link ObjectState#ARCHIVAL_FAILURE} -> {@link IllegalArgumentException} is thrown</li>
      * </ul>
      * </p>
      *
      * @param objectDto DTO with open and readable input stream of the object
      * @param rollback  flag watched for rollback signal
      * @throws StorageException         in the case of error
-     * @throws IllegalArgumentException if the object to be stored has {@link ObjectState#ARCHIVAL_FAILURE}
      */
     void storeObject(ArchivalObjectDto objectDto, AtomicBoolean rollback, String dataSpace) throws StorageException;
+
+    /**
+     * Stores only metadata of the object.
+     *
+     * @param objectDto
+     */
+    void storeObjectMetadata(ArchivalObjectDto objectDto, String dataSpace) throws StorageException;
 
     /**
      * Retrieves reference to the object. Caller is responsible for calling {@link ObjectRetrievalResource#close()} once the streams are not needed anymore.
@@ -109,9 +129,6 @@ public interface StorageService {
 
     /**
      * Deletes SIP object from storage. Must not fail if SIP is already physically deleted.
-     * <p>
-     * This operation may take a while and therefore sets object state to PROCESSING when it starts. It is expected that calling service will also do two-phase state update i.e. set state to PROCESSING before calling this method and to desired state after the method is doneInThisPhase.
-     * </p>
      *
      * @param id of the SIP
      * @throws StorageException in the case of error
@@ -135,47 +152,56 @@ public interface StorageService {
     void renew(String id, String dataSpace) throws StorageException;
 
     /**
-     * Rollbacks AIP and its first XML object from storage. Used in case of cleaning process after storage/application failure.
+     * Rollbacks AIP and all its XML object from storage. Used in case of cleaning process after storage/application failure.
      * <p>
      * In any case (object not found / already rolled back / object which was never actually stored / inconsistent ...) this method has to set ROLLED_BACK state in metadata and delete the object (if exists).
      * </p>
-     * <p>
-     * This operation may take a while and therefore sets object state to PROCESSING when it starts.
-     * </p>
      *
-     * @param sipId if of the SIP
+     * @param aipDto dto, input streams may be null
      * @throws StorageException in the case of error
      */
-    void rollbackAip(String sipId, String dataSpace) throws StorageException;
+    void rollbackAip(AipDto aipDto, String dataSpace) throws StorageException;
 
     /**
-     * Rollbacks object from storage. Used in case of cleaning process after storage/application failure.
+     * Rolls back object from storage. Used in case of cleaning process after storage/application failure.
      * <p>
      * In any case (object not found / already rolled back / object which was never actually stored / inconsistent ...) this method has to set ROLLED_BACK state in metadata and delete the object (if exists).
      * </p>
-     * <p>
-     * This operation may take a while and therefore sets object state to PROCESSING when it starts.
-     * </p>
      *
-     * @param id of the object
+     * @param objectDto dto, input stream may be null
      * @throws StorageException in the case of error
      */
-    void rollbackObject(String id, String dataSpace) throws StorageException;
+    void rollbackObject(ArchivalObjectDto objectDto, String dataSpace) throws StorageException;
 
     /**
      * Retrieves information about AIP such as its state etc. and also info about SIP and XMLs checksums.
      *
-     * @param aipId       id of the AIP
-     * @param sipChecksum expected checksum to be compared with storage checksum to verify fixity
-     * @param objectState state of the AIP in database (it is used to getAip clue if it make sense to look for the fixity of the object e.g. when it is deleted)
-     * @param xmlVersions map of xml version numbers and their expected checksums
+     * @param aip  filled up with aip properties from DB
+     * @param xmls list of xml version numbers with XML {@link ArchivalObjectDto}s as values
      * @return AipStateInfoDto object
-     * @throws StorageException in the case of error
+     * @throws StorageException in the case of error, e.g. if the file could not be found
      */
-    AipStateInfoDto getAipInfo(String aipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions, String dataSpace) throws StorageException;
+    AipConsistencyVerificationResultDto getAipInfo(ArchivalObjectDto aip, Map<Integer, ArchivalObjectDto> xmls, String dataSpace) throws StorageException;
 
     /**
-     * Returns state of currently used storage.
+     * Verifies that the storage contains valid state metadata objects for all input objects. If verification of some object fail, immediately returns.
+     * <br>
+     * Counter is incremented after every verification.
+     * <br>
+     * Implementation should skip verification of objects with state which has {@link ObjectState#metadataMustBeStoredAtLogicalStorage}=false, while incrementing the counter.
+     *
+     * @return null if verification succeeded, first object for which the verification didn't succeed otherwise
+     * @throws StorageException in the case of error
+     */
+    ArchivalObjectDto verifyStateOfObjects(List<ArchivalObjectDto> expectedStates, AtomicLong counter) throws StorageException;
+
+    /**
+     * Returns state of currently used storage. May fail if storage is unreachable. The storage state data should contain at least:
+     * <ul>
+     *     <li>health of the storage and its parts</li>
+     *     <li>memory info (free, used etc.)</li>
+     *     <li>self-healing (scrubbing) info (if supported)</li>
+     * </ul>
      *
      * @return StorageStateDto
      * @throws StorageException in the case of error
@@ -207,7 +233,7 @@ public interface StorageService {
      * @throws IOStorageException               in case of any {@link IOException}
      * @throws FileCorruptedAfterStoreException in case the verification fails
      */
-    default boolean verifyChecksum(InputStream objectStream, Checksum expectedChecksum, AtomicBoolean rollback) throws IOStorageException, FileCorruptedAfterStoreException {
+    default boolean verifyChecksum(InputStream objectStream, Checksum expectedChecksum, AtomicBoolean rollback, Storage storage) throws IOStorageException, FileCorruptedAfterStoreException {
         try {
             Checksum checksum = null;
             checksum = computeChecksumRollbackAware(objectStream, expectedChecksum.getType(), rollback);
@@ -215,12 +241,12 @@ public interface StorageService {
                 return false;
             if (!checksum.getValue().equalsIgnoreCase(expectedChecksum.getValue())) {
                 rollback.set(true);
-                throw new FileCorruptedAfterStoreException(checksum, expectedChecksum);
+                throw new FileCorruptedAfterStoreException(checksum, expectedChecksum, storage);
             }
             return true;
         } catch (IOException e) {
             rollback.set(true);
-            throw new IOStorageException("error occured while computing sipStorageChecksum", e);
+            throw new IOStorageException("error occured while computing sipStorageChecksum", e, storage);
         } catch (Exception e) {
             if (e instanceof FileCorruptedAfterStoreException)
                 throw e;

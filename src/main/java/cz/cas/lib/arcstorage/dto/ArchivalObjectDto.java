@@ -1,13 +1,16 @@
 package cz.cas.lib.arcstorage.dto;
 
+import cz.cas.lib.arcstorage.domain.entity.ArchivalObject;
+import cz.cas.lib.arcstorage.domain.entity.ObjectType;
 import cz.cas.lib.arcstorage.domain.entity.User;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.io.InputStream;
 import java.time.Instant;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.Objects;
 
 /**
  * DTO for archive file containing its id, checksum and optionally input stream and other data.
@@ -16,6 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Setter
 @Getter
 @AllArgsConstructor
+@NoArgsConstructor
 public class ArchivalObjectDto {
     private String storageId;
     private String databaseId;
@@ -28,6 +32,20 @@ public class ArchivalObjectDto {
     private InputStream inputStream;
     private ObjectState state;
     private Instant created;
+    /**
+     * set automatically when DTO is created via {@link ArchivalObject#toDto()}
+     * may be used as a hint but also may be not filled.. double check that it is filled before using
+     */
+    private ObjectType objectType;
+
+    public boolean metadataEquals(ArchivalObjectDto that) {
+        if (this == that) return true;
+        if (that == null || getClass() != that.getClass()) return false;
+        return Objects.equals(getStorageId(), that.getStorageId()) &&
+                Objects.equals(getChecksum(), that.getChecksum()) &&
+                getState() == that.getState() &&
+                Objects.equals(getCreated(), that.getCreated());
+    }
 
     @Override
     public boolean equals(Object o) {
@@ -61,6 +79,7 @@ public class ArchivalObjectDto {
         this.inputStream = newInputStream;
         this.state = oldDto.state;
         this.created = oldDto.created;
+        this.objectType = oldDto.objectType;
     }
 
     @Override
@@ -68,10 +87,6 @@ public class ArchivalObjectDto {
         return "ArchivalObjectDto{" +
                 "storageId='" + storageId + '\'' +
                 ", databaseId='" + databaseId + '\'' +
-                ", checksum=" + checksum +
-                ", owner=" + owner +
-                ", state=" + state +
-                ", created=" + created +
                 '}';
     }
 }

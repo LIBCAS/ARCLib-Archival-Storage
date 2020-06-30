@@ -50,4 +50,9 @@ public class ObjectCouldNotBeRetrievedException extends Exception {
                 corruptedObjects +
                 '}';
     }
+
+    @Override
+    public String getMessage() {
+        return toString();
+    }
 }

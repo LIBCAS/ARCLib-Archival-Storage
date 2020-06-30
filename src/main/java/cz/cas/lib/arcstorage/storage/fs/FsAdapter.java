@@ -5,8 +5,10 @@ import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Adapter for {@link ZfsStorageService} and {@link FsStorageService} for more elegant sharing of code of the {@link LocalFsProcessor} and {@link RemoteFsProcessor}.
@@ -39,6 +41,11 @@ public interface FsAdapter extends StorageService {
     }
 
     @Override
+    default void storeObjectMetadata(ArchivalObjectDto objectDto, String dataSpace) throws StorageException {
+        getFsProcessor().storeObjectMetadata(objectDto, dataSpace);
+    }
+
+    @Override
     default ObjectRetrievalResource getObject(String id, String dataSpace) throws StorageException {
         return getFsProcessor().getObject(id,dataSpace);
     }
@@ -59,22 +66,27 @@ public interface FsAdapter extends StorageService {
     }
 
     @Override
-    default void rollbackAip(String sipId, String dataSpace) throws StorageException {
-        getFsProcessor().rollbackAip(sipId,dataSpace);
+    default void rollbackAip(AipDto aipDto, String dataSpace) throws StorageException {
+        getFsProcessor().rollbackAip(aipDto, dataSpace);
     }
 
     @Override
-    default void rollbackObject(String sipId, String dataSpace) throws StorageException {
-        getFsProcessor().rollbackObject(sipId,dataSpace);
+    default void rollbackObject(ArchivalObjectDto dto, String dataSpace) throws StorageException {
+        getFsProcessor().rollbackObject(dto, dataSpace);
     }
 
     @Override
-    default AipStateInfoDto getAipInfo(String aipId, Checksum sipChecksum, ObjectState objectState, Map<Integer, Checksum> xmlVersions, String dataSpace) throws StorageException {
-        return getFsProcessor().getAipInfo(aipId, sipChecksum, objectState, xmlVersions,dataSpace);
+    default AipConsistencyVerificationResultDto getAipInfo(ArchivalObjectDto aip, Map<Integer, ArchivalObjectDto> xmls, String dataSpace) throws StorageException {
+        return getFsProcessor().getAipInfo(aip, xmls, dataSpace);
     }
 
     @Override
     default void createNewDataSpace(String dataSpace) throws IOStorageException {
         getFsProcessor().createNewDataSpace(dataSpace);
+    }
+
+    @Override
+    default ArchivalObjectDto verifyStateOfObjects(List<ArchivalObjectDto> objects, AtomicLong counter) throws StorageException {
+        return getFsProcessor().verifyStateOfObjects(objects, counter);
     }
 }

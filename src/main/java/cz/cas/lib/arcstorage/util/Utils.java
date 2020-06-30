@@ -11,7 +11,15 @@ import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.service.exception.ConfigParserException;
 import cz.cas.lib.arcstorage.storage.StorageService;
+import cz.cas.lib.arcstorage.storage.exception.CmdProcessException;
+import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
+import cz.cas.lib.arcstorage.storage.exception.SshException;
+import net.schmizz.sshj.SSHClient;
+import net.schmizz.sshj.connection.ConnectionException;
+import net.schmizz.sshj.connection.channel.direct.Session;
+import net.schmizz.sshj.transport.TransportException;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.aop.framework.Advised;
 import org.springframework.aop.support.AopUtils;
 
@@ -144,18 +152,6 @@ public class Utils {
 
     public static <T extends RuntimeException> void in(Integer n, Integer min, Integer max, Supplier<T> supplier) {
         if (n < min || n > max) {
-            throw supplier.get();
-        }
-    }
-
-    public static <T extends RuntimeException> void gte(Integer n, Integer l, Supplier<T> supplier) {
-        if (n < l) {
-            throw supplier.get();
-        }
-    }
-
-    public static <T extends RuntimeException> void gt(BigDecimal n, BigDecimal l, Supplier<T> supplier) {
-        if (n.compareTo(l) <= 0) {
             throw supplier.get();
         }
     }
@@ -306,34 +302,6 @@ public class Utils {
         }
     }
 
-    public static String strSA(String storageName, String aipId) {
-        return strS(storageName) + strA(aipId);
-    }
-
-    public static String strSX(String storageName, String xmlId) {
-        return strS(storageName) + strX(xmlId);
-    }
-
-    public static String strSF(String storageName, String fileId) {
-        return strS(storageName) + strF(fileId);
-    }
-
-    public static String strA(String aipId) {
-        return "Aip: " + aipId + " ";
-    }
-
-    public static String strF(String fileId) {
-        return "File: " + fileId + " ";
-    }
-
-    public static String strX(String xmlId) {
-        return "Xml: " + xmlId + " ";
-    }
-
-    public static String strS(String storageName) {
-        return "Storage: " + storageName + " ";
-    }
-
     public static String bytesToHexString(byte[] bytes) {
         final StringBuilder builder = new StringBuilder();
         for (byte b : bytes) {
@@ -374,50 +342,6 @@ public class Utils {
         }
     }
 
-    public static class Pair<L, R> implements Serializable {
-        private L l;
-        private R r;
-
-        public Pair(L l, R r) {
-            this.l = l;
-            this.r = r;
-        }
-
-        public L getL() {
-            return l;
-        }
-
-        public R getR() {
-            return r;
-        }
-
-        public void setL(L l) {
-            this.l = l;
-        }
-
-        public void setR(R r) {
-            this.r = r;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-
-            Pair<?, ?> pair = (Pair<?, ?>) o;
-
-            if (l != null ? !l.equals(pair.l) : pair.l != null) return false;
-            return r != null ? r.equals(pair.r) : pair.r == null;
-        }
-
-        @Override
-        public int hashCode() {
-            int result = l != null ? l.hashCode() : 0;
-            result = 31 * result + (r != null ? r.hashCode() : 0);
-            return result;
-        }
-    }
-
     /**
      * Executes process wia command.
      *
@@ -433,7 +357,7 @@ public class Utils {
             processBuilder.redirectErrorStream(true).redirectOutput(tmp);
             final Process process = processBuilder.start();
             final int exitCode = process.waitFor();
-            return new Pair<>(exitCode, Files.readAllLines(tmp.toPath()));
+            return Pair.of(exitCode, Files.readAllLines(tmp.toPath()));
         } catch (InterruptedException | IOException ex) {
             throw new GeneralException("unexpected error while executing process", ex);
         } finally {
@@ -449,6 +373,14 @@ public class Utils {
             throw new BadRequestException(id + " is not valid UUID");
         }
     }
+
+    public static void checkIpv4(String ip) throws BadRequestException {
+        String PATTERN = "^((0|1\\d?\\d?|2[0-4]?\\d?|25[0-5]?|[3-9]\\d?)\\.){3}(0|1\\d?\\d?|2[0-4]?\\d?|25[0-5]?|[3-9]\\d?)$";
+        if (!ip.matches(PATTERN))
+            throw new BadRequestException(ip + " is not valid IPv4 address");
+    }
+
+
 
     public static byte[] inputStreamToBytes(InputStream ios) throws IOException {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -470,5 +402,37 @@ public class Utils {
     public static LocalTime extractTime(Instant instant) {
         ZonedDateTime zdt = instant.atZone(ZoneId.systemDefault());
         return zdt.toLocalTime();
+    }
+
+    public static List<String> fetchDataFromRemote(SSHClient ssh, String cmd, Storage storage) throws CmdProcessException, IOStorageException, SshException {
+        try (Session s = ssh.startSession()) {
+            Session.Command response = s.exec(cmd);
+            response.join();
+            if (response.getExitStatus() != 0)
+                throw new CmdProcessException(cmd, new BufferedReader(new InputStreamReader(response.getErrorStream())).lines().collect(Collectors.toList()), storage);
+            try (BufferedReader output = new BufferedReader(new InputStreamReader(response.getInputStream()))) {
+                List<String> lines = new ArrayList<>();
+                String line = output.readLine();
+                if (line == null)
+                    return lines;
+                while (line != null) {
+                    lines.add(line);
+                    line = output.readLine();
+                }
+                return lines;
+            } catch (IOException e) {
+                throw new IOStorageException(e, storage);
+            }
+        } catch (ConnectionException | TransportException e) {
+            throw new SshException(e, storage);
+        }
+    }
+
+    public static List<String> fetchDataFromLocal(String cmd, Storage storage) throws CmdProcessException {
+        Pair<Integer, List<String>> processResult = executeProcessCustomResultHandle(cmd.split(" "));
+        List<String> lines = processResult.getRight();
+        if (!processResult.getLeft().equals(0))
+            throw new CmdProcessException(cmd, lines, storage);
+        return processResult.getRight();
     }
 }

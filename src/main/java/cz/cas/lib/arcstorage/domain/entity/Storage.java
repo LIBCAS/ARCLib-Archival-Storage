@@ -22,6 +22,9 @@ public class Storage extends DomainObject {
     @NotNull
     private String host;
     private int port;
+    /**
+     * storage with higher priority is preferred for read against the one with lower priority
+     */
     private int priority;
     @Enumerated(EnumType.STRING)
     @Column(name = "type")
@@ -33,13 +36,13 @@ public class Storage extends DomainObject {
      */
     private String config;
     /**
-     * set to true for new storage added to the running system, or set to true manually by admin for whatever reason
-     */
-    private boolean writeOnly;
-    /**
      * tested and updated by the system automatically, with {@link StorageService#testConnection()}
      */
     private boolean reachable;
+    /**
+     * set to true for new storage added to the running system, managed completely by the system
+     */
+    private boolean synchronizing;
 
     public Storage(String id) {
         this.id = id;
@@ -48,15 +51,9 @@ public class Storage extends DomainObject {
     @Override
     public String toString() {
         return "Storage{" +
-                "name='" + name + '\'' +
-                ", host='" + host + '\'' +
-                ", port=" + port +
-                ", priority=" + priority +
+                "id='" + id + '\'' +
+                ", name='" + name + '\'' +
                 ", storageType=" + storageType +
-                ", note='" + note + '\'' +
-                ", config='" + config + '\'' +
-                ", writeOnly=" + writeOnly +
-                ", reachable=" + reachable +
                 '}';
     }
 }

@@ -3,7 +3,6 @@ package cz.cas.lib.arcstorage.security.user;
 import cz.cas.lib.arcstorage.domain.entity.QUser;
 import cz.cas.lib.arcstorage.domain.entity.User;
 import cz.cas.lib.arcstorage.domain.store.DatedStore;
-import cz.cas.lib.arcstorage.domain.store.Transactional;
 import cz.cas.lib.arcstorage.security.Role;
 import org.springframework.stereotype.Repository;
 
@@ -17,7 +16,6 @@ public class UserStore extends DatedStore<User, QUser> {
         super(User.class, QUser.class);
     }
 
-    @Transactional
     public User save(User entity) {
         notNull(entity, () -> new IllegalArgumentException("entity"));
 

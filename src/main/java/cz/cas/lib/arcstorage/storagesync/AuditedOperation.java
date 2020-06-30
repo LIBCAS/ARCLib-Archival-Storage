@@ -1,8 +1,18 @@
 package cz.cas.lib.arcstorage.storagesync;
 
 /**
- * currently only removal deletion and renewals are audited
+ * first archival attempts are not audited
  */
 public enum AuditedOperation {
-    REMOVAL, DELETION, RENEWAL
+    REMOVAL,
+    DELETION,
+    RENEWAL,
+    /**
+     * rollback API requests (not including rollbacks which were done automatically when archival attempt failed)
+     */
+    ROLLBACK,
+    /**
+     * archiving after rollback
+     */
+    ARCHIVAL_RETRY
 }

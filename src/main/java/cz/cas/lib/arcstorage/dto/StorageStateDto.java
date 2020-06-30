@@ -15,5 +15,13 @@ import java.util.Map;
 @AllArgsConstructor
 public class StorageStateDto {
     private Storage storage;
-    private Map<String, String> storageStateData;
+    private Map<String, Object> storageStateData;
+
+    @Override
+    public String toString() {
+        return "StorageStateDto{" +
+                "storage=" + storage +
+                ", storageStateData=" + storageStateData +
+                '}';
+    }
 }

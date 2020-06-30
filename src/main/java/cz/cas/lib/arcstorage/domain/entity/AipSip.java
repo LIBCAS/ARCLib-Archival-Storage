@@ -2,9 +2,11 @@ package cz.cas.lib.arcstorage.domain.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
 import cz.cas.lib.arcstorage.dto.Checksum;
 import cz.cas.lib.arcstorage.dto.ObjectState;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import javax.persistence.Entity;
 import javax.persistence.FetchType;
@@ -32,6 +34,7 @@ public class AipSip extends ArchivalObject {
     }
 
     @OneToMany(mappedBy = "sip", fetch = FetchType.EAGER)
+    @Setter
     private List<AipXml> xmls = new ArrayList<>();
 
 
@@ -44,7 +47,7 @@ public class AipSip extends ArchivalObject {
         this.id = id;
     }
 
-    private void addXml(AipXml aipXml) {
+    public void addXml(AipXml aipXml) {
         xmls.add(aipXml);
     }
 
@@ -58,12 +61,23 @@ public class AipSip extends ArchivalObject {
 
     @JsonIgnore
     public AipXml getLatestXml() {
-        return this.xmls.stream().max((a, b) -> {
-            if (a.getCreated().isAfter(b.getCreated()))
-                return 1;
-            else
-                return -1;
-        }).get();
+        switch (this.xmls.size()) {
+            case 0:
+                throw new IllegalStateException();
+            case 1:
+                return this.xmls.get(0);
+            default:
+                AipXml latestAccordingToTimestamp = this.xmls.stream().max((a, b) -> {
+                    if (a.getCreated().isAfter(b.getCreated()))
+                        return 1;
+                    else
+                        return -1;
+                }).get();
+                AipXml latestAccordingToVersionNumber = this.xmls.stream().max(Comparator.comparingInt(AipXml::getVersion)).get();
+                if (!latestAccordingToTimestamp.equals(latestAccordingToVersionNumber) && latestAccordingToTimestamp.getVersion() != latestAccordingToVersionNumber.getVersion())
+                    throw new IllegalStateException("xml " + latestAccordingToTimestamp.getId() + " with lower version number (" + latestAccordingToTimestamp.getVersion() + ") is more recent than xml " + latestAccordingToVersionNumber.getId() + " with version number " + latestAccordingToVersionNumber.getVersion());
+                return latestAccordingToTimestamp;
+        }
     }
 
     @JsonIgnore
@@ -78,5 +92,10 @@ public class AipSip extends ArchivalObject {
         return this.xmls.stream()
                 .filter(xml -> xml.getState() == ObjectState.ARCHIVED)
                 .max(Comparator.comparingInt(AipXml::getVersion)).get();
+    }
+
+    @Override
+    public ArchivalObjectDto toDto() {
+        return new ArchivalObjectDto(id, id, getChecksum(), getOwner(), null, getState(), getCreated(), ObjectType.SIP);
     }
 }

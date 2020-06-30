@@ -1,8 +1,7 @@
 package cz.cas.lib.arcstorage.security;
 
-import cz.cas.lib.arcstorage.security.basic.PathBasicAuthFilter;
+import cz.cas.lib.arcstorage.security.basic.BasicAuthenticationFilter;
 import cz.cas.lib.arcstorage.security.service.UserDetailServiceImpl;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -22,8 +21,6 @@ public class SecurityInitializer extends BaseSecurityInitializer {
 
     private PasswordEncoder encoder;
 
-    private String[] basicAuthQueries;
-
     @Override
     protected AuthenticationProvider[] primaryAuthProviders() {
         List<AuthenticationProvider> providers = new ArrayList<>();
@@ -38,7 +35,7 @@ public class SecurityInitializer extends BaseSecurityInitializer {
 
     @Override
     protected Filter[] primarySchemeFilters() throws Exception {
-        PathBasicAuthFilter basicFilter = new PathBasicAuthFilter(authenticationManager(), basicAuthQueries);
+        BasicAuthenticationFilter basicFilter = new BasicAuthenticationFilter(authenticationManager());
         return asArray(basicFilter);
     }
 
@@ -51,10 +48,5 @@ public class SecurityInitializer extends BaseSecurityInitializer {
     @Inject
     public void setUserDetailsService(UserDetailServiceImpl userDetailsService) {
         this.userDetailsService = userDetailsService;
-    }
-
-    @Inject
-    public void setBasicAuthQuery(@Value("${security.basic.authQueries}") String[] basicAuthQueries) {
-        this.basicAuthQueries = basicAuthQueries;
     }
 }

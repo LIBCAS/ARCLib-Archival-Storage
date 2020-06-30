@@ -1,5 +1,7 @@
 package cz.cas.lib.arcstorage.storage.exception;
 
+import cz.cas.lib.arcstorage.domain.entity.Storage;
+
 import java.util.Arrays;
 import java.util.List;
 
@@ -8,9 +10,9 @@ import java.util.List;
  */
 public class CmdProcessException extends StorageException {
 
-    public CmdProcessException(String cmd, List<String> lines) {
+    public CmdProcessException(String cmd, List<String> lines, Storage storage) {
         super(
-                "command: " + cmd + " output: " + Arrays.toString(lines.toArray())
+                "command: " + cmd + " output: " + Arrays.toString(lines.toArray()), storage
         );
     }
 }

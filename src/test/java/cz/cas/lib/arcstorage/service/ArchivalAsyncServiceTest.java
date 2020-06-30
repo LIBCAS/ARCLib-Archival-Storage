@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 
-import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 import static cz.cas.lib.arcstorage.util.Utils.asList;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.junit.Assert.assertThat;
@@ -49,24 +48,27 @@ public class ArchivalAsyncServiceTest {
     public void cleanUp() throws Exception {
         ArchivalObject o1 = new ArchivalObject(null, USER, ObjectState.ARCHIVAL_FAILURE);
         ArchivalObject o2 = new ArchivalObject(null, USER, ObjectState.DELETION_FAILURE);
+        ArchivalObject o3 = new ArchivalObject(null, USER, ObjectState.ROLLBACK_FAILURE);
         AipSip s1 = new AipSip(UUID.randomUUID().toString(), null, USER, ObjectState.PROCESSING);
         AipXml x1 = new AipXml(UUID.randomUUID().toString(), null, USER, s1, 1, ObjectState.DELETION_FAILURE);
         AipXml x2 = new AipXml(UUID.randomUUID().toString(), null, USER, s1, 2, ObjectState.PRE_PROCESSING);
-        List<ArchivalObject> objects = asList(o1, o2, s1, x1, x2);
+        List<ArchivalObject> objects = asList(o1, o2, o3, s1, x1, x2);
 
-        doThrow(Exception.class).when(localFsProcessor).rollbackObject(toXmlId(s1.getId(), 2), USER.getDataSpace());
+        doThrow(Exception.class).when(localFsProcessor).rollbackObject(x2.toDto(), USER.getDataSpace());
         doThrow(Exception.class).when(localFsProcessor).delete(o2.getId(), USER.getDataSpace());
 
         service.cleanUp(objects, asList(localFsProcessor));
 
-        ArgumentCaptor<List> captor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(archivalDbService).setObjectsState(eq(ObjectState.DELETED), captor.capture());
-        assertThat((List<ArchivalObject>) captor.getValue(), containsInAnyOrder(x1));
+        assertThat(captor.getAllValues(), containsInAnyOrder(x1.getId()));
 
-        captor = ArgumentCaptor.forClass(List.class);
+        captor = ArgumentCaptor.forClass(String.class);
         verify(archivalDbService).setObjectsState(eq(ObjectState.ROLLED_BACK), captor.capture());
-        assertThat((List<ArchivalObject>) captor.getValue(), containsInAnyOrder(o1, s1));
+        assertThat(captor.getAllValues(), containsInAnyOrder(o1.getId(), s1.getId(), o3.getId()));
 
-        verify(archivalDbService, times(2)).setObjectsState(any(), any());
+        verify(archivalDbService, times(1)).setObjectsState(any(), any());
+        verify(archivalDbService, times(1)).setObjectsState(any(), any(), any(), any());
+
     }
 }

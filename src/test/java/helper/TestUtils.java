@@ -2,7 +2,6 @@ package helper;
 
 
 import org.hamcrest.Description;
-import org.hamcrest.Factory;
 import org.hamcrest.Matcher;
 import org.hamcrest.TypeSafeMatcher;
 
@@ -59,7 +58,6 @@ public class TestUtils {
          * @param operand the expected value of matching Instants
          * @param error   the delta (+/-) miliseconds within which matches will be allowed
          */
-        @Factory
         public static Matcher<Instant> closeTo(Instant operand, long error) {
             return new IsInstantCloseTo(operand, error);
         }

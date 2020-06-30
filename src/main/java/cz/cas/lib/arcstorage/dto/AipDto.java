@@ -1,5 +1,6 @@
 package cz.cas.lib.arcstorage.dto;
 
+import cz.cas.lib.arcstorage.domain.entity.ObjectType;
 import cz.cas.lib.arcstorage.domain.entity.User;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -10,7 +11,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.UUID;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 
@@ -39,11 +39,12 @@ public class AipDto {
     private List<ArchivalObjectDto> xmls = new ArrayList<>();
 
     /**
-     * Constructor used when transferring this DTO from service layer to storage layer. One XML with version 1 and generated databaseId is added.
+     * Constructor used when transferring this DTO from service layer to storage layer. One XML with version 1 and null id is added.
      */
     public AipDto(String ownerId, String sipId, InputStream sipStream, Checksum sipChecksum, InputStream aipXmlStream, Checksum xmlChecksum) {
-        sip = new ArchivalObjectDto(sipId, sipId, sipChecksum, new User(ownerId), sipStream, ObjectState.PRE_PROCESSING, Instant.now());
-        xmls.add(new ArchivalObjectDto(toXmlId(sipId, 1), UUID.randomUUID().toString(), xmlChecksum, new User(ownerId), aipXmlStream, ObjectState.PRE_PROCESSING, Instant.now()));
+        Instant now = Instant.now();
+        sip = new ArchivalObjectDto(sipId, sipId, sipChecksum, new User(ownerId), sipStream, ObjectState.PRE_PROCESSING, now, ObjectType.SIP);
+        xmls.add(new ArchivalObjectDto(toXmlId(sipId, 1), null, xmlChecksum, new User(ownerId), aipXmlStream, ObjectState.PRE_PROCESSING, now, ObjectType.XML));
     }
 
     /**
@@ -72,5 +73,9 @@ public class AipDto {
 
     public void addXml(ArchivalObjectDto xml) {
         xmls.add(xml);
+    }
+
+    public String toString() {
+        return "Aip: " + sip.getDatabaseId();
     }
 }

@@ -1,9 +1,10 @@
 package cz.cas.lib.arcstorage.storagesync;
 
+import cz.cas.lib.arcstorage.domain.entity.ArchivalObject;
 import cz.cas.lib.arcstorage.domain.entity.DomainObject;
-import cz.cas.lib.arcstorage.domain.entity.ObjectType;
 import cz.cas.lib.arcstorage.domain.entity.User;
 import cz.cas.lib.arcstorage.domain.store.InstantGenerator;
+import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.GenerationTime;
@@ -23,32 +24,40 @@ public class ObjectAudit extends DomainObject {
     /**
      * the UUID of the object in database
      */
-    private String objectId;
+    private String idInDatabase;
+    /**
+     * may be null if it is equal to idInDatabase (only XML has different idInStorage)
+     */
+    private String idInStorage;
     @Column(updatable = false)
     @GeneratorType(type = InstantGenerator.class, when = GenerationTime.INSERT)
     private Instant created;
     @ManyToOne
     private User user;
     @Enumerated(EnumType.STRING)
-    private ObjectType objectType;
-    @Enumerated(EnumType.STRING)
     private AuditedOperation operation;
 
-    public ObjectAudit(String objectId, User user, ObjectType objectType, AuditedOperation operation) {
-        this.objectId = objectId;
+    public ObjectAudit(ArchivalObject obj, User user, AuditedOperation operation) {
         this.user = user;
-        this.objectType = objectType;
         this.operation = operation;
+        this.idInDatabase = obj.getId();
+        ArchivalObjectDto dto = obj.toDto();
+        if (!dto.getDatabaseId().equals(dto.getStorageId()))
+            this.idInStorage = dto.getStorageId();
+    }
+
+    public String getIdInStorage() {
+        return idInStorage == null ? idInDatabase : idInStorage;
     }
 
     @Override
     public String toString() {
         return "ObjectAudit{" +
-                "objectId='" + objectId + '\'' +
-                ", id='" + id + '\'' +
+                "id='" + id + '\'' +
+                ", idInDatabase='" + idInDatabase + '\'' +
+                ", idInStorage='" + idInStorage + '\'' +
                 ", created=" + created +
                 ", user=" + user +
-                ", objectType=" + objectType +
                 ", operation=" + operation +
                 '}';
     }

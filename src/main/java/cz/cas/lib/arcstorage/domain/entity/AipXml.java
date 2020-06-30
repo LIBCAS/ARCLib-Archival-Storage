@@ -31,6 +31,11 @@ public class AipXml extends ArchivalObject {
     @JoinColumn(name = "arcstorage_aip_sip_id")
     @JsonIgnore
     private AipSip sip;
+    /**
+     * Version number of XML is not incremented if the previous archival attempt failed, therefore there might be more
+     * {{@link AipXml}} of the same {{@link AipSip}} with the same version number. Zero or exactly one of them can be in
+     * {@link ObjectState#ARCHIVED}.
+     */
     private int version;
 
     /**
@@ -45,6 +50,6 @@ public class AipXml extends ArchivalObject {
 
     @Override
     public ArchivalObjectDto toDto() {
-        return new ArchivalObjectDto(toXmlId(sip.getId(), version), id, getChecksum(), getOwner(), null, getState(), getCreated());
+        return new ArchivalObjectDto(toXmlId(sip.getId(), version), id, getChecksum(), getOwner(), null, getState(), getCreated(), ObjectType.XML);
     }
 }

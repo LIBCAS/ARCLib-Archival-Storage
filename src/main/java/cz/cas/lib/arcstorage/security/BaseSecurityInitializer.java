@@ -1,9 +1,6 @@
 package cz.cas.lib.arcstorage.security;
 
 import cz.cas.lib.arcstorage.security.basic.BasicAuthenticationFilter;
-import cz.cas.lib.arcstorage.security.jwt.JwtFilter;
-import cz.cas.lib.arcstorage.security.jwt.JwtPostFilter;
-import cz.cas.lib.arcstorage.security.jwt.JwtTokenProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
@@ -14,11 +11,9 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.web.access.intercept.FilterSecurityInterceptor;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-import javax.inject.Inject;
 import javax.servlet.Filter;
 
 /**
@@ -36,9 +31,7 @@ import javax.servlet.Filter;
 @EnableWebSecurity
 public abstract class BaseSecurityInitializer extends WebSecurityConfigurerAdapter {
 
-    private JwtTokenProvider tokenProvider;
-
-    protected String[] urlPatterns() {
+    private String[] urlPatterns() {
         return new String[]{"/api/**"};
     }
 
@@ -61,10 +54,6 @@ public abstract class BaseSecurityInitializer extends WebSecurityConfigurerAdapt
         for (Filter filter : filters) {
             httpSecurity = httpSecurity.addFilterBefore(filter, AnonymousAuthenticationFilter.class);
         }
-
-        httpSecurity = httpSecurity.addFilterBefore(new JwtFilter(), AnonymousAuthenticationFilter.class);
-
-        httpSecurity.addFilterAfter(new JwtPostFilter(tokenProvider), FilterSecurityInterceptor.class);
     }
 
     @Override
@@ -73,18 +62,11 @@ public abstract class BaseSecurityInitializer extends WebSecurityConfigurerAdapt
         for (AuthenticationProvider provider : providers) {
             auth = auth.authenticationProvider(provider);
         }
-
-        auth.authenticationProvider(tokenProvider);
     }
 
     @Bean
     public AuthenticationManager authenticationManagerBean() throws Exception {
         return super.authenticationManagerBean();
-    }
-
-    @Inject
-    public void setTokenProvider(JwtTokenProvider tokenProvider) {
-        this.tokenProvider = tokenProvider;
     }
 
     /**

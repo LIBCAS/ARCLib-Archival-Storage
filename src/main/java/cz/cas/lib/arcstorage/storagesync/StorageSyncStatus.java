@@ -6,6 +6,7 @@ import cz.cas.lib.arcstorage.domain.store.InstantGenerator;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.hibernate.annotations.GenerationTime;
 import org.hibernate.annotations.GeneratorType;
 
@@ -28,22 +29,41 @@ public class StorageSyncStatus extends DomainObject {
     @Enumerated(EnumType.STRING)
     private StorageSyncPhase phase;
     @Setter
+    /**
+     * number of objects/operations to be synced.. if the sync was stopped and then continues, this number does not contain
+     * objects/operations which were synced previously
+     */
     private long totalInThisPhase;
     @Setter
+    /**
+     * number of objects/operations already synced
+     */
     private long doneInThisPhase;
-    private Class exceptionClass;
     private String exceptionMsg;
+    private String exceptionStackTrace;
     @Setter
+    /**
+     * marks the latest object/record which was not yet synchronized to a new storage
+     * when sync fails, the timestamp is marked, admin has to solve the failure and can then continue with the sync
+     *
+     */
     private Instant stuckAt;
 
-    public void setExceptionInfo(Class exceptionClass, String exceptionMsg, Instant problemObjectCreationTime) {
-        this.exceptionClass = exceptionClass;
-        this.exceptionMsg = exceptionMsg;
+    public void setExceptionInfo(Exception ex, Instant problemObjectCreationTime) {
+        setExceptionInfo(ex);
         this.stuckAt = problemObjectCreationTime;
     }
 
+    /**
+     * should be used only when the exception is not related to processing of some object, e.g. when whole storage is not reachable
+     */
+    public void setExceptionInfo(Exception ex) {
+        this.exceptionStackTrace = ExceptionUtils.getStackTrace(ex);
+        this.exceptionMsg = ex.toString();
+    }
+
     public void clearExeptionInfo() {
-        exceptionClass = null;
+        exceptionStackTrace = null;
         exceptionMsg = null;
         stuckAt = null;
     }
@@ -62,7 +82,6 @@ public class StorageSyncStatus extends DomainObject {
                 ", phase=" + phase +
                 ", totalInThisPhase=" + totalInThisPhase +
                 ", doneInThisPhase=" + doneInThisPhase +
-                ", exceptionClass=" + exceptionClass +
                 ", exceptionMsg='" + exceptionMsg + '\'' +
                 ", stuckAt=" + stuckAt +
                 '}';

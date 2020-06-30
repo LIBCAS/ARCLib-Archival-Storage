@@ -34,23 +34,11 @@ public class UserApi {
     private PasswordEncoder passwordEncoder;
     private StorageProvider storageProvider;
 
-    /**
-     * this endpoint is handled by springboot security
-     */
-    @ApiImplicitParam(name = "Authorization", value = "" +
-            "arclib-read-write: Basic YXJjbGliLXJlYWQtd3JpdGU6YXJjbGliLXJlYWQtd3JpdGU=\n" +
-            "arclib-read: Basic YXJjbGliLXJlYWQ6YXJjbGliLXJlYWQ=\n" +
-            "admin: Basic YWRtaW46YWRtaW4=", required = true, dataType = "string", paramType = "header")
-    @RequestMapping(value = "/login", method = RequestMethod.POST)
-    public void login() {
-    }
-
     @ApiOperation(value = "Register user.", notes = "DataSpace should be simple string, no dashes, slashes, " +
             "uppercase letters, spaces or underscores. If the user has READ/READ-WRITE role and the dataSpace is new," +
             " the dataSpace should be activated by another endpoint.")
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Success", response = User.class),
-            @ApiResponse(code = 409, message = "if username already exists"),
+            @ApiResponse(code = 409, message = "username already exists"),
             @ApiResponse(code = 400, message = "Wrong JSON | username/password/role missing | role!=ADMIN and dataSpace missing | " +
                     "role==ADMIN and dataSpace not null")
     })
@@ -59,7 +47,7 @@ public class UserApi {
     @RolesAllowed(Roles.ADMIN)
     public User registerUser(@ApiParam(value = "User to be registered", required = true)
                              @RequestBody @Valid User user) throws BadRequestException {
-        log.info("Registering user with username " + user.getUsername() + ".");
+        log.debug("Registering user with username " + user.getUsername() + ".");
         if (user.getRole() == Role.ROLE_ADMIN && user.getDataSpace() != null)
             throw new BadRequestException("admin user account in archival storage can't be bound to particular dataSpace," +
                     " dataSpace has to be null");
@@ -80,7 +68,6 @@ public class UserApi {
     @ApiOperation(value = "Activates dataSpace i.e. creates folders/buckets etc. at all logical storages.",
             notes = "DataSpace should be simple string, no dashes, slashes, uppercase letters, spaces or underscores.")
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Success", response = User.class),
             @ApiResponse(code = 503, message = "some logical storage not reachable or system is in readonly state"),
             @ApiResponse(code = 500, message = "no logical storage attached or internal server error"),
     })
@@ -94,7 +81,7 @@ public class UserApi {
         reachableAdapters.forEach(
                 service -> {
                     try {
-                        log.info("Creating new data space: " + dataSpace + " at storage: " + service.getStorage().getName() + ".");
+                        log.debug("Creating new data space: " + dataSpace + " at storage: " + service.getStorage().getName() + ".");
                         service.createNewDataSpace(dataSpace);
                         log.info("Date space: " + dataSpace + " successfully created at storage: " + service.getStorage().getName() + ".");
                     } catch (Exception e) {

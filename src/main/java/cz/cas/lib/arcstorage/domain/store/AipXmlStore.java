@@ -2,11 +2,11 @@ package cz.cas.lib.arcstorage.domain.store;
 
 import cz.cas.lib.arcstorage.domain.entity.AipXml;
 import cz.cas.lib.arcstorage.domain.entity.QAipXml;
-import cz.cas.lib.arcstorage.dto.ObjectState;
+import cz.cas.lib.arcstorage.security.authorization.assign.audit.EntitySaveEvent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
+import java.time.Instant;
 
 @Repository
 @Slf4j
@@ -15,29 +15,24 @@ public class AipXmlStore extends DomainStore<AipXml, QAipXml> {
         super(AipXml.class, QAipXml.class);
     }
 
-    @Override
-    @Transactional
-    public AipXml save(AipXml entity) {
-        return super.save(entity);
-    }
-
-    @Override
-    @Transactional
-    public void delete(AipXml entity) {
-        super.delete(entity);
-    }
-
-    /**
-     * for a particular XML version number returns all entities of unsuccessful tries and also the last, successful, try one if present
-     *
-     * @param sipId
-     * @param xmlVersion
-     * @return
-     */
-    public List<AipXml> findBySipAndVersion(String sipId, int xmlVersion) {
-        QAipXml xml = qObject();
-        List<AipXml> aipXmls = query().select(xml).where(xml.sip.id.eq(sipId)).where(xml.version.eq(xmlVersion)).fetch();
+    public AipXml findBySipAndVersion(String sipId, int xmlVersion) {
+        QAipXml qObj = qObject();
+        AipXml xml = query().select(qObj).where(qObj.sip.id.eq(sipId)).where(qObj.version.eq(xmlVersion)).fetchOne();
         detachAll();
-        return aipXmls;
+        return xml;
+    }
+
+    @Override
+    protected void logSaveEvent(AipXml entity) {
+        if (entity.getOwner() != null && auditLogger != null)
+            auditLogger.logEvent(new EntitySaveEvent(Instant.now(), entity.getOwner().getId(), type.getSimpleName(), entity.getId()));
+        else super.logSaveEvent(entity);
+    }
+
+    @Override
+    protected void logDeleteEvent(AipXml entity) {
+        if (entity.getOwner() != null && auditLogger != null)
+            auditLogger.logEvent(new EntitySaveEvent(Instant.now(), entity.getOwner().getId(), type.getSimpleName(), entity.getId()));
+        else super.logSaveEvent(entity);
     }
 }

@@ -172,4 +172,39 @@
         </createTable>
     </changeSet>
 
+    <changeSet id="arcstorage:2" author="tomasek">
+        <renameTable oldTableName="arcstorage_configuration" newTableName="arcstorage_system_state"/>
+        <addColumn tableName="arcstorage_system_state">
+            <column name="reachability_check_interval_in_minutes" type="int"/>
+            <column name="last_reachability_check" type="datetime"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="arcstorage:3" author="tomasek">
+        <modifyDataType tableName="arcstorage_storage_sync_status" columnName="exception_class" newDataType="text"/>
+        <renameColumn tableName="arcstorage_storage_sync_status" oldColumnName="exception_class"
+                      newColumnName="exception_stack_trace"/>
+    </changeSet>
+
+    <changeSet id="arcstorage:4" author="tomasek">
+        <addColumn tableName="arcstorage_storage">
+            <column name="synchronizing" type="boolean"/>
+        </addColumn>
+        <dropTable tableName="arcstorage_sync_waiting_object"/>
+        <dropColumn tableName="arcstorage_object_audit" columnName="object_type"/>
+        <addColumn tableName="arcstorage_object_audit">
+            <column name="id_in_storage" type="varchar(255)"/>
+        </addColumn>
+        <renameColumn tableName="arcstorage_object_audit" oldColumnName="object_id" newColumnName="id_in_database"/>
+    </changeSet>
+
+    <changeSet id="arcstorage:5" author="tomasek">
+        <addColumn tableName="arcstorage_system_state">
+            <column name="last_verified_object_creation" type="datetime"/>
+        </addColumn>
+        <dropColumn tableName="arcstorage_storage">
+            <column name="write_only"/>
+        </dropColumn>
+    </changeSet>
+
 </databaseChangeLog>

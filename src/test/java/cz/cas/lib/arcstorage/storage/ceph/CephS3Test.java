@@ -5,23 +5,24 @@ import com.amazonaws.services.s3.model.AmazonS3Exception;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.Owner;
 import com.amazonaws.services.s3.model.S3Object;
+import cz.cas.lib.arcstorage.domain.entity.ObjectType;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.domain.entity.User;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.storage.StorageServiceTest;
 import cz.cas.lib.arcstorage.storage.StorageUtils;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
+import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import lombok.Getter;
 import org.assertj.core.util.Strings;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.*;
 import java.time.Instant;
-import java.util.Map;
-import java.util.Properties;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
@@ -38,7 +39,11 @@ public class CephS3Test extends StorageServiceTest {
     private static boolean https;
     private static String secretKey;
     private static String userKey;
+    private static int sshPort;
+    private static boolean virtualHost;
     private static Properties props = new Properties();
+    private static String sshKeyPath;
+    private static String sshUser;
 
     @BeforeClass
     public static void beforeClass() throws IOException {
@@ -57,11 +62,15 @@ public class CephS3Test extends StorageServiceTest {
         secretKey= Strings.isNullOrEmpty(unsanitizedSecretKey)?"ldap":unsanitizedSecretKey;
         https=Boolean.parseBoolean(props.getProperty("test.ceph.https"));
         bucketName = props.getProperty("test.ceph.bucketname");
+        virtualHost = Boolean.parseBoolean(props.getProperty("test.ceph.virtualHost"));
+        sshPort = Integer.parseInt(props.getProperty("test.ceph.ssh.port"));
+        sshUser = props.getProperty("test.ceph.ssh.user");
+        sshKeyPath = props.getProperty("test.ceph.ssh.keyPath");
     }
 
     @Before
     public void before() throws IOException {
-        service = new CephS3StorageService(storage, userKey,secretKey , https,null, 10000);
+        service = new CephS3StorageService(storage, userKey, secretKey, https, null, 10000, sshPort, sshKeyPath, sshUser, virtualHost);
     }
 
     @Override
@@ -75,12 +84,14 @@ public class CephS3Test extends StorageServiceTest {
     @Test
     public void storeLargeFileSuccessTest() throws Exception {
 
-        String fileId = testName.getMethodName();
+//        String fileId = testName.getMethodName();
+        String fileId = "abortingmultiparts";
+
         AmazonS3 s3 = service.connect();
 
         File file = new File(LARGE_SIP_PATH);
         try (BufferedInputStream bos = new BufferedInputStream(new FileInputStream(file))) {
-            service.storeFile(s3, fileId, bos, LARGE_SIP_CHECKSUM, new AtomicBoolean(false), bucketName);
+            service.storeFile(s3, fileId, bos, LARGE_SIP_CHECKSUM, new AtomicBoolean(false), bucketName, Instant.now());
         }
 
         S3Object object = s3.getObject(bucketName, fileId);
@@ -104,7 +115,7 @@ public class CephS3Test extends StorageServiceTest {
         String fileId = testName.getMethodName();
         AmazonS3 s3 = service.connect();
 
-        service.storeFile(s3, fileId, getSipStream(), SIP_CHECKSUM, new AtomicBoolean(false), bucketName);
+        service.storeFile(s3, fileId, getSipStream(), SIP_CHECKSUM, new AtomicBoolean(false), bucketName, Instant.now());
 
         S3Object object = s3.getObject(bucketName, fileId);
         Checksum checksumOfStoredFile = StorageUtils.computeChecksum(object.getObjectContent(), ChecksumType.MD5);
@@ -140,7 +151,7 @@ public class CephS3Test extends StorageServiceTest {
         }).start();
 
         try (BufferedInputStream bos = new BufferedInputStream(new FileInputStream(file))) {
-            service.storeFile(s3, fileId, bos, LARGE_SIP_CHECKSUM, rollback, bucketName);
+            service.storeFile(s3, fileId, bos, LARGE_SIP_CHECKSUM, rollback, bucketName, Instant.now());
         }
 
         ObjectMetadata objectMetadata = s3.getObjectMetadata(bucketName, service.toMetadataObjectId(fileId));
@@ -162,13 +173,13 @@ public class CephS3Test extends StorageServiceTest {
 
         AtomicBoolean rollback = new AtomicBoolean(false);
 
-        assertThrown(() -> service.storeFile(s3, fileId, getSipStream(), SIP_CHECKSUM, rollback, bucketName))
+        assertThrown(() -> service.storeFile(s3, fileId, getSipStream(), SIP_CHECKSUM, rollback, bucketName, Instant.now()))
                 .isInstanceOf(FileCorruptedAfterStoreException.class);
         assertThat(rollback.get(), is(true));
 
         rollback.set(false);
 
-        assertThrown(() -> service.storeFile(s3, fileId, getSipStream(), null, rollback, bucketName))
+        assertThrown(() -> service.storeFile(s3, fileId, getSipStream(), null, rollback, bucketName, Instant.now()))
                 .isInstanceOf(Throwable.class);
         assertThat(rollback.get(), is(true));
     }
@@ -201,7 +212,7 @@ public class CephS3Test extends StorageServiceTest {
         String sipId = testName.getMethodName();
         AtomicBoolean rollback = new AtomicBoolean(false);
         String xmlId = toXmlId(sipId, 99);
-        service.storeObject(new ArchivalObjectDto(xmlId, "databaseId", SIP_CHECKSUM, new User("ownerId"), getXmlStream(), ObjectState.PROCESSING, Instant.now()), rollback, bucketName);
+        service.storeObject(new ArchivalObjectDto(xmlId, "databaseId", SIP_CHECKSUM, new User("ownerId"), getXmlStream(), ObjectState.PROCESSING, Instant.now(), ObjectType.XML), rollback, bucketName);
 
         AmazonS3 s3 = service.connect();
         S3Object xmlObj = s3.getObject(bucketName, xmlId);
@@ -281,7 +292,7 @@ public class CephS3Test extends StorageServiceTest {
 //preparation phase copied from rollbackAwareTest
         File file = new File(LARGE_SIP_PATH);
         AtomicBoolean rollback = new AtomicBoolean(false);
-
+        Instant creation = Instant.now();
         new Thread(() -> {
             try {
                 Thread.sleep(2000);
@@ -292,14 +303,18 @@ public class CephS3Test extends StorageServiceTest {
         }).start();
 
         try (BufferedInputStream bos = new BufferedInputStream(new FileInputStream(file))) {
-            service.storeFile(s3, fileId, bos, LARGE_SIP_CHECKSUM, rollback, bucketName);
+            service.storeFile(s3, fileId, bos, LARGE_SIP_CHECKSUM, rollback, bucketName, creation);
         }
 
         ObjectMetadata objectMetadata = s3.getObjectMetadata(bucketName, service.toMetadataObjectId(fileId));
         Map<String, String> userMetadata = objectMetadata.getUserMetadata();
         assertThat(userMetadata.get(CephS3StorageService.STATE_KEY), is(ObjectState.PROCESSING.toString()));
-//actual test
-        service.rollbackFile(s3, fileId, bucketName);
+        //actual test
+        ArchivalObjectDto dto = new ArchivalObjectDto();
+        dto.setStorageId(fileId);
+        dto.setChecksum(LARGE_SIP_CHECKSUM);
+        dto.setCreated(creation);
+        service.rollbackFile(s3, dto, bucketName);
 
         assertThrown(() -> s3.getObject(bucketName, fileId)).isInstanceOf(AmazonS3Exception.class).messageContains("NoSuchKey");
         userMetadata = s3.getObjectMetadata(bucketName, service.toMetadataObjectId(fileId)).getUserMetadata();
@@ -312,9 +327,14 @@ public class CephS3Test extends StorageServiceTest {
         String fileId = testName.getMethodName();
         AmazonS3 s3 = service.connect();
 
-        service.storeFile(s3, fileId, getSipStream(), SIP_CHECKSUM, new AtomicBoolean(false), bucketName);
-        service.rollbackFile(s3, fileId, bucketName);
-        service.rollbackFile(s3, fileId, bucketName);
+        Instant creation = Instant.now();
+        service.storeFile(s3, fileId, getSipStream(), SIP_CHECKSUM, new AtomicBoolean(false), bucketName, creation);
+        ArchivalObjectDto dto = new ArchivalObjectDto();
+        dto.setStorageId(fileId);
+        dto.setChecksum(SIP_CHECKSUM);
+        dto.setCreated(creation);
+        service.rollbackFile(s3, dto, bucketName);
+        service.rollbackFile(s3, dto, bucketName);
 
         assertThrown(() -> s3.getObject(bucketName, fileId)).isInstanceOf(AmazonS3Exception.class).messageContains("NoSuchKey");
         Map<String, String> userMetadata = s3.getObjectMetadata(bucketName, service.toMetadataObjectId(fileId)).getUserMetadata();
@@ -326,7 +346,11 @@ public class CephS3Test extends StorageServiceTest {
     public void rollbackCompletlyMissingFile() throws Exception {
         String fileId = testName.getMethodName();
         AmazonS3 s3 = service.connect();
-        service.rollbackFile(s3, fileId, bucketName);
+        ArchivalObjectDto dto = new ArchivalObjectDto();
+        dto.setStorageId(fileId);
+        dto.setChecksum(new Checksum(ChecksumType.MD5, "hash"));
+        dto.setCreated(Instant.now());
+        service.rollbackFile(s3, dto, bucketName);
         Map<String, String> userMetadata = s3.getObjectMetadata(bucketName, service.toMetadataObjectId(fileId)).getUserMetadata();
         assertThat(userMetadata.get(CephS3StorageService.STATE_KEY), is(ObjectState.ROLLED_BACK.toString()));
     }
@@ -339,8 +363,7 @@ public class CephS3Test extends StorageServiceTest {
         AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, bucketName);
-
-        service.rollbackAip(sipId, bucketName);
+        service.rollbackAip(aip, bucketName);
 
         AmazonS3 s3 = service.connect();
         assertThrown(() -> s3.getObject(bucketName, sipId)).isInstanceOf(AmazonS3Exception.class).messageContains("NoSuchKey");
@@ -361,8 +384,9 @@ public class CephS3Test extends StorageServiceTest {
         AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, bucketName);
-
-        service.rollbackObject(toXmlId(sipId, 1), bucketName);
+        ArchivalObjectDto dto = new ArchivalObjectDto();
+        dto.setStorageId(xmlId);
+        service.rollbackObject(aip.getXml(), bucketName);
 
         AmazonS3 s3 = service.connect();
         S3Object sipObj = s3.getObject(bucketName, sipId);
@@ -372,8 +396,8 @@ public class CephS3Test extends StorageServiceTest {
         S3Object xmlObjMeta = s3.getObject(bucketName, service.toMetadataObjectId(xmlId));
 
         assertThat(streamToString(sipObj.getObjectContent()), is(SIP_CONTENT));
-        assertThat(sipObjMeta.getObjectMetadata().getUserMetadata().get(service.STATE_KEY), is(ObjectState.ARCHIVED.toString()));
-        assertThat(xmlObjMeta.getObjectMetadata().getUserMetadata().get(service.STATE_KEY), is(ObjectState.ROLLED_BACK.toString()));
+        assertThat(sipObjMeta.getObjectMetadata().getUserMetadata().get(CephS3StorageService.STATE_KEY), is(ObjectState.ARCHIVED.toString()));
+        assertThat(xmlObjMeta.getObjectMetadata().getUserMetadata().get(CephS3StorageService.STATE_KEY), is(ObjectState.ROLLED_BACK.toString()));
     }
 
     /**
@@ -381,26 +405,38 @@ public class CephS3Test extends StorageServiceTest {
      */
     @Test
     @Override
-    public void testConnection() {
+    public void testConnection() throws StorageException {
         CephS3StorageService badService = new TestStorageService(storage, "blah", "blah", https,"blah");
         assertThat(badService.testConnection(), is(false));
         assertThat(service.testConnection(), is(true));
         AmazonS3 s3 = service.connect();
         Owner s3AccountOwner = s3.getS3AccountOwner();
+        service.getStorageState();
         assertThat(s3AccountOwner.getId(), is("arclib"));
     }
 
 
-    //use this to easily create test bucket if it does not exist yet
-//    @Test
-//    public void createBucket(){
-//        AmazonS3 s3 = service.connect();
-//        s3.createBucket(bucketName);
-//    }
+    @Test
+    @Ignore
+    public void createBucket() {
+        AmazonS3 s3 = service.connect();
+        s3.createBucket(bucketName);
+    }
+
+    @Test
+    public void getStorageStateTest() throws Exception {
+        StorageStateDto storageState = service.getStorageState();
+        assertThat(storageState.getStorageStateData().keySet(), hasSize(8));
+        assertThat((Collection<String>) storageState.getStorageStateData().get("cmd: " + service.CMD_STATUS), hasSize(greaterThan(0)));
+        assertThat((Collection<String>) storageState.getStorageStateData().get("cmd: " + service.CMD_DF), hasSize(greaterThan(0)));
+        assertThat((Collection<CephS3StorageService.BucketInfoDto>) storageState.getStorageStateData().get("buckets"), hasSize(greaterThan(0)));
+        Map<String, List<String>> poolDetailMap = (Map<String, List<String>>) storageState.getStorageStateData().get("cmd: ceph pg ls-by-pool");
+        assertThat(poolDetailMap.get("default"), not(empty()));
+    }
 
     private static final class TestStorageService extends CephS3StorageService {
         public TestStorageService(Storage storage, String userAccessKey, String userSecretKey, boolean https, String region) {
-            super(storage, userAccessKey, userSecretKey, https, region, 10000);
+            super(storage, userAccessKey, userSecretKey, https, region, 10000, sshPort, null, null, virtualHost);
         }
 
         @Override

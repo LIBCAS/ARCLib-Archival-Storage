@@ -3,7 +3,6 @@ package cz.cas.lib.arcstorage.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
-import cz.cas.lib.arcstorage.domain.store.ConfigurationStore;
 import cz.cas.lib.arcstorage.domain.store.StorageStore;
 import cz.cas.lib.arcstorage.domain.store.Transactional;
 import cz.cas.lib.arcstorage.exception.GeneralException;
@@ -19,6 +18,7 @@ import cz.cas.lib.arcstorage.storage.ceph.CephS3StorageService;
 import cz.cas.lib.arcstorage.storage.fs.FsStorageService;
 import cz.cas.lib.arcstorage.storage.fs.ZfsStorageService;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -38,10 +38,11 @@ import static java.util.Collections.shuffle;
 @Slf4j
 public class StorageProvider {
 
-    private String keyFilePath;
+    private String sshKeyFilePath;
+    private String sshUsername;
     private StorageStore storageStore;
     private int connectionTimeout;
-    private ConfigurationStore configurationStore;
+    private SystemStateService systemStateService;
 
     /**
      * Returns storage service according to the database object. The storage is tested for reachability and is updated if
@@ -51,7 +52,7 @@ public class StorageProvider {
      * @return storage service
      * @throws ConfigParserException
      */
-    private StorageService createAdapter(Storage storage) throws ConfigParserException {
+    public StorageService createAdapter(Storage storage, boolean checkReachability) throws ConfigParserException {
         StorageService service;
         JsonNode root;
         try {
@@ -63,12 +64,14 @@ public class StorageProvider {
             case FS:
                 String rootDirPath = root.at("/rootDirPath").textValue();
                 notNull(rootDirPath, () -> new ConfigParserException("rootDirPath string missing in FS storage config"));
-                service = new FsStorageService(storage, rootDirPath, keyFilePath, connectionTimeout);
+                service = new FsStorageService(storage, rootDirPath, sshKeyFilePath, sshUsername, connectionTimeout);
                 break;
             case ZFS:
                 rootDirPath = root.at("/rootDirPath").textValue();
                 notNull(rootDirPath, () -> new ConfigParserException("rootDirPath string missing in FS storage config"));
-                service = new ZfsStorageService(storage, rootDirPath, keyFilePath, connectionTimeout);
+                String poolName = root.at("/poolName").textValue();
+                notNull(poolName, () -> new ConfigParserException("poolName string missing in FS storage config"));
+                service = new ZfsStorageService(storage, rootDirPath, poolName, sshKeyFilePath, sshUsername, connectionTimeout);
                 break;
             case CEPH:
                 CephAdapterType cephAdapterType = parseEnumFromConfig(root, "/adapterType", CephAdapterType.class);
@@ -77,11 +80,13 @@ public class StorageProvider {
                 switch(cephAdapterType) {
                     case S3:
                         String region = root.at("/region").textValue();
-                        boolean https = root.at("https").booleanValue();
+                        int sshPort = root.at("/sshPort").intValue();
+                        boolean https = root.at("/https").booleanValue();
+                        boolean virtualHost = root.at("/virtualHost").booleanValue();
                         if(userKey == null)
                             throw new ConfigParserException("userKey string missing in CEPH storage config");
                         userSecret = userSecret == null ? "ldap" : userSecret;
-                        service = new CephS3StorageService(storage, userKey, userSecret, https, region, connectionTimeout);
+                        service = new CephS3StorageService(storage, userKey, userSecret, https, region, connectionTimeout, sshPort, sshKeyFilePath, sshUsername, virtualHost);
                         break;
                     case SWIFT:
                         throw new UnsupportedOperationException();
@@ -94,10 +99,12 @@ public class StorageProvider {
             default:
                 throw new GeneralException("unknown storage type: " + storage.getStorageType());
         }
-        boolean reachable = service.testConnection();
-        if(reachable != storage.isReachable()) {
-            storage.setReachable(reachable);
-            storageStore.save(storage);
+        if (checkReachability) {
+            boolean reachable = service.testConnection();
+            if (reachable != storage.isReachable()) {
+                storage.setReachable(reachable);
+                storageStore.save(storage);
+            }
         }
         return service;
     }
@@ -112,41 +119,73 @@ public class StorageProvider {
      */
     public List<StorageService> createAdaptersForWriteOperation() throws SomeLogicalStoragesNotReachableException,
             NoLogicalStorageAttachedException, ReadOnlyStateException {
-        if(configurationStore.get().isReadOnly())
+        return createAdaptersForWriteOperation(true);
+    }
+
+    /**
+     * USE WITH CAUTION.. for standard write operations it is better to use {@link StorageProvider#createAdaptersForWriteOperation()} which
+     * internally calls this method with checkSystemState attribute set to true
+     * <br>
+     * this method exists for special cases, such as cleanup, in which case we do allow writing to strage even if system is in read-only mode
+     * @param checkSystemState  use false in special cases, otherwise don't use this method at all
+     * @throws SomeLogicalStoragesNotReachableException
+     * @throws NoLogicalStorageAttachedException
+     * @throws ReadOnlyStateException
+     */
+    public List<StorageService> createAdaptersForWriteOperation(boolean checkSystemState) throws SomeLogicalStoragesNotReachableException,
+            NoLogicalStorageAttachedException, ReadOnlyStateException {
+        if (checkSystemState && systemStateService.get().isReadOnly())
             throw new ReadOnlyStateException();
+        Pair<List<StorageService>, List<StorageService>> services = checkReachabilityOfAllStorages();
+        if (services.getLeft().isEmpty() && services.getRight().isEmpty())
+            throw new NoLogicalStorageAttachedException();
+        if (!services.getRight().isEmpty())
+            throw new SomeLogicalStoragesNotReachableException(services.getRight().stream().map(StorageService::getStorage).collect(Collectors.toList()));
+        return services.getLeft();
+    }
+
+    /**
+     * Returns all storage services of non-synchronizing storages. All storages are tested for reachability and their
+     * reachablity flag is updated if changed.
+     *
+     * @return storage services for all non-synchronizing storages
+     * @throws SomeLogicalStoragesNotReachableException                       if some non-synchronizing storage is unreachable
+     * @throws cz.cas.lib.arcstorage.service.exception.ReadOnlyStateException
+     */
+    public List<StorageService> createAdaptersForModifyOperation() throws SomeLogicalStoragesNotReachableException,
+            NoLogicalStorageAttachedException, ReadOnlyStateException {
+        if (systemStateService.get().isReadOnly())
+            throw new ReadOnlyStateException();
+        Pair<List<StorageService>, List<StorageService>> services = checkReachabilityOfAllStorages();
+        if (services.getLeft().isEmpty() && services.getRight().isEmpty())
+            throw new NoLogicalStorageAttachedException();
+        if (!services.getRight().isEmpty() && services.getRight().stream().noneMatch(s -> s.getStorage().isSynchronizing()))
+            throw new SomeLogicalStoragesNotReachableException(services.getRight().stream().map(s -> s.getStorage()).collect(Collectors.toList()));
+        return services.getLeft().stream().filter(s -> !s.getStorage().isSynchronizing()).collect(Collectors.toList());
+    }
+
+    /**
+     * returns pair with list of reachable (L) and unreachable (R) storages
+     * @return
+     */
+    @Transactional
+    public Pair<List<StorageService>, List<StorageService>> checkReachabilityOfAllStorages() {
         List<StorageService> storageServices = new ArrayList<>();
-        List<Storage> unreachableStorages = new ArrayList<>();
-        for(Storage storage : storageStore.findAll()) {
-            StorageService service = createAdapter(storage);
-            if(!service.getStorage().isReachable()) {
-                unreachableStorages.add(storage);
+        List<StorageService> unreachableStorageServices = new ArrayList<>();
+        for (Storage storage : storageStore.findAll()) {
+            StorageService service = createAdapter(storage, true);
+            if (!service.getStorage().isReachable()) {
+                unreachableStorageServices.add(service);
                 continue;
             }
             storageServices.add(service);
         }
-        if(storageServices.isEmpty())
-            throw new NoLogicalStorageAttachedException();
-        if(!unreachableStorages.isEmpty())
-            throw new SomeLogicalStoragesNotReachableException(unreachableStorages);
-        return storageServices;
+        systemStateService.setReachabilityCheckedNow();
+        return Pair.of(storageServices, unreachableStorageServices);
     }
 
     /**
-     * Returns all storage services according to the database objects. All storages are tested for reachability and their
-     * reachablity flag is updated if changed.
-     *
-     * @return storage services
-     * @throws ConfigParserException
-     */
-    public List<StorageService> createAllAdapters() throws NoLogicalStorageAttachedException {
-        List<StorageService> list = storageStore.findAll().stream().map(this::createAdapter).collect(Collectors.toList());
-        if(list.isEmpty())
-            throw new NoLogicalStorageAttachedException();
-        return list;
-    }
-
-    /**
-     * Returns storage service according to the {@link Storage} with the provided id.
+     * Returns storage service according to the {@link Storage} with the provided id. Checks for reachability.
      *
      * @param storageId
      * @return storage service for the storage
@@ -155,23 +194,31 @@ public class StorageProvider {
     public StorageService createAdapter(String storageId) {
         Storage storage = storageStore.find(storageId);
         if(storage == null) throw new MissingObject(Storage.class, storageId);
-        return createAdapter(storage);
+        return createAdapter(storage, true);
     }
 
     /**
-     * called only by retrieval, GET methods.. methods which writes writes to all storages
+     * called only by retrieval, GET methods..
      *
      * @return map of reachable and readable storage services sorted by priorities in the descending order (highest priority storages first),
-     * where the key is the priority and the value is a list of storages with the given priority
+     * where the key is the priority and the value is a list of storages with the given priority..
+     * <p>storages which are just synchronizing are not returned</p>
      * @throws NoLogicalStorageReachableException if the number of reachable storages is zero
      * @throws NoLogicalStorageAttachedException  if the number of attached storages is zero
      */
-    public List<StorageService> getReachableStorageServicesByPriorities()
+    public List<StorageService> createAdaptersForRead()
             throws NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
         //sorted map where the keys are the priorities and the values are the lists of storage services
         TreeMap<Integer, List<StorageService>> storageServicesByPriorities = new TreeMap<>(Collections.reverseOrder());
-        createAllAdapters().forEach(adapter -> {
-            if(adapter.getStorage().isReachable() && !adapter.getStorage().isWriteOnly()) {
+        List<StorageService> rwAdapters = storageStore.findAll()
+                .stream()
+                .filter(a -> !a.isSynchronizing())
+                .map(s -> createAdapter(s, true))
+                .collect(Collectors.toList());
+        if (rwAdapters.isEmpty())
+            throw new NoLogicalStorageAttachedException();
+        rwAdapters.forEach(adapter -> {
+            if (adapter.getStorage().isReachable()) {
                 List<StorageService> storageServices = storageServicesByPriorities.get(adapter.getStorage().getPriority());
                 if(storageServices == null) storageServices = new ArrayList<>();
                 storageServices.add(adapter);
@@ -182,18 +229,26 @@ public class StorageProvider {
             log.error("there are no logical storages reachable");
             throw new NoLogicalStorageReachableException();
         }
-        List<StorageService> orderedShuffledStorageServices = storageServicesByPriorities.values().stream().map(storageServicesByPriority -> {
+        return storageServicesByPriorities.values().stream().map(storageServicesByPriority -> {
             shuffle(storageServicesByPriority);
             return storageServicesByPriority;
         })
                 .flatMap(List::stream)
                 .collect(Collectors.toList());
-        return orderedShuffledStorageServices;
+    }
+
+    public long getStoragesCount() {
+        return storageStore.getCount();
     }
 
     @Inject
-    public void setKeyFilePath(@Value("${arcstorage.auth-key}") String keyFilePath) {
-        this.keyFilePath = keyFilePath;
+    public void setSshKeyFilePath(@Value("${arcstorage.ssh.authKey}") String keyFilePath) {
+        this.sshKeyFilePath = keyFilePath;
+    }
+
+    @Inject
+    public void setSshUsername(@Value("${arcstorage.ssh.userName}") String username) {
+        this.sshUsername = username;
     }
 
     @Inject
@@ -202,12 +257,12 @@ public class StorageProvider {
     }
 
     @Inject
-    public void setConnectionTimeout(@Value("${arcstorage.connection-timeout}") String connectionTimeout) {
+    public void setConnectionTimeout(@Value("${arcstorage.connectionTimeout}") String connectionTimeout) {
         this.connectionTimeout = Integer.parseInt(connectionTimeout);
     }
 
     @Inject
-    public void setConfigurationStore(ConfigurationStore configurationStore) {
-        this.configurationStore = configurationStore;
+    public void setSystemStateService(SystemStateService systemStateService) {
+        this.systemStateService = systemStateService;
     }
 }

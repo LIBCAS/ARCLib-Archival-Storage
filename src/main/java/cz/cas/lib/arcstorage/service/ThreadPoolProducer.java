@@ -7,17 +7,20 @@ import org.springframework.context.annotation.Primary;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 
 @Configuration
 public class ThreadPoolProducer {
 
     private ExecutorService executorService;
-    private ExecutorService reservedExecutorService;
+    private ExecutorService batchOpsExecutorService;
+    private ScheduledExecutorService scheduledExecutorService;
 
-    public ThreadPoolProducer(@Value("${arcstorage.thread-count}") int threadCount,
-                              @Value("${arcstorage.reserved-thread-count}") int reservedThreadCount) {
-        executorService = Executors.newFixedThreadPool(threadCount);
-        reservedExecutorService = Executors.newFixedThreadPool(reservedThreadCount);
+    public ThreadPoolProducer(@Value("${arcstorage.threadPools.batchOps}") int batchOpsThreadCount,
+                              @Value("${arcstorage.threadPools.scheduled}") int scheduledThreadCount) {
+        executorService = Executors.newCachedThreadPool();
+        batchOpsExecutorService = Executors.newWorkStealingPool(batchOpsThreadCount);
+        scheduledExecutorService = Executors.newScheduledThreadPool(scheduledThreadCount);
     }
 
     @Bean
@@ -26,8 +29,13 @@ public class ThreadPoolProducer {
         return executorService;
     }
 
-    @Bean(name = "ReservedExecutorService")
+    @Bean(name = "BatchOpsExecutorService")
     public ExecutorService reservedExecutorService() {
-        return reservedExecutorService;
+        return batchOpsExecutorService;
+    }
+
+    @Bean
+    public ScheduledExecutorService scheduledExecutorService() {
+        return scheduledExecutorService;
     }
 }

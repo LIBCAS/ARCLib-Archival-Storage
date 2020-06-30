@@ -32,7 +32,6 @@ public class ArchivalObject extends DomainObject {
     })
     private Checksum checksum;
 
-    @Column(updatable = false)
     @GeneratorType(type = InstantGenerator.class, when = GenerationTime.INSERT)
     private Instant created;
 
@@ -48,8 +47,12 @@ public class ArchivalObject extends DomainObject {
         this.owner=owner;
     }
 
+    /**
+     * has to be overridden
+     *
+     */
     public ArchivalObjectDto toDto() {
-        return new ArchivalObjectDto(id, id, checksum, getOwner(), null, state, created);
+        return new ArchivalObjectDto(id, id, checksum, getOwner(), null, state, created, ObjectType.OBJECT);
     }
 
     @Override

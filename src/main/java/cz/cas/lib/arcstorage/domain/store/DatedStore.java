@@ -40,6 +40,8 @@ public abstract class DatedStore<T extends DatedObject, Q extends EntityPathBase
 
             entityManager.flush();
             detachAll();
+
+            logDeleteEvent(entity);
         }
     }
 }
