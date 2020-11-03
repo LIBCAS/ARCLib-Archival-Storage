@@ -42,6 +42,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -104,6 +105,31 @@ public class AipApi {
                 tmpFolder.resolve(toXmlId(tmpFileId, v)).toFile().delete();
             }
         }
+    }
+
+    @ApiOperation(value = "Return specified AIP as a ZIP package with specified files")
+    @RequestMapping(value = "/{aipId}/files-specified", method = RequestMethod.POST)
+    @ApiResponses(value = {
+            @ApiResponse(code = 200, message = "AIP successfully returned"),
+            @ApiResponse(code = 403, message = "operation forbidden with respect to the current AIP state"),
+            @ApiResponse(code = 400, message = "bad request, e.g. the specified id is not a valid UUID"),
+            @ApiResponse(code = 503, message = "all attached logical storages are currently unreachable"),
+            @ApiResponse(code = 500, message = "file is corrupted at all storages, no logical storage attached, or other internal server error")
+    })
+    @RolesAllowed({Roles.READ, Roles.READ_WRITE})
+    public void getAipSpecified(
+            @ApiParam(value = "AIP ID", required = true) @PathVariable("aipId") String aipId,
+            @ApiParam(value = "Set of wanted files paths sent as RequestBody", required = true) @RequestBody Set<String> filePaths,
+            HttpServletResponse response)
+            throws IOException, RollbackStateException, DeletedStateException, StillProcessingStateException,
+            FailedStateException, ObjectCouldNotBeRetrievedException, BadRequestException, RemovedStateException,
+            NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
+        checkUUID(aipId);
+
+        response.setContentType("application/zip");
+        response.setStatus(200);
+        response.addHeader("Content-Disposition", "attachment; filename=aip_" + aipId + "_partial.zip");
+        aipService.getAipSpecifiedFiles(aipId, filePaths, response.getOutputStream());
     }
 
     @ApiOperation(value = "Return specified AIP XML")
@@ -311,7 +337,7 @@ public class AipApi {
             @ApiResponse(code = 500, message = "internal server error"),
             @ApiResponse(code = 503, message = "storage is not reachable"),
     })
-    @RolesAllowed({Roles.READ,Roles.READ_WRITE})
+    @RolesAllowed({Roles.READ, Roles.READ_WRITE})
     @RequestMapping(value = "/{aipId}/info", method = RequestMethod.GET)
     public AipConsistencyVerificationResultDto getAipInfo(
             @ApiParam(value = "AIP id", required = true) @PathVariable("aipId") String aipId,

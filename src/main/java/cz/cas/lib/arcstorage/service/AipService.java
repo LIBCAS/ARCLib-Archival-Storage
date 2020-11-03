@@ -37,6 +37,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 import static cz.cas.lib.arcstorage.storage.StorageUtils.validateChecksum;
@@ -101,6 +104,58 @@ public class AipService {
         if (xmls.isEmpty())
             throw new IllegalStateException("found ARCHIVED SIP " + sipId + " with no ARCHIVED XML");
         return retrieveAip(sipEntity, xmls);
+    }
+
+    /**
+     * @param sipId        id of the AIP to retrieve
+     * @param filePaths    paths of specified files we want to extract from ZIP
+     * @param outputStream output stream into which result zip is stored
+     * @throws DeletedStateException              if SIP is deleted {@link ObjectState}
+     * @throws RollbackStateException             if SIP is rolled back or only one XML is requested and that one is rolled back {@link ObjectState}
+     * @throws StillProcessingStateException      if SIP or some of requested XML is still processing {@link ObjectState}
+     * @throws ObjectCouldNotBeRetrievedException if SIP is corrupted at all reachable storages {@link ObjectState}
+     * @throws FailedStateException               if SIP is failed {@link ObjectState}
+     * @throws RemovedStateException              if object has been logically removed: it exists in storage but should not be accessible to all users, used only for SIP (XMLs cant be removed), stored also at storage layer {@link ObjectState}
+     * @throws NoLogicalStorageAttachedException  if storageId is null and there is not even one logical storage attached
+     * @throws NoLogicalStorageReachableException if storageId is null and there is not even one logical storage reachable
+     * @throws IOException                        if there were an IO exception during processing
+     */
+    public void getAipSpecifiedFiles(String sipId, Set<String> filePaths, OutputStream outputStream) throws ObjectCouldNotBeRetrievedException, RemovedStateException, FailedStateException, DeletedStateException, RollbackStateException, NoLogicalStorageAttachedException, NoLogicalStorageReachableException, StillProcessingStateException, IOException {
+        AipRetrievalResource aip = getAip(sipId, false);
+
+        ZipOutputStream zipOut = new ZipOutputStream(outputStream);
+
+        // we need to work with input stream as with ZipInputStream to be able process it correctly
+        try (ZipInputStream zipInputStream = new ZipInputStream(aip.getSip())) {
+            ZipEntry zipEntry = zipInputStream.getNextEntry();
+
+            while (zipEntry != null) {
+                // check if zip entry is file we want
+                if (filePaths.contains(zipEntry.getName())) {
+                    zipOut.putNextEntry(new ZipEntry(sipId + "/" + zipEntry.getName()));
+                    IOUtils.copyLarge(zipInputStream, zipOut);
+                    zipOut.closeEntry();
+                }
+
+                zipEntry = getNextZipEntry(zipInputStream);
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        } finally {
+            zipOut.finish();
+        }
+    }
+
+    /**
+     * Small private method to handle
+     *
+     * @param aipDataZipIn
+     * @return
+     * @throws IOException
+     */
+    private ZipEntry getNextZipEntry(ZipInputStream aipDataZipIn) throws IOException {
+        aipDataZipIn.closeEntry();
+        return aipDataZipIn.getNextEntry();
     }
 
     /**

@@ -1,5 +1,14 @@
+.project
+.classpath
+.settings
 .idea/
 archival-storage.iml
 target/
 local-fs-tests/
 local-fs-tests-folder/
+create_db.log
+create_db_error.log
+data
+application.yml
+application.properties
+local-storage-folder/

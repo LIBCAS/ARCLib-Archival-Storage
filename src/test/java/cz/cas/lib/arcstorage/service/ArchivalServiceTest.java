@@ -18,6 +18,7 @@ import cz.cas.lib.arcstorage.storagesync.StorageSyncStatusStore;
 import helper.DbTest;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.junit.AfterClass;
 import org.junit.Before;
@@ -28,9 +29,7 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.springframework.orm.jpa.JpaTransactionManager;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -38,13 +37,14 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 import static cz.cas.lib.arcstorage.util.Utils.asList;
 import static helper.ThrowableAssertion.assertThrown;
 import static org.hamcrest.Matchers.*;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyList;
 import static org.mockito.Matchers.anyObject;
@@ -73,9 +73,13 @@ public class ArchivalServiceTest extends DbTest {
     private static final Checksum SIP_CHECKSUM = new Checksum(ChecksumType.MD5, SIP_MD5);
 
     private static final String SIP2_ID = "testSipId";
+    private static final String SIP_ZIP_ID = "testSipIdZip";
+    private static final String SIP_ZIP_MD5 = "bc196bfdd827cf371a2ccca02be989ce";
+    private static final Checksum SIP_ZIP_CHECKSUM = new Checksum(ChecksumType.MD5, SIP_ZIP_MD5);
 
     private static final String XML1_ID = toXmlId(SIP_ID, 1);
     private static final String XML2_ID = toXmlId(SIP_ID, 2);
+    private static final String XML_ZIP_ID = toXmlId(SIP_ZIP_ID, 1);
 
     private static final String XML1_MD5 = "5e95c70e5ca025d836f3bbe04fab0968";
     private static final Checksum XML1_CHECKSUM = new Checksum(ChecksumType.MD5, XML1_MD5);
@@ -87,8 +91,14 @@ public class ArchivalServiceTest extends DbTest {
 
     private static Path tmpFolder;
 
+    private static final Path SIP_SOURCE_PATH = Paths.get("src/test/resources", "KPW01169310.ZIP");
+
     private static InputStream sipStream() {
         return new ByteArrayInputStream(SIP_ID.getBytes());
+    }
+
+    private static InputStream sipZipStream() throws FileNotFoundException {
+        return new FileInputStream(SIP_SOURCE_PATH.toFile());
     }
 
     private static InputStream xml1Stream() {
@@ -121,8 +131,10 @@ public class ArchivalServiceTest extends DbTest {
     private User user;
 
     private AipSip SIP;
+    private AipSip SIP_ZIP;
     private AipXml XML1;
     private AipXml XML2;
+    private AipXml XML_ZIP;
 
     @BeforeClass
     public static void beforeClass() throws IOException {
@@ -139,8 +151,11 @@ public class ArchivalServiceTest extends DbTest {
         archivalDbService.setTransactionTemplate(new JpaTransactionManager(getFactory()), 5);
 
         SIP = new AipSip(SIP_ID, SIP_CHECKSUM, new User(USER_ID), ObjectState.ARCHIVED);
+        SIP_ZIP = new AipSip(SIP_ZIP_ID, SIP_ZIP_CHECKSUM, new User(USER_ID), ObjectState.ARCHIVED);
+
         XML1 = new AipXml(XML1_ID, XML1_CHECKSUM, new User(USER_ID), null, 1, ObjectState.ARCHIVED);
         XML2 = new AipXml(XML2_ID, XML2_CHECKSUM, new User(USER_ID), null, 2, ObjectState.ARCHIVED);
+        XML_ZIP = new AipXml(XML_ZIP_ID, XML1_CHECKSUM, new User(USER_ID), null, 1, ObjectState.ARCHIVED);
 
         initializeStores(aipSipStore, aipXmlStore, storageStore, SYSTEM_STATE_STORE, userStore, objectStore);
 
@@ -181,10 +196,15 @@ public class ArchivalServiceTest extends DbTest {
         systemAdministrationService.setTmpFolder(tmpFolder.toString());
 
         aipSipStore.save(SIP);
+        aipSipStore.save(SIP_ZIP);
+
         XML1.setSip(SIP);
         XML2.setSip(SIP);
+        XML2.setSip(SIP_ZIP);
+
         aipXmlStore.save(XML1);
         aipXmlStore.save(XML2);
+        aipXmlStore.save(XML_ZIP);
 
         storage = new Storage();
         storage.setPriority(1);
@@ -208,9 +228,16 @@ public class ArchivalServiceTest extends DbTest {
         aip3.addXml(1, xml1Stream());
         aip3.addXml(2, xml2Stream());
 
+        AipRetrievalResource aipZip = new AipRetrievalResource(null);
+        aipZip.setSip(sipZipStream());
+        aipZip.addXml(1, xml1Stream());
+        aipZip.addXml(2, xml2Stream());
+
         when(storageService.getAip(SIP_ID, DATA_SPACE, 1)).thenReturn(aip1);
         when(storageService.getAip(SIP_ID, DATA_SPACE, 2)).thenReturn(aip2);
         when(storageService.getAip(SIP_ID, DATA_SPACE, 1, 2)).thenReturn(aip3);
+
+        when(storageService.getAip(SIP_ZIP_ID, DATA_SPACE, 2)).thenReturn(aipZip);
 
         when(storageProvider.createAdaptersForWriteOperation()).thenReturn(asList(storageService));
         when(storageProvider.createAdaptersForWriteOperation(false)).thenReturn(asList(storageService));
@@ -251,6 +278,60 @@ public class ArchivalServiceTest extends DbTest {
             assertThat(inputStream2, notNullValue());
             assertTrue(IOUtils.contentEquals(inputStream2, xml2Stream));
         }
+    }
+
+    @Test
+    public void getSpecifiedFiles() throws Exception {
+        HashSet<String> wantedFiles = new HashSet<>();
+        wantedFiles.add("KPW01169310/ALTO/ALTO_KPW01169310_0001.XML");
+        wantedFiles.add("KPW01169310/ALTO/desktop.ini");
+        wantedFiles.add("KPW01169310/TXT/TXT_KPW01169310_0002.TXT");
+        wantedFiles.add("KPW01169310/userCopy/UC_KPW01169310_0002.JP2");
+
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream(0);
+        aipService.getAipSpecifiedFiles(SIP_ZIP_ID, wantedFiles, byteArrayOutputStream);
+
+        Set<String> paths = new LinkedHashSet<>();
+        HashMap<String, LinkedList<String>> files = new HashMap<>();
+
+        try (ZipInputStream zipInputStream = new ZipInputStream(new ByteArrayInputStream(byteArrayOutputStream.toByteArray()))) {
+            ZipEntry zipEntry = zipInputStream.getNextEntry();
+
+            while (zipEntry != null) {
+                paths.add(StringUtils.substringBeforeLast(zipEntry.getName(), "/"));
+                String fileName = StringUtils.substringAfterLast(zipEntry.getName(), "/");
+
+                if (files.containsKey(fileName)) {
+                    LinkedList<String> strings = files.get(fileName);
+                    strings.add(fileName);
+
+                    files.put(fileName, strings);
+                } else {
+                    LinkedList<String> linkedList = new LinkedList<>();
+                    linkedList.add(fileName);
+
+                    files.put(fileName, linkedList);
+                }
+
+                zipInputStream.closeEntry();
+                zipEntry = zipInputStream.getNextEntry();
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+
+        assertEquals(3, paths.size());
+
+        assertTrue(paths.contains("testSipIdZip/KPW01169310/ALTO"));
+        assertTrue(paths.contains("testSipIdZip/KPW01169310/TXT"));
+        assertTrue(paths.contains("testSipIdZip/KPW01169310/userCopy"));
+
+        assertEquals(4, files.size());
+
+        assertEquals(1, files.get("desktop.ini").size());
+        assertEquals(1, files.get("ALTO_KPW01169310_0001.XML").size());
+        assertEquals(1, files.get("TXT_KPW01169310_0002.TXT").size());
+        assertEquals(1, files.get("UC_KPW01169310_0002.JP2").size());
     }
 
     @Test
@@ -456,7 +537,7 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void cleanUp() throws Exception{
+    public void cleanUp() throws Exception {
         when(storageSyncStatusStore.anySynchronizing()).thenReturn(null);
 
         ArchivalObject o1 = new ArchivalObject(null, null, ObjectState.DELETED);
@@ -469,9 +550,9 @@ public class ArchivalServiceTest extends DbTest {
         objectStore.save(asList(o1, o2, o3, s1, s2, x1, x2));
         List<ArchivalObject> cleanup = systemAdministrationService.cleanup(true);
         assertThat(cleanup, containsInAnyOrder(o2, o3, s1, x1, x2));
-        verify(async).cleanUp(cleanup,storageProvider.createAdaptersForWriteOperation());
+        verify(async).cleanUp(cleanup, storageProvider.createAdaptersForWriteOperation());
         cleanup = systemAdministrationService.cleanup(false);
         assertThat(cleanup, containsInAnyOrder(o2, o3, x1));
-        verify(async).cleanUp(cleanup,storageProvider.createAdaptersForWriteOperation());
+        verify(async).cleanUp(cleanup, storageProvider.createAdaptersForWriteOperation());
     }
 }

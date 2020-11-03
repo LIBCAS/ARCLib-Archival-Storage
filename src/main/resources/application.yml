@@ -7,6 +7,8 @@ spring:
     url: jdbc:postgresql://localhost:5432/arcstorage
     driver-class-name: org.postgresql.Driver
     name: mainPool
+    username: changeme
+    password: changeme
   jpa:
     show-sql: false
     database-platform: org.hibernate.dialect.PostgreSQL9Dialect
