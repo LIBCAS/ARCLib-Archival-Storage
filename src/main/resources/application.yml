@@ -69,5 +69,6 @@ arcstorage:
     authKey: --path to private key--
     userName: --username--
 env: production
+logging.file.path: ../logs
 
 

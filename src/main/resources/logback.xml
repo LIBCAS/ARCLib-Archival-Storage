@@ -2,6 +2,7 @@
     <logger name="org.hibernate" level="WARN"/>
     <logger name="org.hibernate.SQL" level="WARN"/>
     <logger name="com.mysema" level="WARN"/>
+    <property name="LOG_PATH" value="${LOG_PATH:-${LOG_TEMP:-${java.io.tmpdir:-/tmp}}}" />
 
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
@@ -39,11 +40,10 @@
     </appender>
 
     <appender name="AUDITFILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>../logs/archival-storage.audit.log</file>
+        <file>${LOG_PATH}/archival-storage.audit.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <!-- daily rollover -->
-            <fileNamePattern>../logs/archival-storage.audit.%d{yyyy-MM-dd}.log</fileNamePattern>
-
+            <fileNamePattern>${LOG_PATH}/archival-storage.audit.%d{yyyy-MM-dd}.log</fileNamePattern>
             <!-- keep 30 days' worth of history capped at 500MB total size -->
             <maxHistory>30</maxHistory>
             <!--<totalSizeCap>500MB</totalSizeCap> needs logback 1.1.7-->
@@ -71,10 +71,10 @@
     </appender>
 
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>../logs/archival-storage.log</file>
+        <file>${LOG_PATH}/archival-storage.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <!-- daily rollover -->
-            <fileNamePattern>../logs/arcstorage.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <fileNamePattern>${LOG_PATH}/arcstorage.%d{yyyy-MM-dd}.log</fileNamePattern>
 
             <!-- keep 30 days' worth of history capped at 500MB total size -->
             <maxHistory>30</maxHistory>
@@ -89,10 +89,10 @@
     </appender>
 
     <appender name="ERRORFILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>../logs/archival-storage.error.log</file>
+        <file>${LOG_PATH}/archival-storage.error.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <!-- daily rollover -->
-            <fileNamePattern>../logs/archival-storage.error.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <fileNamePattern>${LOG_PATH}/archival-storage.error.%d{yyyy-MM-dd}.log</fileNamePattern>
 
             <!-- keep 30 days' worth of history capped at 500MB total size -->
             <maxHistory>30</maxHistory>
@@ -107,10 +107,10 @@
     </appender>
 
     <appender name="DEBUGFILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>../logs/archival-storage.debug.log</file>
+        <file>${LOG_PATH}/archival-storage.debug.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <!-- daily rollover -->
-            <fileNamePattern>../logs/archival-storage.debug.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <fileNamePattern>${LOG_PATH}/archival-storage.debug.%d{yyyy-MM-dd}.log</fileNamePattern>
 
             <!-- keep 10 days' worth of history capped at 500MB total size -->
             <maxHistory>10</maxHistory>
