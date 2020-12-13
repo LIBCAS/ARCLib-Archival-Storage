@@ -2,11 +2,13 @@ package cz.cas.lib.arcstorage.domain.store;
 
 import cz.cas.lib.arcstorage.domain.entity.QStorage;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
+import cz.cas.lib.arcstorage.dto.StorageBasicDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Propagation;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Repository
 @Slf4j
@@ -36,6 +38,11 @@ public class StorageStore extends DomainStore<Storage, QStorage> {
         List<Storage> fetch = query().select(qObject()).where(qObject().reachable.eq(false)).fetch();
         detachAll();
         return fetch;
+    }
+
+    public List<StorageBasicDto> getAllAsDtos() {
+        Collection<Storage> storages = findAll();
+        return storages.stream().map(StorageBasicDto::transmute).collect(Collectors.toList());
     }
 
     public long getCount() {

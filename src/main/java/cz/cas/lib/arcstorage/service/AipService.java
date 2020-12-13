@@ -17,6 +17,8 @@ import cz.cas.lib.arcstorage.service.exception.storage.ObjectCouldNotBeRetrieved
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
+import cz.cas.lib.arcstorage.storage.fs.FsAdapter;
+import cz.cas.lib.arcstorage.storage.fs.LocalFsProcessor;
 import cz.cas.lib.arcstorage.storagesync.exception.SynchronizationInProgressException;
 import lombok.Getter;
 import lombok.Setter;
@@ -38,11 +40,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
-import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
-import static cz.cas.lib.arcstorage.storage.StorageUtils.validateChecksum;
+import static cz.cas.lib.arcstorage.storage.StorageUtils.*;
 import static cz.cas.lib.arcstorage.util.Utils.*;
 
 /**
@@ -61,7 +63,9 @@ public class AipService {
     private ArchivalService archivalService;
 
     /**
-     * Retrieves reference to AIP.
+     * Retrieves reference to AIP. This method choose one {@link Storage} and COPIES THE WHOLE AIP INTO WORKSPACE.
+     * Then the checksum is computed and if the aip is corrupted, it tries to recover it from other storage. Aip is then
+     * retrieved to caller from workspace and then the workspace is cleared.
      *
      * @param sipId id of the AIP to retrieve
      * @param all   if <code>true</code> reference to SIP and all XMLs is returned otherwise reference to SIP and latest XML is retrieved
@@ -113,34 +117,49 @@ public class AipService {
      * @throws DeletedStateException              if SIP is deleted {@link ObjectState}
      * @throws RollbackStateException             if SIP is rolled back or only one XML is requested and that one is rolled back {@link ObjectState}
      * @throws StillProcessingStateException      if SIP or some of requested XML is still processing {@link ObjectState}
-     * @throws ObjectCouldNotBeRetrievedException if SIP is corrupted at all reachable storages {@link ObjectState}
      * @throws FailedStateException               if SIP is failed {@link ObjectState}
-     * @throws RemovedStateException              if object has been logically removed: it exists in storage but should not be accessible to all users, used only for SIP (XMLs cant be removed), stored also at storage layer {@link ObjectState}
      * @throws NoLogicalStorageAttachedException  if storageId is null and there is not even one logical storage attached
      * @throws NoLogicalStorageReachableException if storageId is null and there is not even one logical storage reachable
      * @throws IOException                        if there were an IO exception during processing
      */
-    public void getAipSpecifiedFiles(String sipId, Set<String> filePaths, OutputStream outputStream) throws ObjectCouldNotBeRetrievedException, RemovedStateException, FailedStateException, DeletedStateException, RollbackStateException, NoLogicalStorageAttachedException, NoLogicalStorageReachableException, StillProcessingStateException, IOException {
-        AipRetrievalResource aip = getAip(sipId, false);
+    public void getAipSpecifiedFiles(String sipId, Set<String> filePaths, OutputStream outputStream) throws StorageException, NoLogicalStorageAttachedException, NoLogicalStorageReachableException, StillProcessingStateException, RollbackStateException, DeletedStateException, FailedStateException, IOException {
+        Optional<StorageService> storageService = storageProvider.createAdaptersForRead().stream().filter(s ->
+                (s.getStorage().getStorageType() == StorageType.FS || s.getStorage().getStorageType() == StorageType.ZFS) && isLocalhost(s.getStorage())).findFirst();
+        if (storageService.isEmpty())
+            throw new UnsupportedOperationException("Operation requires FS/ZFS storage of local type");
+        AipSip sipEntity = archivalDbService.getAip(sipId);
+        switch (sipEntity.getState()) {
+            case ROLLED_BACK:
+                throw new RollbackStateException(sipEntity);
+            case DELETED:
+                throw new DeletedStateException(sipEntity);
+            case PRE_PROCESSING:
+            case PROCESSING:
+                throw new StillProcessingStateException(sipEntity);
+            case DELETION_FAILURE:
+            case ROLLBACK_FAILURE:
+            case ARCHIVAL_FAILURE:
+                throw new FailedStateException(sipEntity);
+        }
+        LocalFsProcessor localFsProcessor;
+        if (storageService.get() instanceof FsAdapter) {
+            StorageService fsProcessor = ((FsAdapter) storageService.get()).getFsProcessor();
+            if (fsProcessor instanceof LocalFsProcessor)
+                localFsProcessor = (LocalFsProcessor) fsProcessor;
+            else
+                throw new IllegalArgumentException("expected LocalFsProcessor, but got: " + fsProcessor.getClass());
+        } else
+            throw new IllegalArgumentException("expected LocalFsProcessor, but got: " + storageService.get().getStorage());
+        Path aipDataFilePath = localFsProcessor.getAipDataFilePath(sipId, sipEntity.getOwner().getDataSpace());
 
         ZipOutputStream zipOut = new ZipOutputStream(outputStream);
-
-        // we need to work with input stream as with ZipInputStream to be able process it correctly
-        try (ZipInputStream zipInputStream = new ZipInputStream(aip.getSip())) {
-            ZipEntry zipEntry = zipInputStream.getNextEntry();
-
-            while (zipEntry != null) {
-                // check if zip entry is file we want
-                if (filePaths.contains(zipEntry.getName())) {
-                    zipOut.putNextEntry(new ZipEntry(sipId + "/" + zipEntry.getName()));
-                    IOUtils.copyLarge(zipInputStream, zipOut);
-                    zipOut.closeEntry();
-                }
-
-                zipEntry = getNextZipEntry(zipInputStream);
+        try (ZipFile aipDataZip = new ZipFile(aipDataFilePath.toFile())) {
+            for (String filePath : filePaths) {
+                ZipEntry zipEntry = aipDataZip.getEntry(filePath);
+                zipOut.putNextEntry(new ZipEntry(sipId + "/" + zipEntry.getName()));
+                IOUtils.copyLarge(aipDataZip.getInputStream(zipEntry), zipOut);
+                zipOut.closeEntry();
             }
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
         } finally {
             zipOut.finish();
         }

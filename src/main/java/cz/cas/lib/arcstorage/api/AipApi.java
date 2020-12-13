@@ -122,8 +122,8 @@ public class AipApi {
             @ApiParam(value = "Set of wanted files paths sent as RequestBody", required = true) @RequestBody Set<String> filePaths,
             HttpServletResponse response)
             throws IOException, RollbackStateException, DeletedStateException, StillProcessingStateException,
-            FailedStateException, ObjectCouldNotBeRetrievedException, BadRequestException, RemovedStateException,
-            NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
+            FailedStateException, BadRequestException,
+            NoLogicalStorageReachableException, NoLogicalStorageAttachedException, StorageException {
         checkUUID(aipId);
 
         response.setContentType("application/zip");

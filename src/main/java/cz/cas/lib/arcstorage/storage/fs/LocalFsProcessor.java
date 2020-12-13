@@ -248,6 +248,10 @@ public class LocalFsProcessor implements StorageService {
         return allStoredArchivalObjects;
     }
 
+    public Path getAipDataFilePath(String sipId, String dataSpace) throws IOStorageException {
+        return getFolderPath(sipId, dataSpace).resolve(sipId);
+    }
+
     /**
      * Gets objects and respective paths to their folders stored in the given dataSpace folder
      * <p>

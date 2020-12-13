@@ -4,6 +4,7 @@ import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.domain.entity.SystemState;
 import cz.cas.lib.arcstorage.domain.store.StorageStore;
 import cz.cas.lib.arcstorage.domain.store.Transactional;
+import cz.cas.lib.arcstorage.dto.StorageBasicDto;
 import cz.cas.lib.arcstorage.dto.StorageStateDto;
 import cz.cas.lib.arcstorage.dto.StorageUpdateDto;
 import cz.cas.lib.arcstorage.exception.BadRequestException;
@@ -50,6 +51,12 @@ public class StorageAdministrationApi {
     @RequestMapping(method = RequestMethod.GET)
     public Collection<Storage> getAll() {
         return storageStore.findAll();
+    }
+
+    @ApiOperation(value = "Returns simple DTOs of all attached logical storages.", response = StorageBasicDto.class, responseContainer = "list")
+    @RequestMapping(value = "/basic", method = RequestMethod.GET)
+    public Collection<StorageBasicDto> getAllAsDtos() {
+        return storageStore.getAllAsDtos();
     }
 
     @ApiOperation(value = "Returns logical storage with specified ID.", response = Storage.class)
