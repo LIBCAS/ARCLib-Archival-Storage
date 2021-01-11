@@ -2,7 +2,7 @@ package cz.cas.lib.arcstorage.init;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.util.ISO8601DateFormat;
+import com.fasterxml.jackson.databind.util.StdDateFormat;
 import com.fasterxml.jackson.datatype.hibernate5.Hibernate5Module;
 import cz.cas.lib.arcstorage.domain.entity.DomainObject;
 import cz.cas.lib.arcstorage.domain.entity.SystemState;
@@ -25,13 +25,7 @@ import org.springframework.context.ApplicationListener;
 import org.springframework.stereotype.Component;
 
 import javax.inject.Inject;
-import javax.sql.DataSource;
 import java.io.IOException;
-import java.io.StringReader;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.sql.Connection;
-import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -39,13 +33,9 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
-import static cz.cas.lib.arcstorage.util.Utils.resourceString;
-
 @Component
 @Slf4j
 public class PostInitializer implements ApplicationListener<ApplicationReadyEvent> {
-    @Inject
-    private DataSource ds;
     @Inject
     private ObjectMapper objectMapper;
     @Inject
@@ -71,15 +61,8 @@ public class PostInitializer implements ApplicationListener<ApplicationReadyEven
     public void onApplicationEvent(ApplicationReadyEvent events) {
         objectMapper.registerModule(new Hibernate5Module());
         objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        objectMapper.setDateFormat(new ISO8601DateFormat());
+        objectMapper.setDateFormat(new StdDateFormat());
         SystemState systemState = systemStateService.createDefaultIfNotExist();
-        if (env.equals("staging")) {
-            try {
-                sqlTestInit();
-            } catch (Exception e) {
-                throw new RuntimeException("Data init error", e);
-            }
-        }
         if (!env.equals("test")) {
             checkAttachedStorages(systemState);
             intervalJobService.scheduleReachabilityChecks(systemState.getReachabilityCheckIntervalInMinutes());
@@ -97,44 +80,6 @@ public class PostInitializer implements ApplicationListener<ApplicationReadyEven
             ApplicationContextUtils.getProcessingObjects().putAll(collect);
         }
 
-    }
-
-    public void sqlTestInit() throws SQLException, IOException {
-        try (Connection con = ds.getConnection()) {
-            ScriptRunner runner = new ScriptRunner(con, false, true);
-
-            String initSql = resourceString("init.sql");
-
-            String arclibXml1Sha512 = new String(Files.readAllBytes(Paths.get("data/arclib/4b/66/65/4b66655a-819a-474f-8203-6c432815df1f_xml_1.SHA512")));
-            String arclibXml2Sha512 = new String(Files.readAllBytes(Paths.get("data/arclib/4b/66/65/4b66655a-819a-474f-8203-6c432815df1f_xml_2.SHA512")));
-            String arclibXml3Sha512 = new String(Files.readAllBytes(Paths.get("data/arclib/8b/2e/fa/8b2efafd-b637-4b97-a8f7-1b97dd4ee622_xml_1.SHA512")));
-            String arclibXml4Sha512 = new String(Files.readAllBytes(Paths.get("data/arclib/8b/2e/fa/8b2efafd-b637-4b97-a8f7-1b97dd4ee622_xml_2.SHA512")));
-            String arclibXml5Sha512 = new String(Files.readAllBytes(Paths.get("data/arclib/89/f8/2d/89f82da0-af78-4461-bf92-7382050082a1_xml_1.SHA512")));
-
-            initSql = replaceArclibXmlHash(arclibXml1Sha512, initSql, "'11f82da0-af78-4461-bf92-7382050082a1',\r\n" +
-                    "        '4b66655a-819a-474f-8203-6c432815df1f',\r\n" +
-                    "        '2018-03-08 07:00:00',\r\n");
-            initSql = replaceArclibXmlHash(arclibXml2Sha512, initSql, "'12f82da0-af78-4461-bf92-7382050082a1',\r\n" +
-                    "        '4b66655a-819a-474f-8203-6c432815df1f',\r\n" +
-                    "        '2018-03-08 08:00:00',\r\n");
-            initSql = replaceArclibXmlHash(arclibXml3Sha512, initSql, "'21f82da0-af78-4461-bf92-7382050082a1',\r\n" +
-                    "        '8b2efafd-b637-4b97-a8f7-1b97dd4ee622',\r\n" +
-                    "        '2018-03-08 07:00:00',\r\n");
-            initSql = replaceArclibXmlHash(arclibXml4Sha512, initSql, "'22f82da0-af78-4461-bf92-7382050082a1',\r\n" +
-                    "        '8b2efafd-b637-4b97-a8f7-1b97dd4ee622',\r\n" +
-                    "        '2018-03-08 08:00:00',\r\n");
-            initSql = replaceArclibXmlHash(arclibXml5Sha512, initSql, "'3182da0-af78-4461-bf92-7382050082a1',\r\n" +
-                    "        '89f82da0-af78-4461-bf92-7382050082a1',\r\n" +
-                    "        '2018-03-08 08:00:00',\r\n");
-
-            runner.runScript(new StringReader(initSql));
-        }
-        log.info("Data init successful");
-    }
-
-    private String replaceArclibXmlHash(String hashValue, String initSql, String stringToMatch) {
-        return initSql.replaceFirst(stringToMatch + "        '([a-z0-9]*)'",
-                stringToMatch + "        '" + hashValue + "'");
     }
 
     private void checkAttachedStorages(SystemState systemState) {

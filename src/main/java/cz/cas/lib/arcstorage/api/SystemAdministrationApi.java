@@ -4,7 +4,6 @@ import cz.cas.lib.arcstorage.backup.BackupExportService;
 import cz.cas.lib.arcstorage.backup.BackupProcessException;
 import cz.cas.lib.arcstorage.domain.entity.SystemState;
 import cz.cas.lib.arcstorage.domain.store.Transactional;
-import cz.cas.lib.arcstorage.init.PostInitializer;
 import cz.cas.lib.arcstorage.security.Roles;
 import cz.cas.lib.arcstorage.service.SystemAdministrationService;
 import cz.cas.lib.arcstorage.service.SystemStateService;
@@ -23,7 +22,6 @@ import javax.annotation.security.RolesAllowed;
 import javax.inject.Inject;
 import javax.validation.Valid;
 import java.io.IOException;
-import java.sql.SQLException;
 import java.time.Instant;
 
 @Slf4j
@@ -33,7 +31,6 @@ import java.time.Instant;
 public class SystemAdministrationApi {
 
     private SystemStateService systemStateService;
-    private PostInitializer postInitializer;
     private BackupExportService backupExportService;
     private SystemAdministrationService systemAdministrationService;
 
@@ -95,12 +92,6 @@ public class SystemAdministrationApi {
         systemAdministrationService.recoverDb(storageId, overrideConflict);
     }
 
-    @ApiOperation(value = "WARNING: deletes current DB records and fills test data", notes = "cleans database and fills it with testing data")
-    @RequestMapping(value = "/initialize_with_test_data", method = RequestMethod.POST)
-    public void sqlTestInit() throws IOException, SQLException {
-        postInitializer.sqlTestInit();
-    }
-
     @ApiOperation(value = "Exports all objects which have changed in the specified time range.", notes = "Once the reachability of export location is verified, the response is returned and process continues asynchronously. If since/until is not filled, MIN/MAX is used.")
     @RequestMapping(value = "/backup", method = RequestMethod.GET)
     @ApiResponses(value = {
@@ -120,11 +111,6 @@ public class SystemAdministrationApi {
     @Inject
     public void setsystemStateService(SystemStateService systemStateService) {
         this.systemStateService = systemStateService;
-    }
-
-    @Inject
-    public void setPostInitializer(PostInitializer postInitializer) {
-        this.postInitializer = postInitializer;
     }
 
     @Inject
