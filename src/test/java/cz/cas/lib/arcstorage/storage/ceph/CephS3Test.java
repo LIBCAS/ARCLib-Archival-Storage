@@ -39,11 +39,14 @@ public class CephS3Test extends StorageServiceTest {
     private static boolean https;
     private static String secretKey;
     private static String userKey;
+    private static String sshServer;
     private static int sshPort;
     private static boolean virtualHost;
     private static Properties props = new Properties();
     private static String sshKeyPath;
     private static String sshUser;
+    private static String cluster;
+    private static String cephBinHome;
 
     @BeforeClass
     public static void beforeClass() throws IOException {
@@ -70,7 +73,7 @@ public class CephS3Test extends StorageServiceTest {
 
     @Before
     public void before() throws IOException {
-        service = new CephS3StorageService(storage, userKey, secretKey, https, null, 10000, sshPort, sshKeyPath, sshUser, virtualHost);
+        service = new CephS3StorageService(storage, userKey, secretKey, https, null, 10000, sshServer, sshPort, sshKeyPath, sshUser, virtualHost, cluster, cephBinHome);
     }
 
     @Override
@@ -436,7 +439,7 @@ public class CephS3Test extends StorageServiceTest {
 
     private static final class TestStorageService extends CephS3StorageService {
         public TestStorageService(Storage storage, String userAccessKey, String userSecretKey, boolean https, String region) {
-            super(storage, userAccessKey, userSecretKey, https, region, 10000, sshPort, null, null, virtualHost);
+            super(storage, userAccessKey, userSecretKey, https, region, 10000, sshServer, sshPort, null, null, virtualHost, cluster, cephBinHome);
         }
 
         @Override

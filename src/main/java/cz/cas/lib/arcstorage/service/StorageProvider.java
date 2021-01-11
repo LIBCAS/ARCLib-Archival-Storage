@@ -1,5 +1,6 @@
 package cz.cas.lib.arcstorage.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
@@ -23,7 +24,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.inject.Inject;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -49,6 +49,7 @@ public class StorageProvider {
      * the reachability changes.
      *
      * @param storage
+     * @param checkReachability
      * @return storage service
      * @throws ConfigParserException
      */
@@ -57,7 +58,7 @@ public class StorageProvider {
         JsonNode root;
         try {
             root = new ObjectMapper().readTree(storage.getConfig());
-        } catch(IOException e) {
+        } catch (JsonProcessingException e) {
             throw new ConfigParserException(e);
         }
         switch(storage.getStorageType()) {
@@ -77,16 +78,19 @@ public class StorageProvider {
                 CephAdapterType cephAdapterType = parseEnumFromConfig(root, "/adapterType", CephAdapterType.class);
                 String userKey = root.at("/userKey").textValue();
                 String userSecret = root.at("/userSecret").textValue();
-                switch(cephAdapterType) {
+                String cluster = root.at("/cluster").textValue();
+                String cephBinHome = root.at("/cephBinHome").textValue();
+                switch (cephAdapterType) {
                     case S3:
                         String region = root.at("/region").textValue();
+                        String sshServer = root.at("/sshServer").textValue();
                         int sshPort = root.at("/sshPort").intValue();
                         boolean https = root.at("/https").booleanValue();
                         boolean virtualHost = root.at("/virtualHost").booleanValue();
-                        if(userKey == null)
+                        if (userKey == null)
                             throw new ConfigParserException("userKey string missing in CEPH storage config");
                         userSecret = userSecret == null ? "ldap" : userSecret;
-                        service = new CephS3StorageService(storage, userKey, userSecret, https, region, connectionTimeout, sshPort, sshKeyFilePath, sshUsername, virtualHost);
+                        service = new CephS3StorageService(storage, userKey, userSecret, https, region, connectionTimeout, sshServer, sshPort, sshKeyFilePath, sshUsername, virtualHost, cluster, cephBinHome);
                         break;
                     case SWIFT:
                         throw new UnsupportedOperationException();
@@ -115,6 +119,7 @@ public class StorageProvider {
      *
      * @return storage services for all storages
      * @throws SomeLogicalStoragesNotReachableException                       if some storage is unreachable
+     * @throws cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException
      * @throws cz.cas.lib.arcstorage.service.exception.ReadOnlyStateException
      */
     public List<StorageService> createAdaptersForWriteOperation() throws SomeLogicalStoragesNotReachableException,
@@ -128,6 +133,7 @@ public class StorageProvider {
      * <br>
      * this method exists for special cases, such as cleanup, in which case we do allow writing to strage even if system is in read-only mode
      * @param checkSystemState  use false in special cases, otherwise don't use this method at all
+     * @return
      * @throws SomeLogicalStoragesNotReachableException
      * @throws NoLogicalStorageAttachedException
      * @throws ReadOnlyStateException
@@ -150,6 +156,7 @@ public class StorageProvider {
      *
      * @return storage services for all non-synchronizing storages
      * @throws SomeLogicalStoragesNotReachableException                       if some non-synchronizing storage is unreachable
+     * @throws cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException
      * @throws cz.cas.lib.arcstorage.service.exception.ReadOnlyStateException
      */
     public List<StorageService> createAdaptersForModifyOperation() throws SomeLogicalStoragesNotReachableException,

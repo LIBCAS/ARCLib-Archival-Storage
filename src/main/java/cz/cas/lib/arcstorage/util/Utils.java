@@ -24,7 +24,6 @@ import org.springframework.aop.framework.Advised;
 import org.springframework.aop.support.AopUtils;
 
 import java.io.*;
-import java.math.BigDecimal;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -316,7 +315,7 @@ public class Utils {
             String value = node.textValue();
             for (Enum enumeration : enumerationClass.getEnumConstants()) {
                 if (enumeration.toString().equals(value.toUpperCase()))
-                    return enumeration.valueOf(enumerationClass, value.toUpperCase());
+                    return Enum.valueOf(enumerationClass, value.toUpperCase());
             }
         }
         throw new ConfigParserException(jsonPtrExpr, node.toString(), enumerationClass);
@@ -326,6 +325,7 @@ public class Utils {
      * Checks that the checksum has the appropriate format
      *
      * @param checksum
+     * @throws cz.cas.lib.arcstorage.exception.BadRequestException
      */
     public static void checkChecksumFormat(Checksum checksum) throws BadRequestException {
         String hash = checksum.getValue();

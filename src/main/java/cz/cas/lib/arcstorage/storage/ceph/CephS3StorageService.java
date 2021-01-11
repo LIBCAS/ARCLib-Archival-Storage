@@ -16,6 +16,7 @@ import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.StorageUtils;
 import cz.cas.lib.arcstorage.storage.exception.*;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import net.schmizz.sshj.SSHClient;
@@ -61,11 +62,14 @@ public class CephS3StorageService implements StorageService {
     private String userAccessKey;
     private String userSecretKey;
     private int connectionTimeout;
+    private String sshServer;
     private int sshPort;
     private boolean https;
     private boolean virtualHost;
     private String sshKeyFilePath;
     private String sshUserName;
+    private String cluster;
+    private String cephBinHome;
 
     //not used for now
     private String region;
@@ -76,20 +80,26 @@ public class CephS3StorageService implements StorageService {
                                 boolean https,
                                 String region,
                                 int connectionTimeout,
+                                String sshServer,
                                 int sshPort,
                                 String sshKeyFilePath,
                                 String sshUserName,
-                                boolean virtualHost) {
+                                boolean virtualHost,
+                                String cluster,
+                                String cephBinHome) {
         this.storage = storage;
         this.userAccessKey = userAccessKey;
         this.userSecretKey = userSecretKey;
         this.region = region;
         this.connectionTimeout = connectionTimeout;
-        this.https=https;
+        this.https = https;
+        this.sshServer = sshServer == null ? storage.getHost() : sshServer;
         this.sshPort = sshPort;
         this.sshKeyFilePath = sshKeyFilePath;
         this.sshUserName = sshUserName;
         this.virtualHost = virtualHost;
+        this.cluster = cluster;
+        this.cephBinHome = cephBinHome;
     }
 
     @Override
@@ -205,7 +215,7 @@ public class CephS3StorageService implements StorageService {
 
 
     @Override
-    public void rollbackAip(AipDto aipDto, String dataSpace) throws StorageException {
+    public void rollbackAip(AipDto aipDto, String dataSpace) {
         AmazonS3 s3 = connect();
         rollbackFile(s3, aipDto.getSip(), dataSpace);
         for (ArchivalObjectDto xml : aipDto.getXmls()) {
@@ -268,8 +278,8 @@ public class CephS3StorageService implements StorageService {
         if (sshPort != 0) {
             try (SSHClient ssh = new SSHClient()) {
                 sshConnect(ssh);
-                storageStateData.put("cmd: " + CMD_STATUS, fetchDataFromRemote(ssh, "sudo " + CMD_STATUS, storage));
-                List<String> cephDfResult = fetchDataFromRemote(ssh, "sudo " + CMD_DF, storage);
+                storageStateData.put("cmd: " + CMD_STATUS, fetchDataFromRemote(ssh, createCmd(CMD_STATUS), storage));
+                List<String> cephDfResult = fetchDataFromRemote(ssh, createCmd(CMD_DF), storage);
                 storageStateData.put("cmd: " + CMD_DF, cephDfResult);
                 Pattern regex = Pattern.compile("\\s*(\\w+)\\.rgw\\.buckets\\.data.+");
                 Map<String, List<String>> poolDetailMap = new HashMap<>();
@@ -277,7 +287,7 @@ public class CephS3StorageService implements StorageService {
                     Matcher matcher = regex.matcher(s);
                     if (matcher.find()) {
                         String poolName = matcher.group(1);
-                        poolDetailMap.put(poolName, fetchDataFromRemote(ssh, "sudo " + CMD_PGS + " " + poolName + ".rgw.buckets.data", storage));
+                        poolDetailMap.put(poolName, fetchDataFromRemote(ssh, createCmd(CMD_PGS) + " " + poolName + ".rgw.buckets.data", storage));
                     }
                 }
                 storageStateData.put("cmd: " + CMD_PGS, poolDetailMap);
@@ -381,6 +391,24 @@ public class CephS3StorageService implements StorageService {
                 info.setContentConsistent(true);
         }
         return info;
+    }
+
+    private String createCmd(@NonNull String cmd) {
+        StringBuilder strTmp = new StringBuilder(0);
+        strTmp.append("sudo ");
+        if (!cephBinHome.isEmpty()) {
+            if (!cephBinHome.endsWith(System.getProperty("file.separator"))) {
+                strTmp.append(cephBinHome).append(System.getProperty("file.separator")).append(cmd);
+            } else {
+                strTmp.append(cephBinHome).append(cmd);
+            }
+        } else {
+            strTmp.append(cmd);
+        }
+        if (!this.cluster.isEmpty()) {
+            strTmp.append(" --cluster ").append(cluster);
+        }
+        return strTmp.toString();
     }
 
     /**
