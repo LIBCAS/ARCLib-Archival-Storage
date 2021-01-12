@@ -525,7 +525,7 @@ public class CephS3StorageService implements StorageService {
     private void sshConnect(SSHClient ssh) throws IOException {
         ssh.addHostKeyVerifier(new PromiscuousVerifier());
         ssh.setConnectTimeout(connectionTimeout);
-        ssh.connect(storage.getHost(), sshPort);
+        ssh.connect(sshServer, sshPort);
         ssh.authPublickey(sshUserName, sshKeyFilePath);
     }
 
