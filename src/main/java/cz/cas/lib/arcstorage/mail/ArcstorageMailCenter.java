@@ -249,7 +249,7 @@ public class ArcstorageMailCenter {
     }
 
     @Inject
-    public void setSenderEmail(@Value("${mail.sender.email}") String senderEmail) {
+    public void setSenderEmail(@Value("${spring.mail.username}") String senderEmail) {
         this.senderEmail = senderEmail;
     }
 

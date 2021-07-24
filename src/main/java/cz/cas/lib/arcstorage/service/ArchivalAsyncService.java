@@ -77,7 +77,7 @@ public class ArchivalAsyncService {
                             try (InputStream sipStream = tmpSip.createInputStream();
                                  InputStream xmlStream = tmpXml.createInputStream()) {
                                 a.storeAip(new AipDto(aip, sipStream, xmlStream), aipRollbackFlag.getLeft(), dataSpace);
-                                log.debug(a.getStorage() + ", " + aip + ", " + op + "success");
+                                log.debug(a.getStorage() + ", " + aip + ", " + op + (aipRollbackFlag.getLeft().get() ? "interrupted by rollback signal" : "success"));
                             } catch (StorageException e) {
                                 log.warn(a.getStorage() + ", " + aip + ", " + op + "error: " + e);
                                 throw new GeneralException(e);

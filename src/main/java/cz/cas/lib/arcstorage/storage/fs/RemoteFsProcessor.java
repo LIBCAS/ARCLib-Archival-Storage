@@ -81,8 +81,8 @@ public class RemoteFsProcessor implements StorageService {
             connect(ssh);
             listenForRollbackToKillSession(ssh, rollback);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
-                storeFile(sftp, folder, toXmlId(aip.getSip().getDatabaseId(), 1), aip.getXml().getInputStream(), aip.getXml().getChecksum(), rollback, aip.getXml().getCreated());
-                storeFile(sftp, folder, aip.getSip().getDatabaseId(), aip.getSip().getInputStream(), aip.getSip().getChecksum(), rollback, aip.getSip().getCreated());
+                storeFile(sftp, folder, aip.getXml().getStorageId(), aip.getXml().getInputStream(), aip.getXml().getChecksum(), rollback, aip.getXml().getCreated());
+                storeFile(sftp, folder, aip.getSip().getStorageId(), aip.getSip().getInputStream(), aip.getSip().getChecksum(), rollback, aip.getSip().getCreated());
             }
         } catch (IOException e) {
             rollback.set(true);
@@ -135,15 +135,15 @@ public class RemoteFsProcessor implements StorageService {
             try (SFTPClient sftp = ssh.newSFTPClient()) {
                 switch (objectDto.getState()) {
                     case DELETION_FAILURE:
-                        writeObjectMetadata(sftp, folderPath, objId, new ObjectMetadata(ObjectState.DELETED, objectDto.getCreated(), objectDto.getChecksum()));
+                        writeObjectMetadata(sftp, folderPath, new ObjectMetadata(objId, ObjectState.DELETED, objectDto.getCreated(), objectDto.getChecksum()));
                         break;
                     case ARCHIVAL_FAILURE:
                     case ROLLBACK_FAILURE:
-                        writeObjectMetadata(sftp, folderPath, objId, new ObjectMetadata(ObjectState.ROLLED_BACK, objectDto.getCreated(), objectDto.getChecksum()));
+                        writeObjectMetadata(sftp, folderPath, new ObjectMetadata(objId, ObjectState.ROLLED_BACK, objectDto.getCreated(), objectDto.getChecksum()));
                         break;
                     case ROLLED_BACK:
                     case DELETED:
-                        writeObjectMetadata(sftp, folderPath, objId, new ObjectMetadata(objectDto.getState(), objectDto.getCreated(), objectDto.getChecksum()));
+                        writeObjectMetadata(sftp, folderPath, new ObjectMetadata(objId, objectDto.getState(), objectDto.getCreated(), objectDto.getChecksum()));
                         break;
                     case REMOVED:
                         storeFile(sftp, folderPath, objId, objectDto.getInputStream(), objectDto.getChecksum(), rollback, objectDto.getCreated());
@@ -172,7 +172,7 @@ public class RemoteFsProcessor implements StorageService {
             connect(ssh);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
                 String objFolderPath = getFolderPath(objectDto.getStorageId(), dataSpace);
-                writeObjectMetadata(sftp, objFolderPath, objectDto.getStorageId(), new ObjectMetadata(objectDto.getState(), objectDto.getCreated(), objectDto.getChecksum()));
+                writeObjectMetadata(sftp, objFolderPath, new ObjectMetadata(objectDto.getStorageId(), objectDto.getState(), objectDto.getCreated(), objectDto.getChecksum()));
             }
         } catch (IOException e) {
             throw new SshException(e, storage);
@@ -444,7 +444,7 @@ public class RemoteFsProcessor implements StorageService {
         try {
             if (rollback.get())
                 return;
-            writeObjectMetadata(sftp, folder, id, new ObjectMetadata(ObjectState.PROCESSING, created, checksum));
+            writeObjectMetadata(sftp, folder, new ObjectMetadata(id, ObjectState.PROCESSING, created, checksum));
             sftp.put(new InputStreamSource(stream, id), folder);
             PipedInputStream in = new PipedInputStream();
             PipedOutputStream out = new PipedOutputStream(in);
@@ -462,7 +462,7 @@ public class RemoteFsProcessor implements StorageService {
             boolean rollbackInterruption = !verifyChecksum(in, checksum, rollback, storage);
             if (rollbackInterruption)
                 return;
-            writeObjectMetadata(sftp, folder, id, new ObjectMetadata(ObjectState.ARCHIVED, created, checksum));
+            writeObjectMetadata(sftp, folder, new ObjectMetadata(id, ObjectState.ARCHIVED, created, checksum));
         } catch (IOException e) {
             rollback.set(true);
             throw new IOStorageException(e, storage);
@@ -561,7 +561,7 @@ public class RemoteFsProcessor implements StorageService {
         if (objectMetadata == null)
             throw new FileDoesNotExistException(metadataFilePath(folder, fileId), storage);
         objectMetadata.setState(state);
-        writeObjectMetadata(sftp, folder, fileId, objectMetadata);
+        writeObjectMetadata(sftp, folder, objectMetadata);
     }
 
     /**
@@ -592,14 +592,13 @@ public class RemoteFsProcessor implements StorageService {
      *
      * @param sftp
      * @param folder
-     * @param fileId
      * @param objectMetadata
      * @throws IOStorageException
      */
-    void writeObjectMetadata(SFTPClient sftp, String folder, String fileId, ObjectMetadata objectMetadata) throws IOStorageException {
+    void writeObjectMetadata(SFTPClient sftp, String folder, ObjectMetadata objectMetadata) throws IOStorageException {
         try {
             sftp.mkdirs(folder);
-            sftp.put(new InputStreamSource(new ByteArrayInputStream(objectMetadata.serialize()), fileId + ".meta"), folder);
+            sftp.put(new InputStreamSource(new ByteArrayInputStream(objectMetadata.serialize()), objectMetadata.getStorageId() + ".meta"), folder);
         } catch (IOException e) {
             throw new IOStorageException(e, null);
         }
@@ -608,10 +607,10 @@ public class RemoteFsProcessor implements StorageService {
     void rollbackFile(SFTPClient sftp, String folder, ArchivalObjectDto dto) throws IOException, CantParseMetadataFile, IOStorageException, FileDoesNotExistException {
         ObjectMetadata objectMetadata = readObjectMetadata(sftp, folder, dto.getStorageId());
         if (objectMetadata == null)
-            objectMetadata = new ObjectMetadata(ObjectState.ROLLED_BACK, dto.getCreated(), dto.getChecksum());
+            objectMetadata = new ObjectMetadata(dto.getStorageId(), ObjectState.ROLLED_BACK, dto.getCreated(), dto.getChecksum());
         else
             objectMetadata.setState(ObjectState.ROLLED_BACK);
-        writeObjectMetadata(sftp, folder, dto.getStorageId(), objectMetadata);
+        writeObjectMetadata(sftp, folder, objectMetadata);
         deleteIfExistsSftp(sftp, folder + separator + dto.getStorageId());
     }
 

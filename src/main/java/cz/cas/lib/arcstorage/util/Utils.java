@@ -3,7 +3,6 @@ package cz.cas.lib.arcstorage.util;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.io.ByteSource;
 import com.google.common.io.Resources;
-import cz.cas.lib.arcstorage.domain.entity.DomainObject;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.dto.Checksum;
 import cz.cas.lib.arcstorage.exception.BadRequestException;
@@ -33,7 +32,6 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
 
 public class Utils {
 
@@ -206,16 +204,6 @@ public class Utils {
         } else {
             return a;
         }
-    }
-
-    public static <T extends DomainObject> List<T> sortByIdList(List<String> ids, Iterable<T> objects) {
-        Map<String, T> map = StreamSupport.stream(objects.spliterator(), true)
-                .collect(Collectors.toMap(DomainObject::getId, o -> o));
-
-        return ids.stream()
-                .map(map::get)
-                .filter(o -> o != null)
-                .collect(Collectors.toList());
     }
 
     public static <T> List<T> reverse(List<T> input) {

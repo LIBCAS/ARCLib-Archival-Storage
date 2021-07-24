@@ -60,8 +60,8 @@ public class LocalFsProcessor implements StorageService {
     @Override
     public void storeAip(AipDto aip, AtomicBoolean rollback, String dataSpace) throws StorageException {
         Path folder = getFolderPath(aip.getSip().getDatabaseId(), dataSpace);
-        storeFile(folder, toXmlId(aip.getSip().getDatabaseId(), 1), aip.getXml().getInputStream(), aip.getXml().getChecksum(), rollback, aip.getXml().getCreated());
-        storeFile(folder, aip.getSip().getDatabaseId(), aip.getSip().getInputStream(), aip.getSip().getChecksum(), rollback, aip.getSip().getCreated());
+        storeFile(folder, aip.getXml().getStorageId(), aip.getXml().getInputStream(), aip.getXml().getChecksum(), rollback, aip.getXml().getCreated());
+        storeFile(folder, aip.getSip().getStorageId(), aip.getSip().getInputStream(), aip.getSip().getChecksum(), rollback, aip.getSip().getCreated());
     }
 
     @Override
@@ -95,15 +95,15 @@ public class LocalFsProcessor implements StorageService {
         try {
             switch (objectDto.getState()) {
                 case DELETION_FAILURE:
-                    writeObjectMetadata(folder, id, new ObjectMetadata(ObjectState.DELETED, objectDto.getCreated(), objectDto.getChecksum()));
+                    writeObjectMetadata(folder, new ObjectMetadata(id, ObjectState.DELETED, objectDto.getCreated(), objectDto.getChecksum()));
                     break;
                 case ARCHIVAL_FAILURE:
                 case ROLLBACK_FAILURE:
-                    writeObjectMetadata(folder, id, new ObjectMetadata(ObjectState.ROLLED_BACK, objectDto.getCreated(), objectDto.getChecksum()));
+                    writeObjectMetadata(folder, new ObjectMetadata(id, ObjectState.ROLLED_BACK, objectDto.getCreated(), objectDto.getChecksum()));
                     break;
                 case ROLLED_BACK:
                 case DELETED:
-                    writeObjectMetadata(folder, id, new ObjectMetadata(objectDto.getState(), objectDto.getCreated(), objectDto.getChecksum()));
+                    writeObjectMetadata(folder, new ObjectMetadata(id, objectDto.getState(), objectDto.getCreated(), objectDto.getChecksum()));
                     break;
                 case REMOVED:
                     storeFile(getFolderPath(id, dataSpace), id, objectDto.getInputStream(), objectDto.getChecksum(), rollback, objectDto.getCreated());
@@ -125,7 +125,7 @@ public class LocalFsProcessor implements StorageService {
     @Override
     public void storeObjectMetadata(ArchivalObjectDto objectDto, String dataSpace) throws IOStorageException {
         Path folder = getFolderPath(objectDto.getStorageId(), dataSpace);
-        writeObjectMetadata(folder, objectDto.getStorageId(), new ObjectMetadata(objectDto.getState(), objectDto.getCreated(), objectDto.getChecksum()));
+        writeObjectMetadata(folder, new ObjectMetadata(objectDto.getStorageId(), objectDto.getState(), objectDto.getCreated(), objectDto.getChecksum()));
     }
 
     @Override
@@ -230,19 +230,18 @@ public class LocalFsProcessor implements StorageService {
         Path rootDir = Paths.get(rootDirPath);
         File dataSpaceFile = new File(rootDir.resolve(dataSpace).toString());
 
-        List<Pair<ArchivalObjectDto, Path>> objectsAndTheirPaths = getStoredObjects(dataSpaceFile);
+        List<Pair<ObjectMetadata, Path>> objectsAndTheirPaths = getStoredObjects(dataSpaceFile);
         List<ArchivalObjectDto> allStoredArchivalObjects = new ArrayList<>();
 
-        for (Pair<ArchivalObjectDto, Path> objectAndItsPath : objectsAndTheirPaths) {
-            ArchivalObjectDto object = objectAndItsPath.getLeft();
+        for (Pair<ObjectMetadata, Path> objectAndItsPath : objectsAndTheirPaths) {
+            ObjectMetadata object = objectAndItsPath.getLeft();
             Path pathToObject = objectAndItsPath.getRight();
-            allStoredArchivalObjects.add(object);
-            List<ArchivalObjectDto> xmls = lookForXmls(object, pathToObject);
+            List<ObjectMetadata> xmls = lookForXmls(object.getStorageId(), pathToObject);
             if (xmls.isEmpty())
-                object.setObjectType(ObjectType.OBJECT);
+                allStoredArchivalObjects.add(object.toDto(ObjectType.OBJECT));
             else {
-                object.setObjectType(ObjectType.SIP);
-                allStoredArchivalObjects.addAll(xmls);
+                allStoredArchivalObjects.add(object.toDto(ObjectType.SIP));
+                allStoredArchivalObjects.addAll(xmls.stream().map(o -> o.toDto(ObjectType.XML)).collect(Collectors.toList()));
             }
         }
         return allStoredArchivalObjects;
@@ -264,7 +263,7 @@ public class LocalFsProcessor implements StorageService {
      * @throws IOStorageException
      * @throws CantParseMetadataFile
      */
-    private List<Pair<ArchivalObjectDto, Path>> getStoredObjects(File dataSpace) throws IOStorageException, CantParseMetadataFile {
+    private List<Pair<ObjectMetadata, Path>> getStoredObjects(File dataSpace) throws IOStorageException, CantParseMetadataFile {
         List<File> objectMetadataFiles;
         try {
             objectMetadataFiles = Files.walk(dataSpace.toPath())
@@ -275,16 +274,11 @@ public class LocalFsProcessor implements StorageService {
             throw new IOStorageException(e, getStorage());
         }
 
-        List<Pair<ArchivalObjectDto, Path>> objectsAndTheirPaths = new ArrayList<>();
+        List<Pair<ObjectMetadata, Path>> objectsAndTheirPaths = new ArrayList<>();
         for (File objectMetadataFile : objectMetadataFiles) {
             String storageId = objectMetadataFile.getName().substring(0, objectMetadataFile.getName().length() - 5);
             ObjectMetadata metadata = readObjectMetadata(objectMetadataFile.getParentFile().toPath(), storageId);
-            ArchivalObjectDto archivalObject = new ArchivalObjectDto();
-            archivalObject.setCreated(metadata.getCreated());
-            archivalObject.setChecksum(metadata.getChecksum());
-            archivalObject.setStorageId(storageId);
-            archivalObject.setState(metadata.getState());
-            Pair<ArchivalObjectDto, Path> objectAndItsPath = Pair.of(archivalObject, objectMetadataFile.getParentFile().toPath());
+            Pair<ObjectMetadata, Path> objectAndItsPath = Pair.of(metadata, objectMetadataFile.getParentFile().toPath());
             objectsAndTheirPaths.add(objectAndItsPath);
         }
         return objectsAndTheirPaths;
@@ -294,38 +288,33 @@ public class LocalFsProcessor implements StorageService {
      * Checks whether the passed {@link ArchivalObject} should be considered as {@link AipSip} (which is determined by finding / not finding any XML)
      * and if so then returns list of XMLs, otherwise returns empty list
      * <p>
-     *     Scans the dataSpace folder for object metadata files: considers only files related to XMLs (not SIPs or general objects)
-     *     and for every object found creates {@link ArchivalObject} out of the given data + XML version derived from the file name.
+     * Scans the dataSpace folder for object metadata files: considers only files related to XMLs (not SIPs or general objects)
+     * and for every object found creates {@link ArchivalObject} out of the given data + XML version derived from the file name.
      * </p>
-     * @param archivalObject       archival object (possibly SIP) for which the respective XMLs should be searched for
+     *
+     * @param possibleSipStorageId storage id of the archival object (possibly SIP) for which the respective XMLs should be searched for
      * @param pathToArchivalObject path to the folder where the object and possibly its XMLs reside
      * @return {@link List<ArchivalObject>} populated with found XMLs or empty list indicating that the passed {@link ArchivalObject} is not SIP but a general object
      * @throws IOStorageException
      * @throws CantParseMetadataFile
      */
-    private List<ArchivalObjectDto> lookForXmls(ArchivalObjectDto archivalObject, Path pathToArchivalObject) throws IOStorageException, CantParseMetadataFile {
+    private List<ObjectMetadata> lookForXmls(String possibleSipStorageId, Path pathToArchivalObject) throws IOStorageException, CantParseMetadataFile {
         List<File> xmlMetadataFiles;
         try {
             xmlMetadataFiles = Files.walk(pathToArchivalObject)
                     .map(Path::toFile)
                     .filter(f -> f.isFile() &&
-                            f.getName().matches("^" + archivalObject.getStorageId() + "_xml_[0-9]+.meta$"))
+                            f.getName().matches("^" + possibleSipStorageId + "_xml_[0-9]+.meta$"))
                     .collect(Collectors.toList());
         } catch (IOException e) {
             throw new IOStorageException(e, getStorage());
         }
 
-        List<ArchivalObjectDto> xmls = new ArrayList<>();
+        List<ObjectMetadata> xmls = new ArrayList<>();
         for (File xmlMetadataFile : xmlMetadataFiles) {
             String storageId = xmlMetadataFile.getName().substring(0, xmlMetadataFile.getName().length() - 5);
             ObjectMetadata metadata = readObjectMetadata(xmlMetadataFile.getParentFile().toPath(), storageId);
-            ArchivalObjectDto xmlDto = new ArchivalObjectDto();
-            xmlDto.setCreated(metadata.getCreated());
-            xmlDto.setChecksum(metadata.getChecksum());
-            xmlDto.setStorageId(storageId);
-            xmlDto.setState(metadata.getState());
-            xmlDto.setObjectType(ObjectType.XML);
-            xmls.add(xmlDto);
+            xmls.add(metadata);
         }
         return xmls;
     }
@@ -374,7 +363,7 @@ public class LocalFsProcessor implements StorageService {
         if (rollback.get())
             return;
         try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(folder.resolve(id).toFile()))) {
-            writeObjectMetadata(folder, id, new ObjectMetadata(ObjectState.PROCESSING, created, checksum));
+            writeObjectMetadata(folder, new ObjectMetadata(id, ObjectState.PROCESSING, created, checksum));
             byte[] buffer = new byte[8192];
             int read = stream.read(buffer);
             while (read > 0) {
@@ -402,10 +391,10 @@ public class LocalFsProcessor implements StorageService {
     void rollbackFile(Path folder, ArchivalObjectDto dto) throws StorageException, IOException {
         ObjectMetadata objectMetadata = readObjectMetadata(folder, dto.getStorageId());
         if (objectMetadata == null)
-            objectMetadata = new ObjectMetadata(ObjectState.ROLLED_BACK, dto.getCreated(), dto.getChecksum());
+            objectMetadata = new ObjectMetadata(dto.getStorageId(), ObjectState.ROLLED_BACK, dto.getCreated(), dto.getChecksum());
         else
             objectMetadata.setState(ObjectState.ROLLED_BACK);
-        writeObjectMetadata(folder, dto.getStorageId(), objectMetadata);
+        writeObjectMetadata(folder, objectMetadata);
         Files.deleteIfExists(folder.resolve(dto.getStorageId()));
     }
 
@@ -441,7 +430,7 @@ public class LocalFsProcessor implements StorageService {
         if (objectMetadata == null)
             throw new FileDoesNotExistException(metadataFilePath(folder, fileId).toString(), storage);
         objectMetadata.setState(state);
-        writeObjectMetadata(folder, fileId, objectMetadata);
+        writeObjectMetadata(folder, objectMetadata);
     }
 
     /**
@@ -468,12 +457,11 @@ public class LocalFsProcessor implements StorageService {
      * overwrites the whole metadata file
      *
      * @param folder
-     * @param fileId
      * @param objectMetadata
      * @throws IOStorageException
      */
-    void writeObjectMetadata(Path folder, String fileId, ObjectMetadata objectMetadata) throws IOStorageException {
-        File file = metadataFilePath(folder, fileId).toFile();
+    void writeObjectMetadata(Path folder, ObjectMetadata objectMetadata) throws IOStorageException {
+        File file = metadataFilePath(folder, objectMetadata.getStorageId()).toFile();
         try {
             Files.write(file.toPath(), objectMetadata.serialize(), StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
         } catch (IOException e) {

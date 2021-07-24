@@ -1,11 +1,14 @@
 package cz.cas.lib.arcstorage.storage.fs;
 
+import cz.cas.lib.arcstorage.domain.entity.ObjectType;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
+import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
 import cz.cas.lib.arcstorage.dto.Checksum;
 import cz.cas.lib.arcstorage.dto.ChecksumType;
 import cz.cas.lib.arcstorage.dto.ObjectState;
 import cz.cas.lib.arcstorage.storage.exception.CantParseMetadataFile;
 import lombok.Getter;
+import lombok.NonNull;
 
 import java.io.BufferedWriter;
 import java.io.ByteArrayOutputStream;
@@ -26,25 +29,28 @@ public class ObjectMetadata {
     public static final String KEY_CREATED = "created";
     public static final String KEY_STATE = "state";
 
-    public ObjectMetadata(ObjectState state, Instant created, Checksum checksum) {
-        notNull(state, () -> new IllegalArgumentException("missing metadata"));
-        notNull(created, () -> new IllegalArgumentException("missing metadata"));
-        notNull(checksum, () -> new IllegalArgumentException("missing metadata"));
-        this.checksum = checksum;
-        this.state = state;
-        this.created = created;
-    }
-
     @Getter
     private Instant created;
     @Getter
     private ObjectState state;
     @Getter
     private Checksum checksum;
+    @Getter
+    private String storageId;
 
-    public ObjectMetadata(List<String> lines, String fileId, Storage storage) throws CantParseMetadataFile {
+    public ObjectMetadata(@NonNull String storageId, @NonNull ObjectState state, @NonNull Instant created, @NonNull Checksum checksum) {
+        this.storageId = storageId;
+        this.checksum = checksum;
+        this.state = state;
+        this.created = created;
+    }
+
+    public ObjectMetadata(@NonNull List<String> lines, @NonNull String storageId, @NonNull Storage storage) throws CantParseMetadataFile {
         if (lines.size() != 4)
-            throw new CantParseMetadataFile(fileId, "Some metadata missing, file content: " + Arrays.toString(lines.toArray()), storage);
+            throw new CantParseMetadataFile(storageId, "Some metadata missing, file content: " + Arrays.toString(lines.toArray()), storage);
+        this.storageId = storageId;
+        String checksumValue = null;
+        ChecksumType checksumType = null;
         for (String line : lines) {
             int separatorIndex = line.indexOf(':');
             String key = line.substring(0, separatorIndex);
@@ -52,15 +58,10 @@ public class ObjectMetadata {
             try {
                 switch (key) {
                     case KEY_CHECKSUM_TYPE:
-                        if (checksum == null)
-                            checksum = new Checksum();
-                        ChecksumType checksumType = ChecksumType.valueOf(value);
-                        checksum.setType(checksumType);
+                        checksumType = ChecksumType.valueOf(value);
                         break;
                     case KEY_CHECKSUM_VALUE:
-                        if (checksum == null)
-                            checksum = new Checksum();
-                        checksum.setValue(value);
+                        checksumValue = value;
                         break;
                     case KEY_CREATED:
                         created = Instant.parse(value);
@@ -69,14 +70,20 @@ public class ObjectMetadata {
                         state = ObjectState.valueOf(value);
                         break;
                     default:
-                        throw new CantParseMetadataFile(fileId, "Unknown metadata key: " + value, storage);
+                        throw new CantParseMetadataFile(storageId, "Unknown metadata key: " + value, storage);
                 }
             } catch (DateTimeParseException | IllegalArgumentException e) {
-                throw new CantParseMetadataFile(fileId, "Couldn't deserialize " + key + " value: " + value, storage);
+                throw new CantParseMetadataFile(storageId, "Couldn't deserialize " + key + " value: " + value, storage);
             }
         }
+        this.checksum = new Checksum(checksumType, checksumValue);
     }
 
+    /**
+     * Serializes metadata of the object. {@link #storageId} is not serialized.
+     *
+     * @return serialized metadata
+     */
     public byte[] serialize() throws IOException {
         String keyValueFormat = "%s:%s";
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
@@ -99,5 +106,9 @@ public class ObjectMetadata {
     public void setState(ObjectState state) {
         notNull(state, () -> new IllegalArgumentException("missing metadata"));
         this.state = state;
+    }
+
+    public ArchivalObjectDto toDto(ObjectType objectType) {
+        return new ArchivalObjectDto(storageId, null, checksum, null, null, state, created, objectType);
     }
 }

@@ -620,7 +620,7 @@ public class AipService {
             log.error("Cannot retrieve AIP " + sipEntity.getId() + " from neither of the storages because the checksums do not match.");
             throw e;
         } catch (StorageException e) {
-            log.error("Storage error has occurred during retrieval process of AIP: " + sipEntity.getId());
+            log.error("Storage error has occurred during retrieval process of AIP: " + sipEntity.getId(), e);
             aip = recoverAipFromOtherStorages(sipEntity, xmls, storageServicesByPriorities, null);
         }
         log.info("AIP: " + sipEntity.getId() + " has been successfully retrieved.");

@@ -1,12 +1,8 @@
 package cz.cas.lib.arcstorage.dto;
 
-import cz.cas.lib.arcstorage.domain.entity.ArchivalObject;
 import cz.cas.lib.arcstorage.domain.entity.ObjectType;
 import cz.cas.lib.arcstorage.domain.entity.User;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 import java.io.InputStream;
 import java.time.Instant;
@@ -19,7 +15,7 @@ import java.util.Objects;
 @Setter
 @Getter
 @AllArgsConstructor
-@NoArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class ArchivalObjectDto {
     private String storageId;
     private String databaseId;
@@ -28,14 +24,9 @@ public class ArchivalObjectDto {
      * object may be populated just with id
      */
     private User owner;
-
     private InputStream inputStream;
     private ObjectState state;
     private Instant created;
-    /**
-     * set automatically when DTO is created via {@link ArchivalObject#toDto()}
-     * may be used as a hint but also may be not filled.. double check that it is filled before using
-     */
     private ObjectType objectType;
 
     public boolean metadataEquals(ArchivalObjectDto that) {

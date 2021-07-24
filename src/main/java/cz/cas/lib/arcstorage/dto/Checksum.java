@@ -7,14 +7,15 @@ import javax.persistence.EnumType;
 import javax.persistence.Enumerated;
 
 @AllArgsConstructor
-@NoArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 @Setter
 @Getter
 @Embeddable
-@ToString
 public class Checksum {
+    @NonNull
     @Enumerated(EnumType.STRING)
     private ChecksumType type;
+    @NonNull
     private String value;
 
     @Override
