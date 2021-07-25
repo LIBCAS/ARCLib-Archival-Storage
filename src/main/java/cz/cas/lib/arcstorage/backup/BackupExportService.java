@@ -6,6 +6,8 @@ import cz.cas.lib.arcstorage.domain.store.ArchivalObjectStore;
 import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
 import cz.cas.lib.arcstorage.dto.ObjectRetrievalResource;
 import cz.cas.lib.arcstorage.dto.StorageType;
+import cz.cas.lib.arcstorage.domain.views.ArchivalObjectLightweightView;
+import cz.cas.lib.arcstorage.domain.store.ArchivalObjectLightweightViewStore;
 import cz.cas.lib.arcstorage.service.ArchivalService;
 import cz.cas.lib.arcstorage.service.exception.state.FailedStateException;
 import cz.cas.lib.arcstorage.service.exception.state.RollbackStateException;
@@ -44,6 +46,7 @@ import java.util.stream.Collectors;
 @Slf4j
 public class BackupExportService {
     private ArchivalObjectStore archivalObjectStore;
+    private ArchivalObjectLightweightViewStore archivalObjectLightweightViewStore;
     private ObjectAuditStore objectAuditStore;
     private ArchivalService archivalService;
     private Path backupDir;
@@ -60,14 +63,15 @@ public class BackupExportService {
         boolean reachable = backupStorageService.testConnection();
         if (!reachable)
             throw new BackupProcessException("backup directory: " + backupDir.toAbsolutePath().toString() + " not reachable for R/W");
-        List<ArchivalObject> processedObjects = archivalObjectStore.findObjectsForNewStorage(since, to);
+        List<ArchivalObjectLightweightView> processedObjects = archivalObjectLightweightViewStore.findObjectsForNewStorage(since, to);
         Set<String> idsOfProcessedObjects = new HashSet<>();
         List<ObjectAudit> modifyOpsAudits = objectAuditStore.findAuditsForSync(since, to);
         List<String> idsOfNewlyModifiedObjects = new ArrayList<>();
         CompletableFuture.runAsync(() -> {
             log.debug("First phase (copying new objects) has begun.");
-            for (ArchivalObject obj : processedObjects) {
-                copyObject(obj.toDto(), backupStorageService);
+            for (ArchivalObjectLightweightView obj : processedObjects) {
+                ArchivalObjectDto objDto = obj.toDto();
+                copyObject(objDto, backupStorageService);
                 idsOfProcessedObjects.add(obj.getId());
             }
             log.debug("First phase completed. Copied " + idsOfProcessedObjects.size() + " new objects.");
@@ -83,7 +87,7 @@ public class BackupExportService {
             }
             log.debug("Second phase completed. Propagated " + idsOfNewlyModifiedObjects.size() + " new operations, " +
                     skipCount + " were skipped because were already propagated during first phase.");
-            processedObjects.addAll(archivalObjectStore.findAllInList(idsOfNewlyModifiedObjects));
+            processedObjects.addAll(archivalObjectLightweightViewStore.findAllInList(idsOfNewlyModifiedObjects));
             log.debug("Third phase (verification) has begun.");
             verifyStateOfAllExported(backupStorageService, processedObjects);
             log.debug("Third phase completed. " + processedObjects.size() + " objects were successfully created/updated in backup directory.");
@@ -150,9 +154,9 @@ public class BackupExportService {
         }
     }
 
-    private void verifyStateOfAllExported(StorageService backupStorageService, List<ArchivalObject> objectsToCheck) throws BackupProcessException {
+    private void verifyStateOfAllExported(StorageService backupStorageService, List<ArchivalObjectLightweightView> objectsToCheck) throws BackupProcessException {
         AtomicLong counter = new AtomicLong(0);
-        List<ArchivalObjectDto> dtos = objectsToCheck.stream().map(ArchivalObject::toDto).collect(Collectors.toList());
+        List<ArchivalObjectDto> dtos = objectsToCheck.stream().map(ArchivalObjectLightweightView::toDto).collect(Collectors.toList());
         AtomicBoolean loopStopped = new AtomicBoolean(false);
         ArchivalObjectDto failedObject;
         new Thread(() -> {
@@ -182,6 +186,11 @@ public class BackupExportService {
     @Inject
     public void setArchivalObjectStore(ArchivalObjectStore archivalObjectStore) {
         this.archivalObjectStore = archivalObjectStore;
+    }
+
+    @Inject
+    public void setArchivalObjectLightweightViewStore(ArchivalObjectLightweightViewStore archivalObjectLightweightViewStore) {
+        this.archivalObjectLightweightViewStore = archivalObjectLightweightViewStore;
     }
 
     @Inject

@@ -1,14 +1,13 @@
 package cz.cas.lib.arcstorage.storagesync;
 
-import cz.cas.lib.arcstorage.domain.entity.ArchivalObject;
-import cz.cas.lib.arcstorage.domain.entity.DomainObject;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.domain.entity.SystemState;
-import cz.cas.lib.arcstorage.domain.store.ArchivalObjectStore;
 import cz.cas.lib.arcstorage.domain.store.StorageStore;
 import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
 import cz.cas.lib.arcstorage.dto.ObjectRetrievalResource;
 import cz.cas.lib.arcstorage.mail.ArcstorageMailCenter;
+import cz.cas.lib.arcstorage.domain.views.ArchivalObjectLightweightView;
+import cz.cas.lib.arcstorage.domain.store.ArchivalObjectLightweightViewStore;
 import cz.cas.lib.arcstorage.service.ArchivalDbService;
 import cz.cas.lib.arcstorage.service.ArchivalService;
 import cz.cas.lib.arcstorage.service.SystemStateService;
@@ -46,7 +45,6 @@ public class StorageSyncService {
 
     private ObjectAuditStore objectAuditStore;
     private ArchivalService archivalService;
-    private ArchivalObjectStore archivalObjectStore;
     private SystemStateService systemStateService;
     private ArcstorageMailCenter arcstorageMailCenter;
     private ArchivalDbService archivalDbService;
@@ -54,6 +52,7 @@ public class StorageSyncService {
     private StorageSyncStatusStore syncStatusStore;
     private int transactionTimeoutSeconds;
     private Path tmpFolder;
+    private ArchivalObjectLightweightViewStore archivalObjectLightweightViewStore;
 
     /**
      * tries to transit from {@link StorageSyncPhase#INIT} through {@link StorageSyncPhase#COPYING_ARCHIVED_OBJECTS} to {@link StorageSyncPhase#PROPAGATING_OPERATIONS}
@@ -63,13 +62,13 @@ public class StorageSyncService {
      */
     @Async
     public void copyArchivedObjects(StorageService destinationStorage, StorageSyncStatus status) throws InterruptedException {
-        List<ArchivalObject> objectsForNewStorage = archivalObjectStore.findObjectsForNewStorage(status.getStuckAt(), status.getCreated());
-        List<ArchivalObjectDto> archivalObjectDtos = objectsForNewStorage.stream().map(ArchivalObject::toDto).collect(Collectors.toList());
+        List<ArchivalObjectLightweightView> objectsForNewStorage = archivalObjectLightweightViewStore.findObjectsForNewStorage(status.getStuckAt(), status.getCreated());
+        List<ArchivalObjectDto> archivalObjectDtos = objectsForNewStorage.stream().map(ArchivalObjectLightweightView::toDto).collect(Collectors.toList());
         status.setTotalInThisPhase(archivalObjectDtos.size());
         status.setDoneInThisPhase(0);
         status.clearExeptionInfo();
         syncStatusStore.save(status);
-        log.debug("Syncing: "+ StorageSyncPhase.COPYING_ARCHIVED_OBJECTS + " sync phase of " + destinationStorage.getStorage() + ", " + status.getTotalInThisPhase() + " objects need to be synced");
+        log.debug("Syncing: " + StorageSyncPhase.COPYING_ARCHIVED_OBJECTS + " sync phase of " + destinationStorage.getStorage() + ", " + status.getTotalInThisPhase() + " objects need to be synced");
 
         for (ArchivalObjectDto object : archivalObjectDtos) {
             boolean success = copyObject(object, status, destinationStorage);
@@ -96,9 +95,9 @@ public class StorageSyncService {
         String logPrefix = status.getPhase() == StorageSyncPhase.COPYING_ARCHIVED_OBJECTS ? "Starting " : "Continuing ";
         Instant nextTimeStartAt = Instant.now();
         List<ObjectAudit> operationsToBeSynced = objectAuditStore.findAuditsForSync(from, null);
-        Map<String, ArchivalObject> objectsInDb = archivalObjectStore
-                .findAllInList(operationsToBeSynced.stream().map(ObjectAudit::getIdInDatabase).collect(Collectors.toList()))
-                .stream().collect(Collectors.toMap(DomainObject::getId, v -> v));
+        Map<String, ArchivalObjectLightweightView> objectsInDb = archivalObjectLightweightViewStore.findAllInList(
+                operationsToBeSynced.stream().map(ObjectAudit::getIdInDatabase).collect(Collectors.toList()))
+                .stream().collect(Collectors.toMap(ArchivalObjectLightweightView::getId, v -> v));
         status.setPhase(StorageSyncPhase.PROPAGATING_OPERATIONS);
         status.setDoneInThisPhase(0);
         status.setTotalInThisPhase(operationsToBeSynced.size());
@@ -123,7 +122,7 @@ public class StorageSyncService {
                             destinationStorage.rollbackObject(objectsInDb.get(objectAudit.getIdInDatabase()).toDto(), objectAudit.getUser().getDataSpace());
                             break;
                         case ARCHIVAL_RETRY:
-                            ArchivalObject archivalObject = objectsInDb.get(objectAudit.getIdInDatabase());
+                            ArchivalObjectLightweightView archivalObject = objectsInDb.get(objectAudit.getIdInDatabase());
                             copyObject(archivalObject.toDto(), status, destinationStorage);
                             continue;
                     }
@@ -162,7 +161,7 @@ public class StorageSyncService {
     @Async
     public void postSyncCheck(StorageService destinationStorage, StorageSyncStatus status) {
         String logPrefix = status.getPhase() == StorageSyncPhase.PROPAGATING_OPERATIONS ? "Starting " : "Continuing ";
-        List<ArchivalObjectDto> objectsToBeChecked = archivalObjectStore.findAllCreatedWithinTimeRange(status.getStuckAt(), null);
+        List<ArchivalObjectDto> objectsToBeChecked = archivalObjectLightweightViewStore.findAllCreatedWithinTimeRange(status.getStuckAt(), null).stream().map(ArchivalObjectLightweightView::toDto).collect(Collectors.toList());
         log.debug(logPrefix + StorageSyncPhase.POST_SYNC_CHECK + " sync phase of " + destinationStorage.getStorage() + " " + status.getTotalInThisPhase() + " objects need to be checked");
         status.setPhase(StorageSyncPhase.POST_SYNC_CHECK);
         status.clearExeptionInfo();
@@ -304,8 +303,8 @@ public class StorageSyncService {
     }
 
     @Inject
-    public void setArchivalObjectStore(ArchivalObjectStore archivalObjectStore) {
-        this.archivalObjectStore = archivalObjectStore;
+    public void setArchivalObjectLightweightViewStore(ArchivalObjectLightweightViewStore archivalObjectLightweightViewStore) {
+        this.archivalObjectLightweightViewStore = archivalObjectLightweightViewStore;
     }
 
     @Inject

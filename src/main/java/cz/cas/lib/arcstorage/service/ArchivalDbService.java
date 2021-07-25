@@ -1,10 +1,8 @@
 package cz.cas.lib.arcstorage.service;
 
 import cz.cas.lib.arcstorage.domain.entity.*;
-import cz.cas.lib.arcstorage.domain.store.AipSipStore;
-import cz.cas.lib.arcstorage.domain.store.AipXmlStore;
-import cz.cas.lib.arcstorage.domain.store.ArchivalObjectStore;
-import cz.cas.lib.arcstorage.domain.store.Transactional;
+import cz.cas.lib.arcstorage.domain.store.*;
+import cz.cas.lib.arcstorage.domain.views.ArchivalObjectLightweightView;
 import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
 import cz.cas.lib.arcstorage.dto.Checksum;
 import cz.cas.lib.arcstorage.dto.ObjectState;
@@ -59,6 +57,7 @@ public class ArchivalDbService {
     private UserStore userStore;
     private SystemStateService systemStateService;
     private TransactionTemplate transactionTemplate;
+    private ArchivalObjectLightweightViewStore archivalObjectLightweightViewStore;
 
     /**
      * Registers that AIP creation process has started. Stores AIP records to database and sets their state to <i>processing</i>.
@@ -426,29 +425,26 @@ public class ArchivalDbService {
             User user = dataspacesAndOwners.get(dataspace);
             log.info(prefix + " of objects (AIP data parts / AIP XMLs / general objects) in dataspace: " + dataspace + " has started. User " + user + " choose as owner of new records.");
             List<ArchivalObjectDto> objectsAtStorage = storageService.createDtosForAllObjects(dataspace);
-            Map<String, ArchivalObject> objectsInDb = archivalObjectStore.findObjectsOfUser(user).stream().collect(Collectors.toMap(o -> o.toDto().getStorageId(), Function.identity()));
-            Set<ArchivalObject> conflictObjects = new HashSet<>();
+            Map<String, ArchivalObjectLightweightView> objectsInDb = archivalObjectLightweightViewStore.findObjectsOfUser(user).stream().collect(Collectors.toMap(o -> o.toDto().getStorageId(), Function.identity()));
+            Set<ArchivalObjectLightweightView> conflictObjects = new HashSet<>();
 
             log.trace(prefix + " found " + objectsAtStorage.size() + " objects at storage");
             log.trace(prefix + " found " + objectsInDb + " objects in database");
 
-            Map<String, AipSip> sipMap = new HashMap<>();
             for (ArchivalObjectDto o : objectsAtStorage) {
-                ArchivalObject fromDb = objectsInDb.get(o.getStorageId());
+                ArchivalObjectLightweightView fromDb = objectsInDb.get(o.getStorageId());
                 objectsInDb.remove(o.getStorageId());
                 if (fromDb == null) {
-                    ArchivalObject entity = dtoToEntity(o, sipMap);
+                    ArchivalObject entity = dtoToEntity(o);
                     entity.setOwner(user);
                     archivalObjectStore.save(entity);
                     newRecordsCounter++;
                 } else {
-                    if (fromDb instanceof AipSip)
-                        sipMap.put(fromDb.getId(), (AipSip) fromDb);
                     if (fromDb.toDto().metadataEquals(o))
                         continue;
                     conflictObjects.add(fromDb);
                     if (overrideConflicts) {
-                        ArchivalObject newEntity = dtoToEntity(o, sipMap);
+                        ArchivalObject newEntity = dtoToEntity(o);
                         newEntity.setOwner(fromDb.getOwner());
                         newEntity.setId(fromDb.getId());
                         archivalObjectStore.save(newEntity);
@@ -468,7 +464,7 @@ public class ArchivalDbService {
         }
     }
 
-    private ArchivalObject dtoToEntity(ArchivalObjectDto o, Map<String, AipSip> sipMap) {
+    private ArchivalObject dtoToEntity(ArchivalObjectDto o) {
         ArchivalObject entity;
         switch (o.getObjectType()) {
             case OBJECT:
@@ -478,12 +474,11 @@ public class ArchivalDbService {
             case SIP:
                 entity = new AipSip();
                 entity.setId(o.getStorageId());
-                sipMap.put(entity.getId(), (AipSip) entity);
                 break;
             case XML:
                 entity = new AipXml();
                 ((AipXml) entity).setVersion(extractXmlVersion(o.getStorageId()));
-                ((AipXml) entity).setSip(sipMap.get(extractSipId(o.getStorageId())));
+                ((AipXml) entity).setSip(new AipSip(extractSipId(o.getStorageId())));
                 break;
             default:
                 throw new IllegalArgumentException("object type not set");
@@ -544,5 +539,10 @@ public class ArchivalDbService {
 
     public void setTransactionTemplateTimeout(int timeout) {
         transactionTemplate.setTimeout(timeout);
+    }
+
+    @Inject
+    public void setArchivalObjectLightweightViewStore(ArchivalObjectLightweightViewStore archivalObjectLightweightViewStore) {
+        this.archivalObjectLightweightViewStore = archivalObjectLightweightViewStore;
     }
 }
