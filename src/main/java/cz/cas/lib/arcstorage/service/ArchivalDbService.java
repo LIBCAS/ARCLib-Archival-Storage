@@ -27,6 +27,7 @@ import cz.cas.lib.arcstorage.util.ApplicationContextUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -396,6 +397,7 @@ public class ArchivalDbService {
      * @param overrideConflicts
      * @throws StorageException
      */
+    @Async
     public void recoverDbDataFromStorage(StorageService storageService, boolean overrideConflicts) throws StorageException {
         String prefix = "DB RECOVERY";
         log.info(prefix + " starting, using " + storageService.getStorage());
