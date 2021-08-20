@@ -11,8 +11,8 @@ import cz.cas.lib.arcstorage.security.user.UserStore;
 import cz.cas.lib.arcstorage.service.exception.state.DeletedStateException;
 import cz.cas.lib.arcstorage.service.exception.state.RollbackStateException;
 import cz.cas.lib.arcstorage.service.exception.state.StillProcessingStateException;
-import cz.cas.lib.arcstorage.service.exception.storage.ObjectCouldNotBeRetrievedException;
 import cz.cas.lib.arcstorage.storage.StorageService;
+import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storage.fs.FsAdapter;
 import cz.cas.lib.arcstorage.storage.fs.LocalFsProcessor;
 import cz.cas.lib.arcstorage.storagesync.ObjectAuditStore;
@@ -444,7 +444,7 @@ public class ArchivalServiceTest extends DbTest {
         xmlStates.add(xml2state);
         dto.setXmlStates(xmlStates);
         when(storageService.getAipInfo(any(), any(), any())).thenReturn(dto);
-        doThrow(ObjectCouldNotBeRetrievedException.class).when(storageService).storeObject(any(), any(), any());
+        doThrow(new IOStorageException(storage)).when(storageService).storeObject(any(), any(), any());
 
         AipSip aip = new AipSip("aip", null, user, ObjectState.REMOVED);
         AipXml xml1 = new AipXml("xml1", null, user, aip, 1, ObjectState.ARCHIVED);

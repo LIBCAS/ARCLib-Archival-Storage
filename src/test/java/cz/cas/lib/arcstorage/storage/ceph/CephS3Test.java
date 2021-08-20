@@ -313,10 +313,7 @@ public class CephS3Test extends StorageServiceTest {
         Map<String, String> userMetadata = objectMetadata.getUserMetadata();
         assertThat(userMetadata.get(CephS3StorageService.STATE_KEY), is(ObjectState.PROCESSING.toString()));
         //actual test
-        ArchivalObjectDto dto = new ArchivalObjectDto();
-        dto.setStorageId(fileId);
-        dto.setChecksum(LARGE_SIP_CHECKSUM);
-        dto.setCreated(creation);
+        ArchivalObjectDto dto = new ArchivalObjectDto(fileId, null, LARGE_SIP_CHECKSUM, null, null, ObjectState.PROCESSING, creation, ObjectType.SIP);
         service.rollbackFile(s3, dto, bucketName);
 
         assertThrown(() -> s3.getObject(bucketName, fileId)).isInstanceOf(AmazonS3Exception.class).messageContains("NoSuchKey");
@@ -332,10 +329,7 @@ public class CephS3Test extends StorageServiceTest {
 
         Instant creation = Instant.now();
         service.storeFile(s3, fileId, getSipStream(), SIP_CHECKSUM, new AtomicBoolean(false), bucketName, creation);
-        ArchivalObjectDto dto = new ArchivalObjectDto();
-        dto.setStorageId(fileId);
-        dto.setChecksum(SIP_CHECKSUM);
-        dto.setCreated(creation);
+        ArchivalObjectDto dto = new ArchivalObjectDto(fileId, null, SIP_CHECKSUM, null, null, ObjectState.ARCHIVED, creation, ObjectType.SIP);
         service.rollbackFile(s3, dto, bucketName);
         service.rollbackFile(s3, dto, bucketName);
 
@@ -349,10 +343,7 @@ public class CephS3Test extends StorageServiceTest {
     public void rollbackCompletlyMissingFile() throws Exception {
         String fileId = testName.getMethodName();
         AmazonS3 s3 = service.connect();
-        ArchivalObjectDto dto = new ArchivalObjectDto();
-        dto.setStorageId(fileId);
-        dto.setChecksum(new Checksum(ChecksumType.MD5, "hash"));
-        dto.setCreated(Instant.now());
+        ArchivalObjectDto dto = new ArchivalObjectDto(fileId, null, new Checksum(ChecksumType.MD5, "hash"), null, null, ObjectState.ARCHIVED, Instant.now(), ObjectType.SIP);
         service.rollbackFile(s3, dto, bucketName);
         Map<String, String> userMetadata = s3.getObjectMetadata(bucketName, service.toMetadataObjectId(fileId)).getUserMetadata();
         assertThat(userMetadata.get(CephS3StorageService.STATE_KEY), is(ObjectState.ROLLED_BACK.toString()));
@@ -387,8 +378,7 @@ public class CephS3Test extends StorageServiceTest {
         AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, bucketName);
-        ArchivalObjectDto dto = new ArchivalObjectDto();
-        dto.setStorageId(xmlId);
+        ArchivalObjectDto dto = new ArchivalObjectDto(xmlId, null, XML_CHECKSUM, null, null, ObjectState.ARCHIVED, Instant.now(), ObjectType.XML);
         service.rollbackObject(aip.getXml(), bucketName);
 
         AmazonS3 s3 = service.connect();

@@ -221,8 +221,7 @@ public class LocalProcessorTest extends StorageServiceTest {
             service.storeFile(getFolderPath(fileId), fileId, bos, LARGE_SIP_CHECKSUM, rollback, Instant.now());
         }
         assertThat(isInState(path.resolve(fileId), ObjectState.PROCESSING), is(true));
-        ArchivalObjectDto dto = new ArchivalObjectDto();
-        dto.setStorageId(fileId);
+        ArchivalObjectDto dto = new ArchivalObjectDto(fileId, null, LARGE_SIP_CHECKSUM, null, null, ObjectState.PROCESSING, Instant.now(), ObjectType.SIP);
         service.rollbackFile(path, dto);
 
         assertThat(Files.exists(path.resolve(fileId)), is(false));
@@ -236,8 +235,7 @@ public class LocalProcessorTest extends StorageServiceTest {
         Path path = getFolderPath(fileId);
 
         service.storeFile(path, fileId, getSipStream(), SIP_CHECKSUM, new AtomicBoolean(false), Instant.now());
-        ArchivalObjectDto dto = new ArchivalObjectDto();
-        dto.setStorageId(fileId);
+        ArchivalObjectDto dto = new ArchivalObjectDto(fileId, null, SIP_CHECKSUM, null, null, ObjectState.ARCHIVED, Instant.now(), ObjectType.SIP);
         service.rollbackFile(path, dto);
         service.rollbackFile(path, dto);
 
@@ -250,10 +248,7 @@ public class LocalProcessorTest extends StorageServiceTest {
     public void rollbackCompletlyMissingFile() throws Exception {
         String fileId = testName.getMethodName();
         Path path = getFolderPath(fileId);
-        ArchivalObjectDto dto = new ArchivalObjectDto();
-        dto.setStorageId(fileId);
-        dto.setChecksum(XML_CHECKSUM);
-        dto.setCreated(Instant.now());
+        ArchivalObjectDto dto = new ArchivalObjectDto(fileId, null, XML_CHECKSUM, null, null, ObjectState.ARCHIVED, Instant.now(), ObjectType.XML);
         service.rollbackFile(path, dto);
         assertThat(isInState(path.resolve(fileId), ObjectState.ROLLED_BACK), is(true));
     }
@@ -285,9 +280,7 @@ public class LocalProcessorTest extends StorageServiceTest {
         AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, dataSpace);
-        ArchivalObjectDto dto = new ArchivalObjectDto();
-        dto.setStorageId(xmlId);
-        service.rollbackObject(dto, dataSpace);
+        service.rollbackObject(aip.getXml(), dataSpace);
 
         Path path = getFolderPath(sipId);
 
@@ -342,7 +335,7 @@ public class LocalProcessorTest extends StorageServiceTest {
             if (rollback.get())
                 return;
             try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(folder.resolve(id).toFile()))) {
-                writeObjectMetadata(folder, id, new ObjectMetadata(ObjectState.PROCESSING, timestamp, checksum));
+                writeObjectMetadata(folder, new ObjectMetadata(id, ObjectState.PROCESSING, timestamp, checksum));
                 byte[] buffer = new byte[8192];
                 int read = stream.read(buffer);
                 while (read > 0) {

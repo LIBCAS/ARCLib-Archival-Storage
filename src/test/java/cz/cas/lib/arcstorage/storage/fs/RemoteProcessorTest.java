@@ -259,10 +259,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
             service.storeFile(sftp, getFolderPath(fileId), fileId, bos, LARGE_SIP_CHECKSUM, rollback, Instant.now());
         } catch (Exception e) {}
 
-        ArchivalObjectDto dto = new ArchivalObjectDto();
-        dto.setStorageId(fileId);
-        dto.setChecksum(XML_CHECKSUM);
-        dto.setCreated(Instant.now());
+        ArchivalObjectDto dto = new ArchivalObjectDto(fileId, null, LARGE_SIP_CHECKSUM, null, null, ObjectState.PROCESSING, Instant.now(), ObjectType.SIP);
         service.rollbackFile(sftp, path, dto);
 
         assertThat(sftp.statExistence(path + S + fileId), nullValue());
@@ -276,10 +273,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
         String path = getFolderPath(fileId);
 
         service.storeFile(sftp, path, fileId, getSipStream(), SIP_CHECKSUM, new AtomicBoolean(false), Instant.now());
-        ArchivalObjectDto dto = new ArchivalObjectDto();
-        dto.setStorageId(fileId);
-        dto.setChecksum(XML_CHECKSUM);
-        dto.setCreated(Instant.now());
+        ArchivalObjectDto dto = new ArchivalObjectDto(fileId, null, SIP_CHECKSUM, null, null, ObjectState.ARCHIVED, Instant.now(), ObjectType.SIP);
         service.rollbackFile(sftp, path, dto);
         service.rollbackFile(sftp, path, dto);
 
@@ -293,10 +287,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
         String fileId = testName.getMethodName();
         String path = getFolderPath(fileId);
 
-        ArchivalObjectDto dto = new ArchivalObjectDto();
-        dto.setStorageId(fileId);
-        dto.setChecksum(XML_CHECKSUM);
-        dto.setCreated(Instant.now());
+        ArchivalObjectDto dto = new ArchivalObjectDto(fileId, null, XML_CHECKSUM, null, null, ObjectState.ARCHIVED, Instant.now(), ObjectType.XML);
         service.rollbackFile(sftp, path, dto);
         assertThat(isInState(path, fileId, ObjectState.ROLLED_BACK), is(true));
     }
@@ -328,12 +319,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
         AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, dataSpace);
-
-        ArchivalObjectDto dto = new ArchivalObjectDto();
-        dto.setStorageId(xmlId);
-        dto.setChecksum(XML_CHECKSUM);
-        dto.setCreated(Instant.now());
-        service.rollbackObject(dto, dataSpace);
+        service.rollbackObject(aip.getXml(), dataSpace);
 
         String path = getFolderPath(sipId);
 

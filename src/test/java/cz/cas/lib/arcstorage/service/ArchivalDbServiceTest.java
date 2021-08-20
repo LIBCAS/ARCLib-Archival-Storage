@@ -70,13 +70,8 @@ public class ArchivalDbServiceTest extends DbTest {
     @Before
     public void before() {
         service.setTransactionTemplate(new JpaTransactionManager(getFactory()), 5);
-        sipChecksum = new Checksum();
-        sipChecksum.setType(ChecksumType.MD5);
-        sipChecksum.setValue("sipMd5Checksum");
-
-        aipXmlChecksum = new Checksum();
-        aipXmlChecksum.setType(ChecksumType.MD5);
-        aipXmlChecksum.setValue("aipXmlMd5Checksum");
+        sipChecksum = new Checksum(ChecksumType.MD5, "sipMd5Checksum");
+        aipXmlChecksum = new Checksum(ChecksumType.MD5, "aipXmlMd5Checksum");
         UserStore userStore = new UserStore();
 
 
