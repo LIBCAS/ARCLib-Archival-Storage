@@ -1,4 +1,4 @@
-package cz.cas.lib.arcstorage.storagesync.exception;
+package cz.cas.lib.arcstorage.storagesync.newstorage.exception;
 
 import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
 

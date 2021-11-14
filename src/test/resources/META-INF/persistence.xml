@@ -11,7 +11,7 @@
         <class>cz.cas.lib.arcstorage.domain.entity.Storage</class>
         <class>cz.cas.lib.arcstorage.domain.entity.SystemState</class>
         <class>cz.cas.lib.arcstorage.domain.entity.User</class>
-        <class>cz.cas.lib.arcstorage.storagesync.StorageSyncStatus</class>
+        <class>cz.cas.lib.arcstorage.storagesync.newstorage.StorageSyncStatus</class>
         <class>cz.cas.lib.arcstorage.storagesync.ObjectAudit</class>
         <class>cz.cas.lib.arcstorage.storagesync.SyncWaitingObject</class>
         <exclude-unlisted-classes>false</exclude-unlisted-classes>

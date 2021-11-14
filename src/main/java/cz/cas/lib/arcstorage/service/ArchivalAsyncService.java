@@ -1,7 +1,6 @@
 package cz.cas.lib.arcstorage.service;
 
 
-import cz.cas.lib.arcstorage.domain.entity.AipXml;
 import cz.cas.lib.arcstorage.domain.entity.ArchivalObject;
 import cz.cas.lib.arcstorage.domain.entity.DomainObject;
 import cz.cas.lib.arcstorage.dto.AipDto;
@@ -33,8 +32,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Lock;
 
-import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
-
 /**
  * Time-consuming operations which are expected to be processed in parallel should be processed using defined
  * {@link #batchOpsExecutor} service instead of using {@link Async} or {@link #executor}.
@@ -57,8 +54,8 @@ public class ArchivalAsyncService {
      * If the rollback fails at any of the storages, AIP in DB is set to ARCHIVAL FAILURE.
      *
      * @param aip             AIP DTO
-     * @param tmpSip      temporary source holder of SIP content
-     * @param tmpXml      temporary source holder of XML content
+     * @param tmpSip          temporary source holder of SIP content
+     * @param tmpXml          temporary source holder of XML content
      * @param storageServices storage services to store AIP to
      * @param dataSpace       data space of the AIP owner
      */
@@ -72,8 +69,8 @@ public class ArchivalAsyncService {
             Pair<AtomicBoolean, Lock> aipRollbackFlag = ApplicationContextUtils.getProcessingObjects().get(sipDbId);
             for (StorageService a : storageServices) {
                 CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
-                    if (aipRollbackFlag.getLeft().get())
-                        return;
+                            if (aipRollbackFlag.getLeft().get())
+                                return;
                             try (InputStream sipStream = tmpSip.createInputStream();
                                  InputStream xmlStream = tmpXml.createInputStream()) {
                                 a.storeAip(new AipDto(aip, sipStream, xmlStream), aipRollbackFlag.getLeft(), dataSpace);
@@ -154,7 +151,7 @@ public class ArchivalAsyncService {
      * @param archivalObject  DTO of the archival object to store
      * @param tmpSourceHolder source holder with the object to store
      * @param storageServices storage services to store to
-     * @param sync if true, the operation is processed synchronously
+     * @param sync            if true, the operation is processed synchronously
      */
     public void saveObject(ArchivalObjectDto archivalObject, TmpSourceHolder tmpSourceHolder, List<StorageService> storageServices, boolean sync) {
         Executor executorToUse = sync ? executor : batchOpsExecutor;
@@ -240,14 +237,15 @@ public class ArchivalAsyncService {
         else
             CompletableFuture.runAsync(saveObjectProcess, batchOpsExecutor);
     }
+
     /**
      * Deletes object at the provide storage services.
      * <p>
      * In case of of error during the deletion process at any of the storage,
      * state of the object in DB is set to DELETION_FAILURE.
      *
-     * @param archivalObject DTO with the object to delete
-     * @param storageServices   storage services to delete the object from
+     * @param archivalObject  DTO with the object to delete
+     * @param storageServices storage services to delete the object from
      */
     public void deleteObject(ArchivalObjectDto archivalObject, List<StorageService> storageServices) {
         CompletableFuture<Void> parentThread = CompletableFuture.runAsync(() -> {
@@ -257,7 +255,7 @@ public class ArchivalAsyncService {
             for (StorageService a : storageServices) {
                 CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                             try {
-                                a.delete(archivalObject.getStorageId(), archivalObject.getOwner().getDataSpace());
+                                a.delete(archivalObject, archivalObject.getOwner().getDataSpace(), false);
                                 log.debug(a.getStorage() + ", " + archivalObject + ", " + op + "success");
                             } catch (StorageException e) {
                                 log.warn(a.getStorage() + ", " + archivalObject + ", " + op + "error");
@@ -350,7 +348,7 @@ public class ArchivalAsyncService {
         List<ArchivalObject> deletedObjects = new ArrayList<>();
         List<ArchivalObject> failedObjects = new ArrayList<>();
         for (ArchivalObject archivalObject : objects) {
-            String storageId = archivalObject instanceof AipXml ? toXmlId(((AipXml) archivalObject).getSip().getId(), ((AipXml) archivalObject).getVersion()) : archivalObject.getId();
+            ArchivalObjectDto archivalObjectDto = archivalObject.toDto();
             boolean rollback = archivalObject.getState() != ObjectState.DELETION_FAILURE;
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             boolean successOnAllStorages = true;
@@ -358,9 +356,9 @@ public class ArchivalAsyncService {
                 CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
                             try {
                                 if (rollback)
-                                    a.rollbackObject(archivalObject.toDto(), archivalObject.getOwner().getDataSpace());
+                                    a.rollbackObject(archivalObjectDto, archivalObject.getOwner().getDataSpace());
                                 else
-                                    a.delete(storageId, archivalObject.getOwner().getDataSpace());
+                                    a.delete(archivalObjectDto, archivalObject.getOwner().getDataSpace(), false);
                                 log.debug(a.getStorage() + ", " + archivalObject + ", " + op + "success");
                             } catch (StorageException e) {
                                 log.warn(a.getStorage() + ", " + archivalObject + ", " + op + "error");
@@ -408,43 +406,43 @@ public class ArchivalAsyncService {
     /**
      * Removes object from the provided storage services.
      *
-     * @param id              id of the object to remove
+     * @param object          object to remove
      * @param storageServices storage services to remove from
      * @param dataSpace       data space of the owner of the object
      * @throws StorageException storage error has occurred during removal of object
      */
     @Async
-    public void removeObject(String id, List<StorageService> storageServices, String dataSpace) throws StorageException {
+    public void removeObject(ArchivalObjectDto object, List<StorageService> storageServices, String dataSpace) throws StorageException {
         try {
             for (StorageService storageService : storageServices) {
-                storageService.remove(id, dataSpace);
+                storageService.remove(object, dataSpace, false);
             }
         } catch (StorageException e) {
-            log.error("Storage error has occurred during removal of object: " + id + ". Object is marked as removed in DB but may not be marked as removed on every storage.");
+            log.error("Storage error has occurred during removal of object: {}. Object is marked as removed in DB but may not be marked as removed on every storage.", object.getStorageId());
             throw e;
         }
-        log.info("Object: " + id + " has been successfully removed.");
+        log.info("Object: {} has been successfully removed.", object.getStorageId());
     }
 
     /**
      * Renews object at the provided storage services.
      *
-     * @param id              id of the object to renew
+     * @param object          object to renew
      * @param storageServices storage services to renew object at
      * @param dataSpace       data space of the owner of the object
      * @throws StorageException storage error has occurred during renewing of object
      */
     @Async
-    public void renewObject(String id, List<StorageService> storageServices, String dataSpace) throws StorageException {
+    public void renewObject(ArchivalObjectDto object, List<StorageService> storageServices, String dataSpace) throws StorageException {
         try {
             for (StorageService storageService : storageServices) {
-                storageService.renew(id, dataSpace);
+                storageService.renew(object, dataSpace, false);
             }
         } catch (StorageException e) {
-            log.error("Storage error has occurred during renewing of object: " + id + ". Object is marked as archived in DB but may not be marked as archived on every storage.");
+            log.error("Storage error has occurred during renewing of object: {}. Object is marked as archived in DB but may not be marked as archived on every storage.", object.getStorageId());
             throw e;
         }
-        log.info("Object: " + id + " has been successfully renewed.");
+        log.info("Object: {} has been successfully renewed.", object.getStorageId());
     }
 
     @Inject

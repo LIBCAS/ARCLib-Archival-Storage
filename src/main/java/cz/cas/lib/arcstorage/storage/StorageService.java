@@ -1,16 +1,22 @@
 package cz.cas.lib.arcstorage.storage;
 
+import cz.cas.lib.arcstorage.domain.entity.AipSip;
+import cz.cas.lib.arcstorage.domain.entity.AipXml;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.GeneralException;
+import cz.cas.lib.arcstorage.service.ArchivalService;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
 import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
+import cz.cas.lib.arcstorage.storage.fs.ObjectMetadata;
+import cz.cas.lib.arcstorage.storagesync.ObjectAudit;
 
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -40,11 +46,12 @@ public interface StorageService {
     /**
      * Retrieves archival objects data from the dataSpace based on their physical representations in the storage
      * <p>
-     *      The order is important - if there are any XMLs, first its SIP must appear in a list
+     * The order is important - if there are any XMLs, first its SIP must appear in a list
      * </p>
      * <p>
-     *     Implementation must fill {@link ArchivalObjectDto#objectType}
+     * Implementation must fill {@link ArchivalObjectDto#objectType}
      * </p>
+     *
      * @param dataSpace dataSpace
      * @return archival objects retrieved
      * @throws StorageException
@@ -107,7 +114,7 @@ public interface StorageService {
      *
      * @param objectDto DTO with open and readable input stream of the object
      * @param rollback  flag watched for rollback signal
-     * @throws StorageException         in the case of error
+     * @throws StorageException in the case of error
      */
     void storeObject(ArchivalObjectDto objectDto, AtomicBoolean rollback, String dataSpace) throws StorageException;
 
@@ -130,26 +137,29 @@ public interface StorageService {
     /**
      * Deletes SIP object from storage. Must not fail if SIP is already physically deleted.
      *
-     * @param id of the SIP
+     * @param objectDto               of the SIP
+     * @param createMetaFileIfMissing if true and .meta file is missing then it is created, otherwise exception is thrown
      * @throws StorageException in the case of error
      */
-    void delete(String id, String dataSpace) throws StorageException;
+    void delete(ArchivalObjectDto objectDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException;
 
     /**
      * Logically removes SIP. Must not fail if SIP is already removed.
      *
-     * @param id of the SIP
+     * @param objectDto               of the SIP
+     * @param createMetaFileIfMissing if true and .meta file is missing then it is created, otherwise exception is thrown
      * @throws StorageException in the case of error
      */
-    void remove(String id, String dataSpace) throws StorageException;
+    void remove(ArchivalObjectDto objectDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException;
 
     /**
      * Renews logically removed SIP. Must not fail if SIP is already renewed, i.e. in ARCHIVED state.
      *
-     * @param id of the SIP
+     * @param objectDto               of the SIP
+     * @param createMetaFileIfMissing if true and .meta file is missing then it is created, otherwise exception is thrown
      * @throws StorageException in the case of error
      */
-    void renew(String id, String dataSpace) throws StorageException;
+    void renew(ArchivalObjectDto objectDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException;
 
     /**
      * Rollbacks AIP and all its XML object from storage. Used in case of cleaning process after storage/application failure.
@@ -172,6 +182,32 @@ public interface StorageService {
      * @throws StorageException in the case of error
      */
     void rollbackObject(ArchivalObjectDto objectDto, String dataSpace) throws StorageException;
+
+    /**
+     * Forgets object at storage - completely deletes the object and leaves only metadata files at the storage.
+     * Must not fail if the object is already forgot.
+     * <p>
+     * In this case, from all the {@link ObjectMetadata} only {@link ObjectMetadata#state} is guaranteed to be present
+     * at the storage. Other metadata are optionally present.
+     * </p>
+     *
+     * @param objectIdAtStorage    id of the object
+     * @param objectAuditTimestamp <p>Should be set to null during standard forget calls made by {@link ArchivalService}
+     *                             in which case this call deletes data and marks forget state no matter what state was marked
+     *                             before. Exception is thrown if no state was marked before (meta object does not exist).</p>
+     *                             <p>During calls which are propagating some historical modification from audit the
+     *                             {@link ObjectAudit#created} should be filled. Storage service should compare the timestamp
+     *                             with the creation timestamp marked with the object in metaobject. If the audit timestamp is higher
+     *                             the object should be forgotten, otherwise it should be left untouched. If there is no metaobject
+     *                             at all, then the object should be also forgotten.
+     *                             <p>The reason for this design is that after the object is forgotten, other object may be persisted
+     *                             with the same name as the object which was previously forgotten and must not forgot the new object based
+     *                             on audit of forgot operation of the old one. This can typically happen with {@link AipXml} which name at
+     *                             storage is determined from the related {@link AipSip} and XML version. If one XML version is forgotten then
+     *                             the next one will have the same version number and thus the same place at the storage.
+     * @throws StorageException in the case of error
+     */
+    void forgetObject(String objectIdAtStorage, String dataSpace, Instant objectAuditTimestamp) throws StorageException;
 
     /**
      * Retrieves information about AIP such as its state etc. and also info about SIP and XMLs checksums.

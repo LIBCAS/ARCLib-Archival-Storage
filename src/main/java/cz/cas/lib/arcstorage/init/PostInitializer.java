@@ -15,7 +15,7 @@ import cz.cas.lib.arcstorage.service.SystemStateService;
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.StorageService;
-import cz.cas.lib.arcstorage.storagesync.exception.SynchronizationInProgressException;
+import cz.cas.lib.arcstorage.storagesync.newstorage.exception.SynchronizationInProgressException;
 import cz.cas.lib.arcstorage.util.ApplicationContextUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;

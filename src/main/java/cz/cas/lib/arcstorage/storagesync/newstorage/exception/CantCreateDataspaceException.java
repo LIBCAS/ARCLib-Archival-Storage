@@ -1,4 +1,4 @@
-package cz.cas.lib.arcstorage.storagesync.exception;
+package cz.cas.lib.arcstorage.storagesync.newstorage.exception;
 
 public class CantCreateDataspaceException extends Exception {
 

@@ -147,7 +147,7 @@ public class RemoteFsProcessor implements StorageService {
                         break;
                     case REMOVED:
                         storeFile(sftp, folderPath, objId, objectDto.getInputStream(), objectDto.getChecksum(), rollback, objectDto.getCreated());
-                        remove(objId, dataSpace);
+                        remove(objectDto, dataSpace, false);
                         break;
                     case ARCHIVED:
                     case PROCESSING:
@@ -210,13 +210,16 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public void delete(String sipId, String dataSpace) throws StorageException {
-        String sipFolder = getFolderPath(sipId, dataSpace);
-        String sipFilePath = sipFolder + separator + sipId;
+    public void delete(ArchivalObjectDto sipDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException {
+        if (createMetaFileIfMissing) {
+            throw new UnsupportedOperationException("not implemented yet");
+        }
+        String sipFolder = getFolderPath(sipDto.getStorageId(), dataSpace);
+        String sipFilePath = sipFolder + separator + sipDto.getStorageId();
         try (SSHClient ssh = new SSHClient()) {
             connect(ssh);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
-                setState(sftp, sipFolder, sipId, ObjectState.DELETED);
+                setState(sftp, sipFolder, sipDto, ObjectState.DELETED, createMetaFileIfMissing);
                 deleteIfExistsSftp(sftp, sipFilePath);
             }
         } catch (IOException e) {
@@ -225,12 +228,15 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public void remove(String sipId, String dataSpace) throws StorageException {
-        String sipFolder = getFolderPath(sipId, dataSpace);
+    public void remove(ArchivalObjectDto sipDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException {
+        if (createMetaFileIfMissing) {
+            throw new UnsupportedOperationException("not implemented yet");
+        }
+        String sipFolder = getFolderPath(sipDto.getStorageId(), dataSpace);
         try (SSHClient ssh = new SSHClient()) {
             connect(ssh);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
-                setState(sftp, sipFolder, sipId, ObjectState.REMOVED);
+                setState(sftp, sipFolder, sipDto, ObjectState.REMOVED, createMetaFileIfMissing);
             }
         } catch (IOException e) {
             throw new SshException(e, storage);
@@ -238,12 +244,15 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public void renew(String sipId, String dataSpace) throws StorageException {
-        String sipFolder = getFolderPath(sipId, dataSpace);
+    public void renew(ArchivalObjectDto sipDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException {
+        if (createMetaFileIfMissing) {
+            throw new UnsupportedOperationException("not implemented yet");
+        }
+        String sipFolder = getFolderPath(sipDto.getStorageId(), dataSpace);
         try (SSHClient ssh = new SSHClient()) {
             connect(ssh);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
-                setState(sftp, sipFolder, sipId, ObjectState.ARCHIVED);
+                setState(sftp, sipFolder, sipDto, ObjectState.ARCHIVED, createMetaFileIfMissing);
             }
         } catch (IOException e) {
             throw new SshException(e, storage);
@@ -278,6 +287,11 @@ public class RemoteFsProcessor implements StorageService {
         } catch (IOException e) {
             throw new SshException(e, storage);
         }
+    }
+
+    @Override
+    public void forgetObject(String objectIdAtStorage, String dataSpace, Instant forgetAuditTimestamp) throws StorageException {
+        throw new UnsupportedOperationException("not implemented yet");
     }
 
     @Override
@@ -545,21 +559,15 @@ public class RemoteFsProcessor implements StorageService {
         return content;
     }
 
-    /**
-     * Use only in case of already registered objects, i.e. metadata file is already present.
-     *
-     * @param sftp
-     * @param folder
-     * @param fileId
-     * @param state
-     * @throws CantParseMetadataFile
-     * @throws IOStorageException
-     * @throws FileDoesNotExistException if there is no metadata file for the file yet
-     */
-    private void setState(SFTPClient sftp, String folder, String fileId, ObjectState state) throws CantParseMetadataFile, IOStorageException, FileDoesNotExistException {
-        ObjectMetadata objectMetadata = readObjectMetadata(sftp, folder, fileId);
-        if (objectMetadata == null)
-            throw new FileDoesNotExistException(metadataFilePath(folder, fileId), storage);
+    private void setState(SFTPClient sftp, String folder, ArchivalObjectDto object, ObjectState state, boolean createMetaFileIfMissing) throws CantParseMetadataFile, IOStorageException, FileDoesNotExistException {
+        ObjectMetadata objectMetadata = readObjectMetadata(sftp, folder, object.getStorageId());
+        if (objectMetadata == null) {
+            if (createMetaFileIfMissing) {
+                objectMetadata = new ObjectMetadata(object.getStorageId(), state, object.getCreated(), object.getChecksum());
+            } else {
+                throw new FileDoesNotExistException(metadataFilePath(folder, object.getStorageId()), storage);
+            }
+        }
         objectMetadata.setState(state);
         writeObjectMetadata(sftp, folder, objectMetadata);
     }
@@ -605,12 +613,7 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     void rollbackFile(SFTPClient sftp, String folder, ArchivalObjectDto dto) throws IOException, CantParseMetadataFile, IOStorageException, FileDoesNotExistException {
-        ObjectMetadata objectMetadata = readObjectMetadata(sftp, folder, dto.getStorageId());
-        if (objectMetadata == null)
-            objectMetadata = new ObjectMetadata(dto.getStorageId(), ObjectState.ROLLED_BACK, dto.getCreated(), dto.getChecksum());
-        else
-            objectMetadata.setState(ObjectState.ROLLED_BACK);
-        writeObjectMetadata(sftp, folder, objectMetadata);
+        setState(sftp, folder, dto, ObjectState.ROLLED_BACK, true);
         deleteIfExistsSftp(sftp, folder + separator + dto.getStorageId());
     }
 

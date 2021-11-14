@@ -38,7 +38,7 @@ public class ObjectMetadata {
     @Getter
     private String storageId;
 
-    public ObjectMetadata(@NonNull String storageId, @NonNull ObjectState state, @NonNull Instant created, @NonNull Checksum checksum) {
+    public ObjectMetadata(@NonNull String storageId, @NonNull ObjectState state, Instant created, Checksum checksum) {
         this.storageId = storageId;
         this.checksum = checksum;
         this.state = state;
@@ -46,8 +46,10 @@ public class ObjectMetadata {
     }
 
     public ObjectMetadata(@NonNull List<String> lines, @NonNull String storageId, @NonNull Storage storage) throws CantParseMetadataFile {
-        if (lines.size() != 4)
-            throw new CantParseMetadataFile(storageId, "Some metadata missing, file content: " + Arrays.toString(lines.toArray()), storage);
+        if (lines.size() < 1 || lines.size() > 4) {
+            throw new CantParseMetadataFile(storageId, "Unknown metadata record, expected at least state and " +
+                    "at most state, checksum and timestamp metadata, but the file content is: " + Arrays.toString(lines.toArray()), storage);
+        }
         this.storageId = storageId;
         String checksumValue = null;
         ChecksumType checksumType = null;
@@ -76,7 +78,10 @@ public class ObjectMetadata {
                 throw new CantParseMetadataFile(storageId, "Couldn't deserialize " + key + " value: " + value, storage);
             }
         }
-        this.checksum = new Checksum(checksumType, checksumValue);
+        this.checksum = checksumType != null && checksumValue != null ? new Checksum(checksumType, checksumValue) : null;
+        if (state == null) {
+            throw new CantParseMetadataFile(storageId, "object state not present in metadata record: " + Arrays.toString(lines.toArray()), storage);
+        }
     }
 
     /**

@@ -1,37 +1,25 @@
-package cz.cas.lib.arcstorage.storagesync;
+package cz.cas.lib.arcstorage.storagesync.newstorage;
 
 import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.domain.entity.SystemState;
-import cz.cas.lib.arcstorage.domain.store.StorageStore;
-import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
-import cz.cas.lib.arcstorage.dto.ObjectRetrievalResource;
-import cz.cas.lib.arcstorage.mail.ArcstorageMailCenter;
-import cz.cas.lib.arcstorage.domain.views.ArchivalObjectLightweightView;
 import cz.cas.lib.arcstorage.domain.store.ArchivalObjectLightweightViewStore;
+import cz.cas.lib.arcstorage.domain.store.StorageStore;
+import cz.cas.lib.arcstorage.domain.views.ArchivalObjectLightweightView;
+import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
+import cz.cas.lib.arcstorage.mail.ArcstorageMailCenter;
 import cz.cas.lib.arcstorage.service.ArchivalDbService;
-import cz.cas.lib.arcstorage.service.ArchivalService;
 import cz.cas.lib.arcstorage.service.SystemStateService;
-import cz.cas.lib.arcstorage.service.exception.state.FailedStateException;
-import cz.cas.lib.arcstorage.service.exception.state.RollbackStateException;
-import cz.cas.lib.arcstorage.service.exception.state.StillProcessingStateException;
-import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
-import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageReachableException;
-import cz.cas.lib.arcstorage.service.exception.storage.ObjectCouldNotBeRetrievedException;
 import cz.cas.lib.arcstorage.storage.StorageService;
-import cz.cas.lib.arcstorage.storage.exception.StorageException;
-import cz.cas.lib.arcstorage.storagesync.exception.PostSyncCheckException;
+import cz.cas.lib.arcstorage.storagesync.CommonSyncService;
+import cz.cas.lib.arcstorage.storagesync.ObjectAudit;
+import cz.cas.lib.arcstorage.storagesync.ObjectAuditStore;
+import cz.cas.lib.arcstorage.storagesync.newstorage.exception.PostSyncCheckException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import javax.inject.Inject;
-import java.io.BufferedInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -44,19 +32,19 @@ import java.util.stream.Collectors;
 public class StorageSyncService {
 
     private ObjectAuditStore objectAuditStore;
-    private ArchivalService archivalService;
     private SystemStateService systemStateService;
     private ArcstorageMailCenter arcstorageMailCenter;
     private ArchivalDbService archivalDbService;
     private StorageStore storageStore;
     private StorageSyncStatusStore syncStatusStore;
     private int transactionTimeoutSeconds;
-    private Path tmpFolder;
     private ArchivalObjectLightweightViewStore archivalObjectLightweightViewStore;
+    private CommonSyncService commonSyncService;
 
     /**
      * tries to transit from {@link StorageSyncPhase#INIT} through {@link StorageSyncPhase#COPYING_ARCHIVED_OBJECTS} to {@link StorageSyncPhase#PROPAGATING_OPERATIONS}
      * copies data and/or metadata of packages which are in particular states (ARCHIVED, DELETED ...)
+     *
      * @param destinationStorage
      * @param status
      */
@@ -71,7 +59,7 @@ public class StorageSyncService {
         log.debug("Syncing: " + StorageSyncPhase.COPYING_ARCHIVED_OBJECTS + " sync phase of " + destinationStorage.getStorage() + ", " + status.getTotalInThisPhase() + " objects need to be synced");
 
         for (ArchivalObjectDto object : archivalObjectDtos) {
-            boolean success = copyObject(object, status, destinationStorage);
+            boolean success = copyObjectAndUpdateStatus(object, status, destinationStorage);
             if (!success)
                 return;
         }
@@ -87,8 +75,8 @@ public class StorageSyncService {
      *
      * @param storageService
      * @param status
-     * @param startAt this is set to {@link StorageSyncStatus#getCreated()} when called first time from {@link #copyArchivedObjects(StorageService, StorageSyncStatus)},
-     * or set to timestamp if this is called recursively from {@link #propagateOperationsOfModification(StorageService, StorageSyncStatus, Instant)}
+     * @param startAt        this is set to {@link StorageSyncStatus#getCreated()} when called first time from {@link #copyArchivedObjects(StorageService, StorageSyncStatus)},
+     *                       or set to timestamp if this is called recursively from {@link #propagateOperationsOfModification(StorageService, StorageSyncStatus, Instant)}
      */
     @Async
     public void propagateOperationsOfModification(StorageService destinationStorage, StorageSyncStatus status, Instant from) throws InterruptedException {
@@ -96,7 +84,7 @@ public class StorageSyncService {
         Instant nextTimeStartAt = Instant.now();
         List<ObjectAudit> operationsToBeSynced = objectAuditStore.findAuditsForSync(from, null);
         Map<String, ArchivalObjectLightweightView> objectsInDb = archivalObjectLightweightViewStore.findAllInList(
-                operationsToBeSynced.stream().map(ObjectAudit::getIdInDatabase).collect(Collectors.toList()))
+                        operationsToBeSynced.stream().map(ObjectAudit::getIdInDatabase).collect(Collectors.toList()))
                 .stream().collect(Collectors.toMap(ArchivalObjectLightweightView::getId, v -> v));
         status.setPhase(StorageSyncPhase.PROPAGATING_OPERATIONS);
         status.setDoneInThisPhase(0);
@@ -106,26 +94,8 @@ public class StorageSyncService {
         log.debug(logPrefix + StorageSyncPhase.PROPAGATING_OPERATIONS + " sync phase of " + destinationStorage.getStorage() + " " + status.getTotalInThisPhase() + " operations need to be synced");
         if (!operationsToBeSynced.isEmpty()) {
             for (ObjectAudit objectAudit : operationsToBeSynced) {
-                log.debug("propagating operation " + objectAudit);
                 try {
-                    switch (objectAudit.getOperation()) {
-                        case REMOVAL:
-                            destinationStorage.remove(objectAudit.getIdInStorage(), objectAudit.getUser().getDataSpace());
-                            break;
-                        case RENEWAL:
-                            destinationStorage.renew(objectAudit.getIdInStorage(), objectAudit.getUser().getDataSpace());
-                            break;
-                        case DELETION:
-                            destinationStorage.delete(objectAudit.getIdInStorage(), objectAudit.getUser().getDataSpace());
-                            break;
-                        case ROLLBACK:
-                            destinationStorage.rollbackObject(objectsInDb.get(objectAudit.getIdInDatabase()).toDto(), objectAudit.getUser().getDataSpace());
-                            break;
-                        case ARCHIVAL_RETRY:
-                            ArchivalObjectLightweightView archivalObject = objectsInDb.get(objectAudit.getIdInDatabase());
-                            copyObject(archivalObject.toDto(), status, destinationStorage);
-                            continue;
-                    }
+                    commonSyncService.propagateModification(objectAudit, objectsInDb.get(objectAudit.getIdInDatabase()), destinationStorage, false);
                     status.clearExeptionInfo();
                     status.setDoneInThisPhase(status.getDoneInThisPhase() + 1);
                     syncStatusStore.save(status);
@@ -144,7 +114,7 @@ public class StorageSyncService {
             systemState.setReadOnly(true);
             log.info("setting system to read-only state");
             systemStateService.save(systemState);
-            Thread.sleep(transactionTimeoutSeconds * 1000);
+            Thread.sleep(transactionTimeoutSeconds * 1000L);
             operationsToBeSynced = objectAuditStore.findAuditsForSync(nextTimeStartAt, null);
             //no more operations came in last seconds and no are coming now (because of readonly mode)
             //this condition will be false very rarely
@@ -222,40 +192,14 @@ public class StorageSyncService {
     }
 
 
-    private boolean copyObject(ArchivalObjectDto object, StorageSyncStatus status, StorageService destinationStorage) {
+    private boolean copyObjectAndUpdateStatus(ArchivalObjectDto object, StorageSyncStatus status, StorageService destinationStorage) {
         try {
-            switch (object.getState()) {
-                case PRE_PROCESSING:
-                case PROCESSING:
-                    throw new IllegalArgumentException("can't copy object " + object.getStorageId() + " because it is in " + object.getState() + " state");
-                case DELETED:
-                case DELETION_FAILURE:
-                case ROLLED_BACK:
-                case ROLLBACK_FAILURE:
-                case ARCHIVAL_FAILURE:
-                    log.debug("copying metadata of object " + object);
-                    destinationStorage.storeObject(object, new AtomicBoolean(false), object.getOwner().getDataSpace());
-                    break;
-                case ARCHIVED:
-                case REMOVED:
-                    log.debug("copying " + object);
-                    ObjectRetrievalResource objectRetrievalResource = archivalService.getObject(object);
-                    try (InputStream is = new BufferedInputStream(objectRetrievalResource.getInputStream())) {
-                        object.setInputStream(is);
-                        destinationStorage.storeObject(object, new AtomicBoolean(false), object.getOwner().getDataSpace());
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);
-                    } finally {
-                        objectRetrievalResource.close();
-                        tmpFolder.resolve(objectRetrievalResource.getId()).toFile().delete();
-                    }
-                    break;
-            }
+            commonSyncService.copyObject(object, destinationStorage);
             status.clearExeptionInfo();
             status.setDoneInThisPhase(status.getDoneInThisPhase() + 1);
             syncStatusStore.save(status);
             return true;
-        } catch (StorageException | StillProcessingStateException | ObjectCouldNotBeRetrievedException | FailedStateException | NoLogicalStorageAttachedException | NoLogicalStorageReachableException | RollbackStateException e) {
+        } catch (Exception e) {
             status.setExceptionInfo(e, object.getCreated());
             syncStatusStore.save(status);
             log.error("sync of " + destinationStorage.getStorage() + " failed during copying " + object + " status: " + status);
@@ -313,12 +257,7 @@ public class StorageSyncService {
     }
 
     @Inject
-    public void setTmpFolder(@Value("${arcstorage.tmpFolder}") String path) {
-        this.tmpFolder = Paths.get(path);
-    }
-
-    @Inject
-    public void setArchivalService(ArchivalService archivalService) {
-        this.archivalService = archivalService;
+    public void setCommonSyncService(CommonSyncService commonSyncService) {
+        this.commonSyncService = commonSyncService;
     }
 }

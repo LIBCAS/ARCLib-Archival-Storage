@@ -1,10 +1,14 @@
 package cz.cas.lib.arcstorage.service;
 
+import com.google.common.collect.Lists;
 import cz.cas.lib.arcstorage.domain.entity.AipSip;
 import cz.cas.lib.arcstorage.domain.entity.AipXml;
 import cz.cas.lib.arcstorage.domain.entity.ArchivalObject;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
-import cz.cas.lib.arcstorage.dto.*;
+import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
+import cz.cas.lib.arcstorage.dto.Checksum;
+import cz.cas.lib.arcstorage.dto.ObjectRetrievalResource;
+import cz.cas.lib.arcstorage.dto.ObjectState;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.mail.ArcstorageMailCenter;
 import cz.cas.lib.arcstorage.service.exception.ReadOnlyStateException;
@@ -33,7 +37,6 @@ import java.util.concurrent.locks.Lock;
 import java.util.stream.Collectors;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.copyStreamAndComputeChecksum;
-import static cz.cas.lib.arcstorage.util.Utils.asList;
 import static cz.cas.lib.arcstorage.util.Utils.servicesToEntities;
 
 /**
@@ -105,10 +108,10 @@ public class ArchivalService {
     public void removeObject(String id) throws StillProcessingStateException, DeletedStateException,
             RollbackStateException, FailedStateException, SomeLogicalStoragesNotReachableException,
             NoLogicalStorageAttachedException, ReadOnlyStateException, StorageException {
-        log.debug("Removing object with id " + id + ".");
+        log.debug("Removing object with id: {}", id);
         List<StorageService> reachableAdapters = storageProvider.createAdaptersForModifyOperation();
         ArchivalObject obj = archivalDbService.removeObject(id);
-        async.removeObject(id, reachableAdapters, obj.getOwner().getDataSpace());
+        async.removeObject(obj.toDto(), reachableAdapters, obj.getOwner().getDataSpace());
     }
 
     /**
@@ -130,7 +133,7 @@ public class ArchivalService {
         log.debug("Renewing object with id " + id + ".");
         List<StorageService> reachableAdapters = storageProvider.createAdaptersForModifyOperation();
         ArchivalObject archivalObject = archivalDbService.renewObject(id);
-        async.renewObject(id, reachableAdapters, archivalObject.getOwner().getDataSpace());
+        async.renewObject(archivalObject.toDto(), reachableAdapters, archivalObject.getOwner().getDataSpace());
     }
 
     /**
@@ -207,6 +210,51 @@ public class ArchivalService {
                     async.rollbackObject(objectInDb.toDto(), reachableAdapters);
             }
         }
+    }
+
+    /**
+     * Forgets object. If the requested object is {@link AipSip} then also all related {@link AipXml} are forget.
+     *
+     * @param objectToForget
+     * @throws StateException
+     * @throws SomeLogicalStoragesNotReachableException
+     * @throws NoLogicalStorageAttachedException
+     * @throws ReadOnlyStateException
+     */
+    public void forgetObject(ArchivalObject objectToForget) throws
+            StateException,
+            SomeLogicalStoragesNotReachableException,
+            NoLogicalStorageAttachedException, ReadOnlyStateException, StorageException {
+        String id = objectToForget.getId();
+        log.debug("Forget object with id " + id + ".");
+        List<ArchivalObject> allObjectsToForget = new ArrayList<>();
+        allObjectsToForget.add(objectToForget);
+        boolean isAip = objectToForget instanceof AipSip;
+        if (isAip) {
+            List<AipXml> xmls = ((AipSip) objectToForget).getXmlsSortedByVersionAsc();
+            allObjectsToForget.addAll(xmls);
+        }
+        for (ArchivalObject archivalObject : allObjectsToForget) {
+            switch (archivalObject.getState()) {
+                case ARCHIVED:
+                case DELETED:
+                case REMOVED:
+                case ROLLED_BACK:
+                    continue;
+                default:
+                    throw new StateException(archivalObject);
+            }
+        }
+        List<StorageService> reachableAdapters = storageProvider.createAdaptersForModifyOperation();
+
+        for (ArchivalObject archivalObject : Lists.reverse(allObjectsToForget)) {
+            for (StorageService reachableAdapter : reachableAdapters) {
+                reachableAdapter.forgetObject(archivalObject.toDto().getStorageId(), archivalObject.getOwner().getDataSpace(), null);
+            }
+            archivalDbService.forgetObject(archivalObject);
+        }
+
+        log.info("Object with id " + id + " have been forgotten.");
     }
 
     /**

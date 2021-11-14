@@ -176,7 +176,8 @@ public class ArchivalDbService {
 
     /**
      * Sets object state to {@link ObjectState#DELETED}
-     * @param id    id of the object
+     *
+     * @param id id of the object
      * @return
      * @throws StillProcessingStateException
      * @throws RollbackStateException
@@ -232,6 +233,7 @@ public class ArchivalDbService {
 
     /**
      * Sets object state to {@link ObjectState#REMOVED}
+     *
      * @param id
      * @return
      * @throws DeletedStateException
@@ -271,7 +273,8 @@ public class ArchivalDbService {
 
     /**
      * Sets object state to {@link ObjectState#ARCHIVED}
-     * @param id    id of the object
+     *
+     * @param id id of the object
      * @return
      * @throws DeletedStateException
      * @throws RollbackStateException
@@ -436,7 +439,7 @@ public class ArchivalDbService {
             for (ArchivalObjectDto o : objectsAtStorage) {
                 ArchivalObjectLightweightView fromDb = objectsInDb.get(o.getStorageId());
                 objectsInDb.remove(o.getStorageId());
-                if (fromDb == null) {
+                if (fromDb == null && o.getState() != ObjectState.FORGOT) {
                     ArchivalObject entity = dtoToEntity(o);
                     entity.setOwner(user);
                     archivalObjectStore.save(entity);
@@ -464,6 +467,18 @@ public class ArchivalDbService {
                 log.error(prefix + " " + objectsMissingAtStorage.length + " objects are missing at storage: " + Arrays.toString(objectsMissingAtStorage));
             }
         }
+    }
+
+    /**
+     * COMPLETELY deletes the object from DB
+     */
+    public void forgetObject(ArchivalObject archivalObject) {
+        transactionTemplate.executeWithoutResult(status -> {
+            if (systemStateService.get().isReadOnly())
+                throw new ReadOnlyStateException();
+            archivalObjectStore.delete(archivalObject);
+            objectAuditStore.save(new ObjectAudit(archivalObject, new User(userDetails.getId()), AuditedOperation.FORGET));
+        });
     }
 
     private ArchivalObject dtoToEntity(ArchivalObjectDto o) {

@@ -1,16 +1,17 @@
 package cz.cas.lib.arcstorage.api;
 
-import cz.cas.lib.arcstorage.backup.BackupExportService;
-import cz.cas.lib.arcstorage.backup.BackupProcessException;
 import cz.cas.lib.arcstorage.domain.entity.SystemState;
 import cz.cas.lib.arcstorage.domain.store.Transactional;
+import cz.cas.lib.arcstorage.exception.ForbiddenByConfigException;
 import cz.cas.lib.arcstorage.security.Roles;
 import cz.cas.lib.arcstorage.service.SystemAdministrationService;
 import cz.cas.lib.arcstorage.service.SystemStateService;
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
-import cz.cas.lib.arcstorage.storagesync.exception.SynchronizationInProgressException;
+import cz.cas.lib.arcstorage.storagesync.backup.BackupExportService;
+import cz.cas.lib.arcstorage.storagesync.backup.BackupProcessException;
+import cz.cas.lib.arcstorage.storagesync.newstorage.exception.SynchronizationInProgressException;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import io.swagger.annotations.ApiResponse;
@@ -99,7 +100,7 @@ public class SystemAdministrationApi {
     })
     public void backup(
             @ApiParam(value = "since") @RequestParam(value = "since", required = false) Instant since,
-            @ApiParam(value = "until") @RequestParam(value = "until", required = false) Instant until) throws BackupProcessException {
+            @ApiParam(value = "until") @RequestParam(value = "until", required = false) Instant until) throws BackupProcessException, ForbiddenByConfigException {
         backupExportService.exportDataForBackup(since, until);
     }
 

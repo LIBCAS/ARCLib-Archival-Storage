@@ -19,7 +19,7 @@ import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.storage.fs.FsAdapter;
 import cz.cas.lib.arcstorage.storage.fs.LocalFsProcessor;
-import cz.cas.lib.arcstorage.storagesync.exception.SynchronizationInProgressException;
+import cz.cas.lib.arcstorage.storagesync.newstorage.exception.SynchronizationInProgressException;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -327,27 +327,32 @@ public class AipService {
     }
 
     /**
-     * rolls back latest XML version of AIP XML
+     * rolls back or forgets the latest XML version of AIP XML
      *
      * @param aipId
      */
-    public void rollbackXml(String aipId, int xmlVersion) throws NoLogicalStorageAttachedException, SomeLogicalStoragesNotReachableException {
+    public void rollbackOrForgetXml(String aipId, int xmlVersion, boolean forget) throws NoLogicalStorageAttachedException, SomeLogicalStoragesNotReachableException, StorageException, StateException {
+        String action = forget ? "forget" : "rollback";
         AipSip sip = archivalDbService.findSip(aipId);
         if (sip == null) {
-            log.debug("Skipped rollback of AIP XML of AIP: " + aipId + " because no such AIP is stored in DB");
+            log.debug("Skipped {} of AIP XML of AIP: {} because no such AIP is stored in DB", action, aipId);
             return;
         }
         AipXml latestXml = sip.getLatestXml();
         if (latestXml.getVersion() < xmlVersion) {
-            log.debug("Skipped rollback of AIP XML of AIP: " + aipId + " because the specified AIP XML version: " + xmlVersion + " is not found in DB");
+            log.debug("Skipped {} of AIP XML of AIP: {} because the specified AIP XML version: {} is not found in DB", action, aipId, xmlVersion);
             return;
         }
         if (latestXml.getVersion() > xmlVersion) {
             throw new UnsupportedOperationException(
-                    "Can't rollback XML of AIP:" + aipId + " because the specified version: " + xmlVersion + " is not the latest version registered in Archival Storage DB," +
+                    "Can't " + action + " XML of AIP:" + aipId + " because the specified version: " + xmlVersion + " is not the latest version registered in Archival Storage DB," +
                             "the latest version in Archival Storage DB: " + latestXml.getVersion());
         }
-        archivalService.rollbackObject(latestXml);
+        if (forget) {
+            archivalService.forgetObject(latestXml);
+        } else {
+            archivalService.rollbackObject(latestXml);
+        }
     }
 
     /**

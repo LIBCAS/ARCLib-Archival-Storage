@@ -149,7 +149,7 @@ public class CephS3StorageService implements StorageService {
                     break;
                 case REMOVED:
                     storeFile(s3, objectDto.getStorageId(), objectDto.getInputStream(), objectDto.getChecksum(), rollback, dataSpace, objectDto.getCreated());
-                    remove(id, dataSpace);
+                    remove(objectDto, dataSpace, false);
                     break;
                 case ARCHIVED:
                 case PROCESSING:
@@ -180,37 +180,46 @@ public class CephS3StorageService implements StorageService {
     }
 
     @Override
-    public void delete(String sipId, String dataSpace) throws StorageException {
+    public void delete(ArchivalObjectDto sipDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException {
+        if (createMetaFileIfMissing) {
+            throw new UnsupportedOperationException("not implemented yet");
+        }
         AmazonS3 s3 = connect();
-        String metadataId = toMetadataObjectId(sipId);
+        String metadataId = toMetadataObjectId(sipDto.getStorageId());
         ObjectMetadata oldMetadata = s3.getObjectMetadata(dataSpace, metadataId);
         oldMetadata.addUserMetadata(STATE_KEY, ObjectState.DELETED.toString());
         ObjectMetadata newMetadata = new ObjectMetadata();
         newMetadata.setUserMetadata(oldMetadata.getUserMetadata());
-        s3.putObject(dataSpace, toMetadataObjectId(sipId), new NullInputStream(0), newMetadata);
-        s3.deleteObject(dataSpace, sipId);
+        s3.putObject(dataSpace, toMetadataObjectId(sipDto.getStorageId()), new NullInputStream(0), newMetadata);
+        s3.deleteObject(dataSpace, sipDto.getStorageId());
     }
 
     @Override
-    public void remove(String sipId, String dataSpace) throws StorageException {
+    public void remove(ArchivalObjectDto sipDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException {
+        if (createMetaFileIfMissing) {
+            throw new UnsupportedOperationException("not implemented yet");
+        }
         AmazonS3 s3 = connect();
-        String metadataId = toMetadataObjectId(sipId);
+        String metadataId = toMetadataObjectId(sipDto.getStorageId());
         ObjectMetadata oldMetadata = s3.getObjectMetadata(dataSpace, metadataId);
         oldMetadata.addUserMetadata(STATE_KEY, ObjectState.REMOVED.toString());
         ObjectMetadata newMetadata = new ObjectMetadata();
         newMetadata.setUserMetadata(oldMetadata.getUserMetadata());
-        s3.putObject(dataSpace, toMetadataObjectId(sipId), new NullInputStream(0), newMetadata);
+        s3.putObject(dataSpace, toMetadataObjectId(sipDto.getStorageId()), new NullInputStream(0), newMetadata);
     }
 
     @Override
-    public void renew(String sipId, String dataSpace) throws StorageException {
+    public void renew(ArchivalObjectDto sipDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException {
+        if (createMetaFileIfMissing) {
+            throw new UnsupportedOperationException("not implemented yet");
+        }
         AmazonS3 s3 = connect();
-        String metadataId = toMetadataObjectId(sipId);
+        String metadataId = toMetadataObjectId(sipDto.getStorageId());
         ObjectMetadata oldMetadata = s3.getObjectMetadata(dataSpace, metadataId);
         oldMetadata.addUserMetadata(STATE_KEY, ObjectState.ARCHIVED.toString());
         ObjectMetadata newMetadata = new ObjectMetadata();
         newMetadata.setUserMetadata(oldMetadata.getUserMetadata());
-        s3.putObject(dataSpace, toMetadataObjectId(sipId), new NullInputStream(0), newMetadata);
+        s3.putObject(dataSpace, toMetadataObjectId(sipDto.getStorageId()), new NullInputStream(0), newMetadata);
     }
 
 
@@ -227,6 +236,11 @@ public class CephS3StorageService implements StorageService {
     public void rollbackObject(ArchivalObjectDto dto, String dataSpace) throws StorageException {
         AmazonS3 s3 = connect();
         rollbackFile(s3, dto, dataSpace);
+    }
+
+    @Override
+    public void forgetObject(String objectIdAtStorage, String dataSpace, Instant forgetAuditTimestamp) throws StorageException {
+        throw new UnsupportedOperationException("not implemented yet");
     }
 
     @Override
@@ -491,7 +505,7 @@ public class CephS3StorageService implements StorageService {
         //force usage of AWS signature v2 instead of v4 to enable multipart uploads (v4 does not work with multipart upload for now)
         //update: signature v4 should work with multipart in ceph mimic
         //clientConfig.setSignerOverride("S3SignerType");
-        if(https)
+        if (https)
             clientConfig.setProtocol(Protocol.HTTPS);
         else
             clientConfig.setProtocol(Protocol.HTTP);
@@ -522,6 +536,7 @@ public class CephS3StorageService implements StorageService {
         if (!exist)
             throw new FileDoesNotExistException("bucket: " + dataSpace + " storageId: " + id, storage);
     }
+
     private void sshConnect(SSHClient ssh) throws IOException {
         ssh.addHostKeyVerifier(new PromiscuousVerifier());
         ssh.setConnectTimeout(connectionTimeout);

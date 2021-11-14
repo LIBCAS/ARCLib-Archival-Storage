@@ -9,9 +9,9 @@ import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedE
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
-import cz.cas.lib.arcstorage.storagesync.StorageSyncStatus;
-import cz.cas.lib.arcstorage.storagesync.StorageSyncStatusStore;
-import cz.cas.lib.arcstorage.storagesync.exception.SynchronizationInProgressException;
+import cz.cas.lib.arcstorage.storagesync.newstorage.StorageSyncStatus;
+import cz.cas.lib.arcstorage.storagesync.newstorage.StorageSyncStatusStore;
+import cz.cas.lib.arcstorage.storagesync.newstorage.exception.SynchronizationInProgressException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.springframework.beans.factory.annotation.Value;

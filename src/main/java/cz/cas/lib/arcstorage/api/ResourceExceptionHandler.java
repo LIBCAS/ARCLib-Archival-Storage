@@ -1,7 +1,7 @@
 package cz.cas.lib.arcstorage.api;
 
 import cz.cas.lib.arcstorage.api.multipart.TmpFolderSizeLimitReachedException;
-import cz.cas.lib.arcstorage.backup.BackupProcessException;
+import cz.cas.lib.arcstorage.storagesync.backup.BackupProcessException;
 import cz.cas.lib.arcstorage.exception.BadRequestException;
 import cz.cas.lib.arcstorage.exception.ConflictObject;
 import cz.cas.lib.arcstorage.exception.ForbiddenByConfigException;
@@ -16,9 +16,9 @@ import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageReachable
 import cz.cas.lib.arcstorage.service.exception.storage.ObjectCouldNotBeRetrievedException;
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
-import cz.cas.lib.arcstorage.storagesync.exception.CantCreateDataspaceException;
-import cz.cas.lib.arcstorage.storagesync.exception.StorageStillProcessObjectsException;
-import cz.cas.lib.arcstorage.storagesync.exception.SynchronizationInProgressException;
+import cz.cas.lib.arcstorage.storagesync.newstorage.exception.CantCreateDataspaceException;
+import cz.cas.lib.arcstorage.storagesync.newstorage.exception.StorageStillProcessObjectsException;
+import cz.cas.lib.arcstorage.storagesync.newstorage.exception.SynchronizationInProgressException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

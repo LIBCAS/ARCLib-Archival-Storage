@@ -188,8 +188,8 @@ public class RemoteProcessorTest extends StorageServiceTest {
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, dataSpace);
 
-        service.remove(sipId, dataSpace);
-        service.remove(sipId, dataSpace);
+        service.remove(aip.getSip(), dataSpace, false);
+        service.remove(aip.getSip(), dataSpace, false);
 
         String path = getFolderPath(sipId) + S + sipId;
         assertThat(getFileContent(path), is(SIP_CONTENT));
@@ -204,9 +204,9 @@ public class RemoteProcessorTest extends StorageServiceTest {
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, dataSpace);
 
-        service.remove(sipId, dataSpace);
-        service.renew(sipId, dataSpace);
-        service.renew(sipId, dataSpace);
+        service.remove(aip.getSip(), dataSpace, false);
+        service.renew(aip.getSip(), dataSpace, false);
+        service.renew(aip.getSip(), dataSpace, false);
 
         String path = getFolderPath(sipId) + S + sipId;
         assertThat(getFileContent(path), is(SIP_CONTENT));
@@ -222,8 +222,8 @@ public class RemoteProcessorTest extends StorageServiceTest {
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, dataSpace);
 
-        service.delete(sipId, dataSpace);
-        service.delete(sipId, dataSpace);
+        service.delete(aip.getSip(), dataSpace, false);
+        service.delete(aip.getSip(), dataSpace, false);
 
         String path = getFolderPath(sipId);
 

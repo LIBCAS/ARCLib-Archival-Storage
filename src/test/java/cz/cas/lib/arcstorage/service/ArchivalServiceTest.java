@@ -16,7 +16,7 @@ import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storage.fs.FsAdapter;
 import cz.cas.lib.arcstorage.storage.fs.LocalFsProcessor;
 import cz.cas.lib.arcstorage.storagesync.ObjectAuditStore;
-import cz.cas.lib.arcstorage.storagesync.StorageSyncStatusStore;
+import cz.cas.lib.arcstorage.storagesync.newstorage.StorageSyncStatusStore;
 import helper.DbTest;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
@@ -320,9 +320,9 @@ public class ArchivalServiceTest extends DbTest {
 
         assertEquals(3, paths.size());
 
-        assertTrue(paths.contains(SIP.getId()+"/KPW01169310/ALTO"));
-        assertTrue(paths.contains(SIP.getId()+"/KPW01169310/TXT"));
-        assertTrue(paths.contains(SIP.getId()+"/KPW01169310/userCopy"));
+        assertTrue(paths.contains(SIP.getId() + "/KPW01169310/ALTO"));
+        assertTrue(paths.contains(SIP.getId() + "/KPW01169310/TXT"));
+        assertTrue(paths.contains(SIP.getId() + "/KPW01169310/userCopy"));
 
         assertEquals(4, files.size());
 
@@ -519,7 +519,7 @@ public class ArchivalServiceTest extends DbTest {
 
         AipSip sip = archivalDbService.getAip(SIP_ID);
         assertThat(sip.getState(), is(ObjectState.REMOVED));
-        verify(async).removeObject(eq(sip.getId()), anyList(), anyString());
+        verify(async).removeObject(eq(sip.toDto()), anyList(), anyString());
     }
 
     @Test

@@ -22,7 +22,9 @@ public enum ObjectState {
     //object deletion has failed, this state is held only in DB
     DELETION_FAILURE(false, false, false, true),
     //object rollback has failed, this state is held only in DB
-    ROLLBACK_FAILURE(false, false, false, true);
+    ROLLBACK_FAILURE(false, false, false, true),
+    //object has been forgotten - completely deleted from DB and storage - only the metadata file with object state is kept at storage
+    FORGOT(true, false, false, false);
 
     /**
      * states which must be in sync between storage and database

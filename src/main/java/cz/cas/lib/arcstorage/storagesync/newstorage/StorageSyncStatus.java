@@ -1,4 +1,4 @@
-package cz.cas.lib.arcstorage.storagesync;
+package cz.cas.lib.arcstorage.storagesync.newstorage;
 
 import cz.cas.lib.arcstorage.domain.entity.DomainObject;
 import cz.cas.lib.arcstorage.domain.entity.Storage;

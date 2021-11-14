@@ -60,8 +60,8 @@ public class LocalFsProcessor implements StorageService {
     @Override
     public void storeAip(AipDto aip, AtomicBoolean rollback, String dataSpace) throws StorageException {
         Path folder = getFolderPath(aip.getSip().getDatabaseId(), dataSpace);
-        storeFile(folder, aip.getXml().getStorageId(), aip.getXml().getInputStream(), aip.getXml().getChecksum(), rollback, aip.getXml().getCreated());
-        storeFile(folder, aip.getSip().getStorageId(), aip.getSip().getInputStream(), aip.getSip().getChecksum(), rollback, aip.getSip().getCreated());
+        storeFile(folder, aip.getXml(), rollback);
+        storeFile(folder, aip.getSip(), rollback);
     }
 
     @Override
@@ -106,12 +106,12 @@ public class LocalFsProcessor implements StorageService {
                     writeObjectMetadata(folder, new ObjectMetadata(id, objectDto.getState(), objectDto.getCreated(), objectDto.getChecksum()));
                     break;
                 case REMOVED:
-                    storeFile(getFolderPath(id, dataSpace), id, objectDto.getInputStream(), objectDto.getChecksum(), rollback, objectDto.getCreated());
-                    remove(id, dataSpace);
+                    storeFile(getFolderPath(id, dataSpace), objectDto, rollback);
+                    remove(objectDto, dataSpace, false);
                     break;
                 case ARCHIVED:
                 case PROCESSING:
-                    storeFile(getFolderPath(id, dataSpace), id, objectDto.getInputStream(), objectDto.getChecksum(), rollback, objectDto.getCreated());
+                    storeFile(getFolderPath(id, dataSpace), objectDto, rollback);
                     break;
                 default:
                     throw new IllegalStateException(objectDto.toString());
@@ -138,11 +138,11 @@ public class LocalFsProcessor implements StorageService {
     }
 
     @Override
-    public void delete(String sipId, String dataSpace) throws IOStorageException, CantParseMetadataFile, FileDoesNotExistException {
-        Path sipFolder = getFolderPath(sipId, dataSpace);
-        Path sipFilePath = sipFolder.resolve(sipId);
+    public void delete(ArchivalObjectDto sipDto, String dataSpace, boolean createMetaFileIfMissing) throws IOStorageException, CantParseMetadataFile, FileDoesNotExistException {
+        Path sipFolder = getFolderPath(sipDto.getStorageId(), dataSpace);
+        Path sipFilePath = sipFolder.resolve(sipDto.getStorageId());
         try {
-            setState(sipFolder, sipId, ObjectState.DELETED);
+            setState(sipFolder, sipDto, ObjectState.DELETED, createMetaFileIfMissing);
             Files.deleteIfExists(sipFilePath);
         } catch (IOException ex) {
             throw new IOStorageException(ex, storage);
@@ -150,15 +150,15 @@ public class LocalFsProcessor implements StorageService {
     }
 
     @Override
-    public void remove(String sipId, String dataSpace) throws IOStorageException, CantParseMetadataFile, FileDoesNotExistException {
-        Path sipFolder = getFolderPath(sipId, dataSpace);
-        setState(sipFolder, sipId, ObjectState.REMOVED);
+    public void remove(ArchivalObjectDto sipDto, String dataSpace, boolean createMetaFileIfMissing) throws IOStorageException, CantParseMetadataFile, FileDoesNotExistException {
+        Path sipFolder = getFolderPath(sipDto.getStorageId(), dataSpace);
+        setState(sipFolder, sipDto, ObjectState.REMOVED, createMetaFileIfMissing);
     }
 
     @Override
-    public void renew(String sipId, String dataSpace) throws IOStorageException, CantParseMetadataFile, FileDoesNotExistException {
-        Path sipFolder = getFolderPath(sipId, dataSpace);
-        setState(sipFolder, sipId, ObjectState.ARCHIVED);
+    public void renew(ArchivalObjectDto sipDto, String dataSpace, boolean createMetaFileIfMissing) throws IOStorageException, CantParseMetadataFile, FileDoesNotExistException {
+        Path sipFolder = getFolderPath(sipDto.getStorageId(), dataSpace);
+        setState(sipFolder, sipDto, ObjectState.ARCHIVED, createMetaFileIfMissing);
     }
 
     @Override
@@ -177,6 +177,36 @@ public class LocalFsProcessor implements StorageService {
     public void rollbackObject(ArchivalObjectDto dto, String dataSpace) throws StorageException {
         try {
             rollbackFile(getFolderPath(dto.getStorageId(), dataSpace), dto);
+        } catch (IOException e) {
+            throw new IOStorageException(e, storage);
+        }
+    }
+
+    @Override
+    public void forgetObject(String objectIdAtStorage, String dataSpace, Instant forgetAuditTimestamp) throws StorageException {
+        Path folder = getFolderPath(objectIdAtStorage, dataSpace);
+        try {
+            ObjectMetadata objectMetadata = readObjectMetadata(folder, objectIdAtStorage);
+            if (forgetAuditTimestamp == null) {
+                if (objectMetadata == null) {
+                    throw new FileDoesNotExistException(metadataFilePath(folder, objectIdAtStorage).toString(), storage);
+                }
+                objectMetadata.setState(ObjectState.FORGOT);
+                writeObjectMetadata(folder, objectMetadata);
+                Files.deleteIfExists(folder.resolve(objectIdAtStorage));
+            } else {
+                if (objectMetadata != null) {
+                    if (objectMetadata.getCreated() != null && objectMetadata.getCreated().isAfter(forgetAuditTimestamp)) {
+                        log.trace("skipping propagation of FORGET operation on {} as the forget operation was related to object which has been overridden by other", objectIdAtStorage);
+                        return;
+                    }
+                } else {
+                    objectMetadata = new ObjectMetadata(objectIdAtStorage, ObjectState.FORGOT, null, null);
+                }
+                objectMetadata.setState(ObjectState.FORGOT);
+                writeObjectMetadata(folder, objectMetadata);
+                Files.deleteIfExists(folder.resolve(objectIdAtStorage));
+            }
         } catch (IOException e) {
             throw new IOStorageException(e, storage);
         }
@@ -252,10 +282,23 @@ public class LocalFsProcessor implements StorageService {
     }
 
     /**
+     * Creates an empty file in the {@link #rootDirPath} location. May be used at various places to create control files
+     * scanned by external applications. <b>If the file can't be created the exception is logged but swallowed!</b>
+     */
+    public void createControlFile(String fileName) {
+        Path controlFilePath = Paths.get(rootDirPath).resolve(fileName);
+        try {
+            Files.createFile(controlFilePath);
+        } catch (Exception e) {
+            log.error("failed to create control file: " + controlFilePath + " exception swallowed.", e);
+        }
+    }
+
+    /**
      * Gets objects and respective paths to their folders stored in the given dataSpace folder
      * <p>
-     *     Scans the dataSpace folder for object metadata files: considers only files related to SIPs and general objects (not XMLs)
-     *     and for every object found creates {@link ArchivalObject} out of the given data.
+     * Scans the dataSpace folder for object metadata files: considers only files related to SIPs and general objects (not XMLs)
+     * and for every object found creates {@link ArchivalObject} out of the given data.
      * </p>
      *
      * @param dataSpace dataspace folder
@@ -359,24 +402,24 @@ public class LocalFsProcessor implements StorageService {
      * In case of any exception, rollback flag is set to true.
      * </p>
      */
-    void storeFile(Path folder, String id, InputStream stream, Checksum checksum, AtomicBoolean rollback, Instant created) throws FileCorruptedAfterStoreException, IOStorageException, CantParseMetadataFile, FileDoesNotExistException {
+    void storeFile(Path folder, ArchivalObjectDto dto, AtomicBoolean rollback) throws FileCorruptedAfterStoreException, IOStorageException, CantParseMetadataFile, FileDoesNotExistException {
         if (rollback.get())
             return;
-        try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(folder.resolve(id).toFile()))) {
-            writeObjectMetadata(folder, new ObjectMetadata(id, ObjectState.PROCESSING, created, checksum));
+        try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(folder.resolve(dto.getStorageId()).toFile()))) {
+            writeObjectMetadata(folder, new ObjectMetadata(dto.getStorageId(), ObjectState.PROCESSING, dto.getCreated(), dto.getChecksum()));
             byte[] buffer = new byte[8192];
-            int read = stream.read(buffer);
+            int read = dto.getInputStream().read(buffer);
             while (read > 0) {
                 if (rollback.get())
                     return;
                 bos.write(buffer, 0, read);
-                read = stream.read(buffer);
+                read = dto.getInputStream().read(buffer);
             }
             bos.flush();
-            boolean rollbackInterruption = !verifyChecksum(new FileInputStream(folder.resolve(id).toFile()), checksum, rollback, storage);
+            boolean rollbackInterruption = !verifyChecksum(new FileInputStream(folder.resolve(dto.getStorageId()).toFile()), dto.getChecksum(), rollback, storage);
             if (rollbackInterruption)
                 return;
-            setState(folder, id, ObjectState.ARCHIVED);
+            setState(folder, dto, ObjectState.ARCHIVED, false);
         } catch (IOException e) {
             rollback.set(true);
             throw new IOStorageException(e, storage);
@@ -389,12 +432,7 @@ public class LocalFsProcessor implements StorageService {
     }
 
     void rollbackFile(Path folder, ArchivalObjectDto dto) throws StorageException, IOException {
-        ObjectMetadata objectMetadata = readObjectMetadata(folder, dto.getStorageId());
-        if (objectMetadata == null)
-            objectMetadata = new ObjectMetadata(dto.getStorageId(), ObjectState.ROLLED_BACK, dto.getCreated(), dto.getChecksum());
-        else
-            objectMetadata.setState(ObjectState.ROLLED_BACK);
-        writeObjectMetadata(folder, objectMetadata);
+        setState(folder, dto, ObjectState.ROLLED_BACK, true);
         Files.deleteIfExists(folder.resolve(dto.getStorageId()));
     }
 
@@ -416,19 +454,15 @@ public class LocalFsProcessor implements StorageService {
         return path;
     }
 
-    /**
-     * Use only in case of already registered objects, i.e. metadata file is already present.
-     * @param folder
-     * @param fileId
-     * @param state
-     * @throws IOStorageException
-     * @throws CantParseMetadataFile
-     * @throws FileDoesNotExistException if there is no metadata file for the file yet
-     */
-    void setState(Path folder, String fileId, ObjectState state) throws IOStorageException, CantParseMetadataFile, FileDoesNotExistException {
-        ObjectMetadata objectMetadata = readObjectMetadata(folder, fileId);
-        if (objectMetadata == null)
-            throw new FileDoesNotExistException(metadataFilePath(folder, fileId).toString(), storage);
+    void setState(Path folder, ArchivalObjectDto object, ObjectState state, boolean createMetaFileIfMissing) throws IOStorageException, CantParseMetadataFile, FileDoesNotExistException {
+        ObjectMetadata objectMetadata = readObjectMetadata(folder, object.getStorageId());
+        if (objectMetadata == null) {
+            if (createMetaFileIfMissing) {
+                objectMetadata = new ObjectMetadata(object.getStorageId(), state, object.getCreated(), object.getChecksum());
+            } else {
+                throw new FileDoesNotExistException(metadataFilePath(folder, object.getStorageId()).toString(), storage);
+            }
+        }
         objectMetadata.setState(state);
         writeObjectMetadata(folder, objectMetadata);
     }

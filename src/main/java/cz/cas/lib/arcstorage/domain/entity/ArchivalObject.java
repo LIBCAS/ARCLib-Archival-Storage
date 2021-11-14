@@ -44,12 +44,11 @@ public class ArchivalObject extends DomainObject {
     public ArchivalObject(Checksum checksum, User owner, ObjectState state) {
         this.checksum = checksum;
         this.state = state;
-        this.owner=owner;
+        this.owner = owner;
     }
 
     /**
-     * has to be overridden
-     *
+     * subclasses should override this
      */
     public ArchivalObjectDto toDto() {
         return new ArchivalObjectDto(id, id, checksum, getOwner(), null, state, created, ObjectType.OBJECT);

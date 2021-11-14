@@ -5,6 +5,7 @@ import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -27,17 +28,17 @@ public interface FsAdapter extends StorageService {
 
     @Override
     default void storeAip(AipDto aipDto, AtomicBoolean rollback, String dataSpace) throws StorageException {
-        getFsProcessor().storeAip(aipDto, rollback,dataSpace);
+        getFsProcessor().storeAip(aipDto, rollback, dataSpace);
     }
 
     @Override
     default AipRetrievalResource getAip(String aipId, String dataSpace, Integer... xmlVersions) throws StorageException {
-        return getFsProcessor().getAip(aipId,dataSpace, xmlVersions);
+        return getFsProcessor().getAip(aipId, dataSpace, xmlVersions);
     }
 
     @Override
     default void storeObject(ArchivalObjectDto archivalObjectDto, AtomicBoolean rollback, String dataSpace) throws StorageException {
-        getFsProcessor().storeObject(archivalObjectDto, rollback,dataSpace);
+        getFsProcessor().storeObject(archivalObjectDto, rollback, dataSpace);
     }
 
     @Override
@@ -47,22 +48,22 @@ public interface FsAdapter extends StorageService {
 
     @Override
     default ObjectRetrievalResource getObject(String id, String dataSpace) throws StorageException {
-        return getFsProcessor().getObject(id,dataSpace);
+        return getFsProcessor().getObject(id, dataSpace);
     }
 
     @Override
-    default void delete(String id, String dataSpace) throws StorageException {
-        getFsProcessor().delete(id,dataSpace);
+    default void delete(ArchivalObjectDto objectDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException {
+        getFsProcessor().delete(objectDto, dataSpace, createMetaFileIfMissing);
     }
 
     @Override
-    default void remove(String id, String dataSpace) throws StorageException {
-        getFsProcessor().remove(id,dataSpace);
+    default void remove(ArchivalObjectDto objectDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException {
+        getFsProcessor().remove(objectDto, dataSpace, createMetaFileIfMissing);
     }
 
     @Override
-    default void renew(String id, String dataSpace) throws StorageException {
-        getFsProcessor().renew(id,dataSpace);
+    default void renew(ArchivalObjectDto objectDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException {
+        getFsProcessor().renew(objectDto, dataSpace, createMetaFileIfMissing);
     }
 
     @Override
@@ -73,6 +74,12 @@ public interface FsAdapter extends StorageService {
     @Override
     default void rollbackObject(ArchivalObjectDto dto, String dataSpace) throws StorageException {
         getFsProcessor().rollbackObject(dto, dataSpace);
+    }
+
+
+    @Override
+    default void forgetObject(String objectIdAtStorage, String dataSpace, Instant forgetAuditTimestamp) throws StorageException {
+        getFsProcessor().forgetObject(objectIdAtStorage, dataSpace, forgetAuditTimestamp);
     }
 
     @Override

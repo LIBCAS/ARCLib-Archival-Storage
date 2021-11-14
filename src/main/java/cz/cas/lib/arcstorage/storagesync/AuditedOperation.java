@@ -14,5 +14,9 @@ public enum AuditedOperation {
     /**
      * archiving after rollback
      */
-    ARCHIVAL_RETRY
+    ARCHIVAL_RETRY,
+    /**
+     * complete deletion of the object - from DB and storage
+     */
+    FORGET
 }

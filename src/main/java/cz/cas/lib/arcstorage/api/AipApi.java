@@ -5,6 +5,7 @@ import cz.cas.lib.arcstorage.domain.entity.AipXml;
 import cz.cas.lib.arcstorage.domain.entity.ArchivalObject;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.BadRequestException;
+import cz.cas.lib.arcstorage.exception.ForbiddenByConfigException;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.security.Roles;
 import cz.cas.lib.arcstorage.security.user.UserDetails;
@@ -19,7 +20,7 @@ import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageReachable
 import cz.cas.lib.arcstorage.service.exception.storage.ObjectCouldNotBeRetrievedException;
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
-import cz.cas.lib.arcstorage.storagesync.exception.SynchronizationInProgressException;
+import cz.cas.lib.arcstorage.storagesync.newstorage.exception.SynchronizationInProgressException;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import io.swagger.annotations.ApiResponse;
@@ -60,6 +61,7 @@ public class AipApi {
     private UserDetails userDetails;
     private ArchivalDbService archivalDbService;
     private ArchivalService archivalService;
+    private boolean forgetFeatureAllowed;
 
     @ApiOperation(value = "Return specified AIP as a ZIP package")
     @RequestMapping(value = "/{aipId}", method = RequestMethod.GET)
@@ -70,7 +72,7 @@ public class AipApi {
             @ApiResponse(code = 503, message = "all attached logical storages are currently unreachable"),
             @ApiResponse(code = 500, message = "file is corrupted at all storages, no logical storage attached, or other internal server error")
     })
-    @RolesAllowed({Roles.READ,Roles.READ_WRITE})
+    @RolesAllowed({Roles.READ, Roles.READ_WRITE})
     public void getAip(
             @ApiParam(value = "AIP ID", required = true) @PathVariable("aipId") String aipId,
             @ApiParam(value = "true to return all XMLs, otherwise only the latest is returned") @RequestParam(value = "all", defaultValue = "false") boolean all,
@@ -141,7 +143,7 @@ public class AipApi {
             @ApiResponse(code = 503, message = "all attached logical storages are currently unreachable"),
             @ApiResponse(code = 500, message = "file is corrupted at all storages, no logical storage attached, or other internal server error")
     })
-    @RolesAllowed({Roles.READ,Roles.READ_WRITE})
+    @RolesAllowed({Roles.READ, Roles.READ_WRITE})
     public void getXml(
             @ApiParam(value = "AIP ID", required = true) @PathVariable("aipId") String aipId,
             @ApiParam(value = "version number of XML, if not set the latest version is returned") @RequestParam(value = "v", defaultValue = "") Integer version,
@@ -309,6 +311,38 @@ public class AipApi {
         archivalService.rollbackObject(object);
     }
 
+    @ApiOperation(value = "Forgets the object.",
+            notes = "If the object is AIP, it has to contain exactly one AIP XML which is also forget. " +
+                    "All Metadata and DB records are deleted together with file content." +
+                    "If the object to forget does not exists, then do nothing.")
+    @RequestMapping(value = "/{objId}/forget", method = RequestMethod.DELETE)
+    @ApiResponses(value = {
+            @ApiResponse(code = 200, message = "object successfully forgotten or forget call skipped because the object was not found"),
+            @ApiResponse(code = 400, message = "bad request, e.g. the specified id is not a valid UUID"),
+            @ApiResponse(code = 403, message = "forget feature not allowed or trying to forget AIP XML (there is a special endpoint for that case) OR trying to forget AIP which has more than one AIP XML linked"),
+            @ApiResponse(code = 503, message = "some attached logical storage is currently not reachable or system is in readonly state"),
+            @ApiResponse(code = 500, message = "no logical storage attached, or other internal server error")
+    })
+    @RolesAllowed(Roles.READ_WRITE)
+    public void forget(
+            @ApiParam(value = "object id", required = true) @PathVariable("objId") String objId) throws BadRequestException, SomeLogicalStoragesNotReachableException, NoLogicalStorageAttachedException, ForbiddenByConfigException, StorageException, StateException {
+        if (!forgetFeatureAllowed) {
+            throw new ForbiddenByConfigException("forget feature not allowed");
+        }
+        checkUUID(objId);
+        ArchivalObject object = archivalDbService.lookForObject(objId);
+        if (object == null) {
+            log.debug("Skipped forget of object " + objId + " as it is not even registered in Archival Storage DB");
+            return;
+        }
+        if (object instanceof AipSip && ((AipSip) object).getXmls().size() > 1)
+            throw new UnsupportedOperationException("AIP can be forgotten only if it contains exactly one AIP XML");
+        if (object instanceof AipXml) {
+            throw new UnsupportedOperationException("AIP XML has to be forgotten through special endpoint");
+        }
+        archivalService.forgetObject(object);
+    }
+
     @ApiOperation(value = "Deletes data of the latest AIP XML. Version set in the path variable must be the latest AIP XML of the AIP.")
     @RequestMapping(value = "/{aipId}/rollbackXml/{xmlVersion}", method = RequestMethod.DELETE)
     @ApiResponses(value = {
@@ -321,12 +355,35 @@ public class AipApi {
     @RolesAllowed(Roles.READ_WRITE)
     public void rollbackXml(
             @ApiParam(value = "AIP id", required = true) @PathVariable("aipId") String aipId,
-            @ApiParam(value = "XML version", required = true) @PathVariable("xmlVersion") int xmlVersion) throws BadRequestException, SomeLogicalStoragesNotReachableException, NoLogicalStorageAttachedException, StateException {
+            @ApiParam(value = "XML version", required = true) @PathVariable("xmlVersion") int xmlVersion) throws BadRequestException, SomeLogicalStoragesNotReachableException, NoLogicalStorageAttachedException, StateException, StorageException {
         checkUUID(aipId);
         if (xmlVersion < 2) {
             throw new UnsupportedOperationException("Only XMLs created as metadata update (version 2 and higher) can be rolled back through this endpoint");
         }
-        aipService.rollbackXml(aipId, xmlVersion);
+        aipService.rollbackOrForgetXml(aipId, xmlVersion, false);
+    }
+
+    @ApiOperation(value = "Deletes the latest AIP XML. Version set in the path variable must be the latest AIP XML of the AIP.")
+    @RequestMapping(value = "/{aipId}/forgetXml/{xmlVersion}", method = RequestMethod.DELETE)
+    @ApiResponses(value = {
+            @ApiResponse(code = 200, message = "object successfully forgotten or forget call skipped because the object was not found"),
+            @ApiResponse(code = 400, message = "bad request, e.g. the specified id is not a valid UUID"),
+            @ApiResponse(code = 403, message = "forget feature not allowed or the XML is version 1 (whole AIP should be forgotten instead) or if this is not the latest XML version of the AIP (newer versions exist)"),
+            @ApiResponse(code = 503, message = "some attached logical storage is currently not reachable or system is in readonly state"),
+            @ApiResponse(code = 500, message = "no logical storage attached, or other internal server error")
+    })
+    @RolesAllowed(Roles.READ_WRITE)
+    public void forgetXml(
+            @ApiParam(value = "AIP id", required = true) @PathVariable("aipId") String aipId,
+            @ApiParam(value = "XML version", required = true) @PathVariable("xmlVersion") int xmlVersion) throws BadRequestException, SomeLogicalStoragesNotReachableException, NoLogicalStorageAttachedException, StateException, ForbiddenByConfigException, StorageException {
+        if (!forgetFeatureAllowed) {
+            throw new ForbiddenByConfigException("forget feature not allowed");
+        }
+        checkUUID(aipId);
+        if (xmlVersion < 2) {
+            throw new UnsupportedOperationException("Only XMLs created as metadata update (version 2 and higher) can be forgotten through this endpoint");
+        }
+        aipService.rollbackOrForgetXml(aipId, xmlVersion, true);
     }
 
     @ApiOperation(value = "Verifies AIP consistency at given storage and retrieves result.", notes = "If the AIP is not in some final, consistent state even in DB the storage is not checked and only DB data are returned.", response = AipConsistencyVerificationResultDto.class)
@@ -401,5 +458,10 @@ public class AipApi {
     @Inject
     public void setArchivalService(ArchivalService archivalService) {
         this.archivalService = archivalService;
+    }
+
+    @Inject
+    public void setForgetFeatureAllowed(@Value("${arcstorage.optionalFeatures.forgetObject}") boolean forgetFeatureAllowed) {
+        this.forgetFeatureAllowed = forgetFeatureAllowed;
     }
 }

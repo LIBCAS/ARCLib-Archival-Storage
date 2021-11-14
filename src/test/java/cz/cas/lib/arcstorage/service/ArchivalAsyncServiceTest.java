@@ -59,7 +59,7 @@ public class ArchivalAsyncServiceTest {
         List<ArchivalObject> objects = asList(o1, o2, o3, s1, x1, x2);
 
         doThrow(new IOStorageException(s)).when(localFsProcessor).rollbackObject(x2.toDto(), USER.getDataSpace());
-        doThrow(new IOStorageException(s)).when(localFsProcessor).delete(o2.getId(), USER.getDataSpace());
+        doThrow(new IOStorageException(s)).when(localFsProcessor).delete(o2.toDto(), USER.getDataSpace(), false);
 
         service.cleanUp(objects, asList(localFsProcessor));
 

@@ -252,7 +252,7 @@ public abstract class StorageServiceTest {
 
         XmlConsistencyVerificationResultDto xmlInfo2 = xmlsStates.get(1);
         assertThat(xmlInfo2.getStorageChecksum(), nullValue());
-        assertThat(xmlInfo2.getDatabaseChecksum(), is( new Checksum(ChecksumType.MD5, "ee26908bf9629eeb4b37dac350f4754a")));
+        assertThat(xmlInfo2.getDatabaseChecksum(), is(new Checksum(ChecksumType.MD5, "ee26908bf9629eeb4b37dac350f4754a")));
         assertThat(xmlInfo2.getVersion(), is(2));
         assertThat(xmlInfo2.isContentConsistent(), is(false));
         assertThat(xmlInfo2.isMetadataConsistent(), is(true));
@@ -284,7 +284,7 @@ public abstract class StorageServiceTest {
         AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         getService().storeAip(aip, rollback, getDataSpace());
-        getService().delete(sipId, getDataSpace());
+        getService().delete(aip.getSip(), getDataSpace(), false);
         aip.getSip().setState(ObjectState.DELETED);
         aip.getXml().setState(ObjectState.ARCHIVED);
 

@@ -1,6 +1,6 @@
-package cz.cas.lib.arcstorage.storagesync.exception;
+package cz.cas.lib.arcstorage.storagesync.newstorage.exception;
 
-import cz.cas.lib.arcstorage.storagesync.StorageSyncStatus;
+import cz.cas.lib.arcstorage.storagesync.newstorage.StorageSyncStatus;
 
 public class SynchronizationInProgressException extends Exception {
     public SynchronizationInProgressException(StorageSyncStatus status) {

@@ -55,6 +55,12 @@ public class AipSip extends ArchivalObject {
         return Collections.unmodifiableList(this.xmls);
     }
 
+    public List<AipXml> getXmlsSortedByVersionAsc() {
+        ArrayList<AipXml> xmlsCopy = new ArrayList<>(this.xmls);
+        xmlsCopy.sort(Comparator.comparing(AipXml::getCreated));
+        return Collections.unmodifiableList(xmlsCopy);
+    }
+
     public AipXml getXml(int i) {
         return this.xmls.get(i);
     }

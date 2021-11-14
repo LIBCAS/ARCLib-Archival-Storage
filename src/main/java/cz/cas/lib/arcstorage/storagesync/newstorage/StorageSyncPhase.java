@@ -1,4 +1,6 @@
-package cz.cas.lib.arcstorage.storagesync;
+package cz.cas.lib.arcstorage.storagesync.newstorage;
+
+import cz.cas.lib.arcstorage.storagesync.AuditedOperation;
 
 public enum StorageSyncPhase {
     /** waiting for the quiet time without new writes, creating dataspace on the new storage**/

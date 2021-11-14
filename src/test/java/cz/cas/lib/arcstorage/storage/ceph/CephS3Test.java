@@ -60,10 +60,10 @@ public class CephS3Test extends StorageServiceTest {
                 "\"userKey\":\"" + props.getProperty("test.ceph.s3.user.key") + "\"," +
                 "\"userSecret\":\"" + props.getProperty("test.ceph.s3.user.secret") + "\"}");
         storage.setReachable(true);
-        userKey=props.getProperty("test.ceph.s3.user.key");
+        userKey = props.getProperty("test.ceph.s3.user.key");
         String unsanitizedSecretKey = props.getProperty("test.ceph.s3.user.secret");
-        secretKey= Strings.isNullOrEmpty(unsanitizedSecretKey)?"ldap":unsanitizedSecretKey;
-        https=Boolean.parseBoolean(props.getProperty("test.ceph.https"));
+        secretKey = Strings.isNullOrEmpty(unsanitizedSecretKey) ? "ldap" : unsanitizedSecretKey;
+        https = Boolean.parseBoolean(props.getProperty("test.ceph.https"));
         bucketName = props.getProperty("test.ceph.bucketname");
         virtualHost = Boolean.parseBoolean(props.getProperty("test.ceph.virtualHost"));
         sshPort = Integer.parseInt(props.getProperty("test.ceph.ssh.port"));
@@ -171,7 +171,7 @@ public class CephS3Test extends StorageServiceTest {
 
         String fileId = testName.getMethodName();
 
-        CephS3StorageService service = new TestStorageService(storage, userKey,secretKey,https, null);
+        CephS3StorageService service = new TestStorageService(storage, userKey, secretKey, https, null);
         AmazonS3 s3 = service.connect();
 
         AtomicBoolean rollback = new AtomicBoolean(false);
@@ -235,8 +235,8 @@ public class CephS3Test extends StorageServiceTest {
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, bucketName);
 
-        service.delete(sipId, bucketName);
-        service.delete(sipId, bucketName);
+        service.delete(aip.getSip(), bucketName, false);
+        service.delete(aip.getSip(), bucketName, false);
 
         AmazonS3 s3 = service.connect();
         assertThrown(() -> s3.getObject(bucketName, sipId)).isInstanceOf(AmazonS3Exception.class).messageContains("NoSuchKey");
@@ -258,8 +258,8 @@ public class CephS3Test extends StorageServiceTest {
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, bucketName);
 
-        service.remove(sipId, bucketName);
-        service.remove(sipId, bucketName);
+        service.remove(aip.getSip(), bucketName, false);
+        service.remove(aip.getSip(), bucketName, false);
 
         AmazonS3 s3 = service.connect();
         S3Object sipObj = s3.getObject(bucketName, sipId);
@@ -276,9 +276,9 @@ public class CephS3Test extends StorageServiceTest {
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, bucketName);
 
-        service.remove(sipId, bucketName);
-        service.renew(sipId, bucketName);
-        service.renew(sipId, bucketName);
+        service.remove(aip.getSip(), bucketName, false);
+        service.renew(aip.getSip(), bucketName, false);
+        service.renew(aip.getSip(), bucketName, false);
 
         AmazonS3 s3 = service.connect();
         S3Object sipObj = s3.getObject(bucketName, sipId);
@@ -290,7 +290,7 @@ public class CephS3Test extends StorageServiceTest {
     @Test
     @Override
     public void rollbackProcessingFile() throws Exception {
-        String fileId = testName.getMethodName()+ UUID.randomUUID().toString();
+        String fileId = testName.getMethodName() + UUID.randomUUID().toString();
         AmazonS3 s3 = service.connect();
 //preparation phase copied from rollbackAwareTest
         File file = new File(LARGE_SIP_PATH);
@@ -399,7 +399,7 @@ public class CephS3Test extends StorageServiceTest {
     @Test
     @Override
     public void testConnection() throws StorageException {
-        CephS3StorageService badService = new TestStorageService(storage, "blah", "blah", https,"blah");
+        CephS3StorageService badService = new TestStorageService(storage, "blah", "blah", https, "blah");
         assertThat(badService.testConnection(), is(false));
         assertThat(service.testConnection(), is(true));
         AmazonS3 s3 = service.connect();
