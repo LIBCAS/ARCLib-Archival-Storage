@@ -207,4 +207,10 @@
         </dropColumn>
     </changeSet>
 
+    <changeSet id="arcstorage:6" author="tomasek">
+        <createIndex tableName="arcstorage_aip_xml" indexName="idx_arcstorage_aip_xml_sip_fk">
+            <column name="arcstorage_aip_sip_id"/>
+        </createIndex>
+    </changeSet>
+
 </databaseChangeLog>
