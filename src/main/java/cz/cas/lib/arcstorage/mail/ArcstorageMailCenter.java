@@ -18,10 +18,10 @@ import cz.cas.lib.arcstorage.storagesync.newstorage.StorageSyncStatus;
 import freemarker.template.TemplateException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.lang.Nullable;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.mail.MessagingException;
 import javax.mail.internet.MimeMessage;
@@ -222,7 +222,7 @@ public class ArcstorageMailCenter {
         if (message.getAllRecipients() != null && message.getAllRecipients().length > 0) {
             return sender.send(message);
         } else {
-            String msg = "Mail message was silently consumed because there were no recipients. Mail subject: "+helper.getMimeMessage().getSubject();
+            String msg = "Mail message was silently consumed because there were no recipients. Mail subject: " + helper.getMimeMessage().getSubject();
             log.warn(msg);
             return CompletableFuture.completedFuture(false);
         }

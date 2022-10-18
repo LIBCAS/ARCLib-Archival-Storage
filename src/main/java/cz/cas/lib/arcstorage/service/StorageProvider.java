@@ -4,7 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
+import cz.cas.lib.arcstorage.domain.entity.SystemState;
 import cz.cas.lib.arcstorage.domain.store.StorageStore;
+import cz.cas.lib.arcstorage.domain.store.SystemStateStore;
 import cz.cas.lib.arcstorage.domain.store.Transactional;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.exception.MissingObject;
@@ -22,8 +24,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.inject.Inject;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -42,7 +46,8 @@ public class StorageProvider {
     private String sshUsername;
     private StorageStore storageStore;
     private int connectionTimeout;
-    private SystemStateService systemStateService;
+    private SystemStateStore systemStateStore;
+    private TransactionTemplate transactionTemplate;
 
     /**
      * Returns storage service according to the database object. The storage is tested for reachability and is updated if
@@ -61,7 +66,7 @@ public class StorageProvider {
         } catch (JsonProcessingException e) {
             throw new ConfigParserException(e);
         }
-        switch(storage.getStorageType()) {
+        switch (storage.getStorageType()) {
             case FS:
                 String rootDirPath = root.at("/rootDirPath").textValue();
                 notNull(rootDirPath, () -> new ConfigParserException("rootDirPath string missing in FS storage config"));
@@ -118,7 +123,7 @@ public class StorageProvider {
      * reachablity flag is updated if changed.
      *
      * @return storage services for all storages
-     * @throws SomeLogicalStoragesNotReachableException                       if some storage is unreachable
+     * @throws SomeLogicalStoragesNotReachableException                                          if some storage is unreachable
      * @throws cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException
      * @throws cz.cas.lib.arcstorage.service.exception.ReadOnlyStateException
      */
@@ -132,7 +137,8 @@ public class StorageProvider {
      * internally calls this method with checkSystemState attribute set to true
      * <br>
      * this method exists for special cases, such as cleanup, in which case we do allow writing to strage even if system is in read-only mode
-     * @param checkSystemState  use false in special cases, otherwise don't use this method at all
+     *
+     * @param checkSystemState use false in special cases, otherwise don't use this method at all
      * @return
      * @throws SomeLogicalStoragesNotReachableException
      * @throws NoLogicalStorageAttachedException
@@ -140,7 +146,7 @@ public class StorageProvider {
      */
     public List<StorageService> createAdaptersForWriteOperation(boolean checkSystemState) throws SomeLogicalStoragesNotReachableException,
             NoLogicalStorageAttachedException, ReadOnlyStateException {
-        if (checkSystemState && systemStateService.get().isReadOnly())
+        if (checkSystemState && systemStateStore.get().isReadOnly())
             throw new ReadOnlyStateException();
         Pair<List<StorageService>, List<StorageService>> services = checkReachabilityOfAllStorages();
         if (services.getLeft().isEmpty() && services.getRight().isEmpty())
@@ -155,13 +161,13 @@ public class StorageProvider {
      * reachablity flag is updated if changed.
      *
      * @return storage services for all non-synchronizing storages
-     * @throws SomeLogicalStoragesNotReachableException                       if some non-synchronizing storage is unreachable
+     * @throws SomeLogicalStoragesNotReachableException                                          if some non-synchronizing storage is unreachable
      * @throws cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException
      * @throws cz.cas.lib.arcstorage.service.exception.ReadOnlyStateException
      */
     public List<StorageService> createAdaptersForModifyOperation() throws SomeLogicalStoragesNotReachableException,
             NoLogicalStorageAttachedException, ReadOnlyStateException {
-        if (systemStateService.get().isReadOnly())
+        if (systemStateStore.get().isReadOnly())
             throw new ReadOnlyStateException();
         Pair<List<StorageService>, List<StorageService>> services = checkReachabilityOfAllStorages();
         if (services.getLeft().isEmpty() && services.getRight().isEmpty())
@@ -173,6 +179,7 @@ public class StorageProvider {
 
     /**
      * returns pair with list of reachable (L) and unreachable (R) storages
+     *
      * @return
      */
     @Transactional
@@ -187,7 +194,13 @@ public class StorageProvider {
             }
             storageServices.add(service);
         }
-        systemStateService.setReachabilityCheckedNow();
+
+        transactionTemplate.executeWithoutResult(t -> {
+            SystemState systemState = systemStateStore.get();
+            systemState.setLastReachabilityCheck(Instant.now());
+            systemStateStore.save(systemState);
+        });
+
         return Pair.of(storageServices, unreachableStorageServices);
     }
 
@@ -200,7 +213,7 @@ public class StorageProvider {
     @Transactional
     public StorageService createAdapter(String storageId) {
         Storage storage = storageStore.find(storageId);
-        if(storage == null) throw new MissingObject(Storage.class, storageId);
+        if (storage == null) throw new MissingObject(Storage.class, storageId);
         return createAdapter(storage, true);
     }
 
@@ -227,19 +240,19 @@ public class StorageProvider {
         rwAdapters.forEach(adapter -> {
             if (adapter.getStorage().isReachable()) {
                 List<StorageService> storageServices = storageServicesByPriorities.get(adapter.getStorage().getPriority());
-                if(storageServices == null) storageServices = new ArrayList<>();
+                if (storageServices == null) storageServices = new ArrayList<>();
                 storageServices.add(adapter);
                 storageServicesByPriorities.put(adapter.getStorage().getPriority(), storageServices);
             }
         });
-        if(storageServicesByPriorities.isEmpty()) {
+        if (storageServicesByPriorities.isEmpty()) {
             log.error("there are no logical storages reachable");
             throw new NoLogicalStorageReachableException();
         }
         return storageServicesByPriorities.values().stream().map(storageServicesByPriority -> {
-            shuffle(storageServicesByPriority);
-            return storageServicesByPriority;
-        })
+                    shuffle(storageServicesByPriority);
+                    return storageServicesByPriority;
+                })
                 .flatMap(List::stream)
                 .collect(Collectors.toList());
     }
@@ -269,7 +282,12 @@ public class StorageProvider {
     }
 
     @Inject
-    public void setSystemStateService(SystemStateService systemStateService) {
-        this.systemStateService = systemStateService;
+    public void setSystemStateStore(SystemStateStore systemStateStore) {
+        this.systemStateStore = systemStateStore;
+    }
+
+    @Inject
+    public void setTransactionTemplate(TransactionTemplate transactionTemplate) {
+        this.transactionTemplate = transactionTemplate;
     }
 }

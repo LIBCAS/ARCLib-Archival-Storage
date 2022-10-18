@@ -47,11 +47,7 @@ import static cz.cas.lib.arcstorage.util.Utils.asList;
 import static helper.ThrowableAssertion.assertThrown;
 import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.*;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyList;
-import static org.mockito.Matchers.anyObject;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.eq;
+import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.*;
 
 public class ArchivalServiceTest extends DbTest {
@@ -456,7 +452,7 @@ public class ArchivalServiceTest extends DbTest {
         aipService.verifyAipsAtStorage(asList(aip), storage.getId());
 
         ArgumentCaptor<Map> captor = ArgumentCaptor.forClass(Map.class);
-        verify(storageService).getAipInfo(eq(aip.toDto()), captor.capture(), anyObject());
+        verify(storageService).getAipInfo(eq(aip.toDto()), captor.capture(), any());
         Map<Integer, ArchivalObjectDto> requestedXmls = captor.getValue();
         assertThat(requestedXmls.keySet(), containsInAnyOrder(1, 2));
 

@@ -20,8 +20,6 @@ import java.util.concurrent.Executors;
 import static cz.cas.lib.arcstorage.util.Utils.asList;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.junit.Assert.assertThat;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.*;
 
 public class ArchivalAsyncServiceTest {

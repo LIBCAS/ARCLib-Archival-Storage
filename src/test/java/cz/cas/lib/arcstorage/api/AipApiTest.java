@@ -57,8 +57,7 @@ import static cz.cas.lib.arcstorage.util.Utils.*;
 import static java.lang.String.valueOf;
 import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.assertThat;
-import static org.mockito.Matchers.anyObject;
-import static org.mockito.Matchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
@@ -222,19 +221,19 @@ public class AipApiTest implements ApiTest {
         AipConsistencyVerificationResultDto aipStateInfoFsDto = new AipConsistencyVerificationResultDto(fsStorageService.getStorage().getName(),
                 StorageType.FS, true);
         aipStateInfoFsDto.setAipState(aipState);
-        when(fsStorageService.getAipInfo(anyObject(), anyObject(), anyString()))
+        when(fsStorageService.getAipInfo(any(), any(), any()))
                 .thenReturn(aipStateInfoFsDto);
 
         AipConsistencyVerificationResultDto aipStateInfoZfsDto = new AipConsistencyVerificationResultDto(zfsStorageService.getStorage().getName(),
                 StorageType.ZFS, true);
         aipStateInfoZfsDto.setAipState(aipState);
-        when(zfsStorageService.getAipInfo(anyObject(), anyObject(), anyString()))
+        when(zfsStorageService.getAipInfo(any(), any(), any()))
                 .thenReturn(aipStateInfoZfsDto);
 
         AipConsistencyVerificationResultDto aipStateInfoCephDto = new AipConsistencyVerificationResultDto(cephS3StorageService.getStorage().getName(),
                 StorageType.CEPH, true);
         aipStateInfoCephDto.setAipState(aipState);
-        when(cephS3StorageService.getAipInfo(anyObject(), anyObject(), anyString()))
+        when(cephS3StorageService.getAipInfo(any(), any(), any()))
                 .thenReturn(aipStateInfoCephDto);
 
         List<StorageService> serviceList = asList(fsStorageService, zfsStorageService, cephS3StorageService);
@@ -572,7 +571,7 @@ public class AipApiTest implements ApiTest {
         doAnswer(invocation -> {
             Thread.sleep(500);
             throw new IllegalStateException("whatever exception");
-        }).when(cephS3StorageService).storeObject(anyObject(), anyObject(), anyString());
+        }).when(cephS3StorageService).storeObject(any(), any(), any());
         when(storageProvider.createAdaptersForWriteOperation()).thenReturn(asList(cephS3StorageService));
 
         AipSip aipSip = sipStore.find(SIP_ID);

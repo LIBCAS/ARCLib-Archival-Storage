@@ -13,9 +13,9 @@ import cz.cas.lib.arcstorage.storagesync.ObjectAudit;
 import cz.cas.lib.arcstorage.storagesync.ObjectAuditStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Nullable;
 import javax.inject.Inject;
 import java.nio.file.Path;
 import java.nio.file.Paths;

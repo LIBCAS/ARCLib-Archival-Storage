@@ -156,6 +156,11 @@ public class AipService {
         try (ZipFile aipDataZip = new ZipFile(aipDataFilePath.toFile())) {
             for (String filePath : filePaths) {
                 ZipEntry zipEntry = aipDataZip.getEntry(filePath);
+                if (zipEntry == null) {
+                    //swallowed by ZIP outputstream.. this handle is not ideal
+                    //but at least there is a 'MissingObject' string instead of NPE string in response body
+                    throw new MissingObject("file", filePath);
+                }
                 zipOut.putNextEntry(new ZipEntry(sipId + "/" + zipEntry.getName()));
                 IOUtils.copyLarge(aipDataZip.getInputStream(zipEntry), zipOut);
                 zipOut.closeEntry();

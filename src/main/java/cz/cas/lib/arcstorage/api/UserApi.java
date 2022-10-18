@@ -12,7 +12,11 @@ import cz.cas.lib.arcstorage.service.exception.ReadOnlyStateException;
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.StorageService;
-import io.swagger.annotations.*;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
@@ -26,7 +30,7 @@ import static cz.cas.lib.arcstorage.util.Utils.isNull;
 
 @Slf4j
 @RestController
-@Api(value = "user", description = "managing arcstorage system users")
+@Tag(name = "user", description = "managing arcstorage system users")
 @RequestMapping("/api/user")
 public class UserApi {
 
@@ -34,18 +38,18 @@ public class UserApi {
     private PasswordEncoder passwordEncoder;
     private StorageProvider storageProvider;
 
-    @ApiOperation(value = "Register user.", notes = "DataSpace should be simple string, no dashes, slashes, " +
+    @Operation(summary = "Register user.", description = "DataSpace should be simple string, no dashes, slashes, " +
             "uppercase letters, spaces or underscores. If the user has READ/READ-WRITE role and the dataSpace is new," +
             " the dataSpace should be activated by another endpoint.")
     @ApiResponses(value = {
-            @ApiResponse(code = 409, message = "username already exists"),
-            @ApiResponse(code = 400, message = "Wrong JSON | username/password/role missing | role!=ADMIN and dataSpace missing | " +
+            @ApiResponse(responseCode = "409", description = "username already exists"),
+            @ApiResponse(responseCode = "400", description = "Wrong JSON | username/password/role missing | role!=ADMIN and dataSpace missing | " +
                     "role==ADMIN and dataSpace not null")
     })
     @RequestMapping(value = "/register", method = RequestMethod.POST)
     @Transactional
     @RolesAllowed(Roles.ADMIN)
-    public User registerUser(@ApiParam(value = "User to be registered", required = true)
+    public User registerUser(@Parameter(name = "User to be registered", required = true)
                              @RequestBody @Valid User user) throws BadRequestException {
         log.debug("Registering user with username " + user.getUsername() + ".");
         if (user.getRole() == Role.ROLE_ADMIN && user.getDataSpace() != null)
@@ -65,17 +69,17 @@ public class UserApi {
         return user;
     }
 
-    @ApiOperation(value = "Activates dataSpace i.e. creates folders/buckets etc. at all logical storages.",
-            notes = "DataSpace should be simple string, no dashes, slashes, uppercase letters, spaces or underscores.")
+    @Operation(summary = "Activates dataSpace i.e. creates folders/buckets etc. at all logical storages.",
+            description = "DataSpace should be simple string, no dashes, slashes, uppercase letters, spaces or underscores.")
     @ApiResponses(value = {
-            @ApiResponse(code = 503, message = "some logical storage not reachable or system is in readonly state"),
-            @ApiResponse(code = 500, message = "no logical storage attached or internal server error"),
+            @ApiResponse(responseCode = "503", description = "some logical storage not reachable or system is in readonly state"),
+            @ApiResponse(responseCode = "500", description = "no logical storage attached or internal server error"),
     })
     @RequestMapping(value = "/activate/{dataSpace}", method = RequestMethod.POST)
     @Transactional
     @RolesAllowed(Roles.ADMIN)
     public void activateDataSpace(
-            @ApiParam(value = "dataSpace", required = true) @PathVariable("dataSpace") String dataSpace)
+            @Parameter(name = "dataSpace", required = true) @PathVariable("dataSpace") String dataSpace)
             throws NoLogicalStorageAttachedException, SomeLogicalStoragesNotReachableException, ReadOnlyStateException {
         List<StorageService> reachableAdapters = storageProvider.createAdaptersForWriteOperation();
         reachableAdapters.forEach(

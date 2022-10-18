@@ -9,7 +9,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 
 import javax.inject.Inject;
-import java.time.Instant;
 
 import static cz.cas.lib.arcstorage.util.Utils.notNull;
 
@@ -44,14 +43,6 @@ public class SystemStateService {
             log.info("No system state entity found, created default: " + any);
         }
         return any;
-    }
-
-    @Transactional
-    public SystemState setReachabilityCheckedNow() {
-        SystemState systemState = systemStateStore.get();
-        systemState.setLastReachabilityCheck(Instant.now());
-        systemStateStore.save(systemState);
-        return systemState;
     }
 
     @Inject

@@ -22,10 +22,10 @@ import cz.cas.lib.arcstorage.storagesync.newstorage.StorageSyncStatusStore;
 import cz.cas.lib.arcstorage.storagesync.newstorage.exception.CantCreateDataspaceException;
 import cz.cas.lib.arcstorage.storagesync.newstorage.exception.StorageStillProcessObjectsException;
 import cz.cas.lib.arcstorage.storagesync.newstorage.exception.SynchronizationInProgressException;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
-import io.swagger.annotations.ApiResponse;
-import io.swagger.annotations.ApiResponses;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.security.RolesAllowed;
@@ -47,51 +47,51 @@ public class StorageAdministrationApi {
     private StorageSyncStatusStore storageSyncStatusStore;
     private StorageProvider storageProvider;
 
-    @ApiOperation(value = "Returns all attached logical storages.", response = Storage.class, responseContainer = "list")
+    @Operation(summary = "Returns all attached logical storages.")
     @RequestMapping(method = RequestMethod.GET)
     public Collection<Storage> getAll() {
         return storageStore.findAll();
     }
 
-    @ApiOperation(value = "Returns simple DTOs of all attached logical storages.", response = StorageBasicDto.class, responseContainer = "list")
+    @Operation(summary = "Returns simple DTOs of all attached logical storages.")
     @RequestMapping(value = "/basic", method = RequestMethod.GET)
     public Collection<StorageBasicDto> getAllAsDtos() {
         return storageStore.getAllAsDtos();
     }
 
-    @ApiOperation(value = "Returns logical storage with specified ID.", response = Storage.class)
+    @Operation(summary = "Returns logical storage with specified ID.")
     @RequestMapping(value = "/{id}", method = RequestMethod.GET)
     public Storage getOne(
-            @ApiParam(value = "id of the logical storage", required = true) @PathVariable("id") String id) {
+            @Parameter(name = "id of the logical storage", required = true) @PathVariable("id") String id) {
         Storage storage = storageStore.find(id);
         notNull(storage, () -> new MissingObject(Storage.class, id));
         return storage;
     }
 
-    @ApiOperation(value = "Returns state of logical storage.", notes = "Data returned depends on the logical storage. E.g. self-healing data are returned only if self-healing is supported by the storage.", response = StorageStateDto.class)
+    @Operation(summary = "Returns state of logical storage.", description = "Data returned depends on the logical storage. E.g. self-healing data are returned only if self-healing is supported by the storage.")
     @RequestMapping(value = "/{id}/state", method = RequestMethod.GET)
     public StorageStateDto getStorageState(
-            @ApiParam(value = "id of the logical storage", required = true) @PathVariable("id") String id) throws BadRequestException {
+            @Parameter(name = "id of the logical storage", required = true) @PathVariable("id") String id) throws BadRequestException {
         checkUUID(id);
         return storageAdministrationService.getStorageState(id);
     }
 
-    @ApiOperation(value = "Check reachability of all storages", response = SystemState.class)
+    @Operation(summary = "Check reachability of all storages")
     @RequestMapping(value = "/check_reachability", method = RequestMethod.POST)
     public void checkReachability() {
         storageProvider.checkReachabilityOfAllStorages();
     }
 
-    @ApiOperation(value = "Attaches new logical storage and starts synchronization.", response = Storage.class, notes = "After the initial checks are done, process continues asynchronously. See documentation for example JSON configurations")
+    @Operation(summary = "Attaches new logical storage and starts synchronization.", description = "After the initial checks are done, process continues asynchronously. See documentation for example JSON configurations")
     @RequestMapping(method = RequestMethod.POST)
     @ApiResponses(value = {
-            @ApiResponse(code = 400, message = "invalid configuration"),
-            @ApiResponse(code = 503, message = "storage to be synchronized is not reachable"),
-            @ApiResponse(code = 566, message = "synchronization initialization timeout because there are still processing objects at the archival storage"),
-            @ApiResponse(code = 567, message = "cant create some dataspace at the storage"),
-            @ApiResponse(code = 409, message = "storage already exists")})
+            @ApiResponse(responseCode = "400", description = "invalid configuration"),
+            @ApiResponse(responseCode = "503", description = "storage to be synchronized is not reachable"),
+            @ApiResponse(responseCode = "566", description = "synchronization initialization timeout because there are still processing objects at the archival storage"),
+            @ApiResponse(responseCode = "567", description = "cant create some dataspace at the storage"),
+            @ApiResponse(responseCode = "409", description = "storage already exists")})
     public Storage attachStorage(
-            @ApiParam(value = "logical storage entity", required = true) @RequestBody @Valid Storage storage)
+            @Parameter(name = "logical storage entity", required = true) @RequestBody @Valid Storage storage)
             throws SomeLogicalStoragesNotReachableException, SynchronizationInProgressException, InterruptedException,
             IOStorageException, StorageStillProcessObjectsException, CantCreateDataspaceException, BadRequestException {
 //        if (storage.getHost() != null && !storage.getHost().equals("localhost"))
@@ -101,37 +101,37 @@ public class StorageAdministrationApi {
         return storageAdministrationService.attachStorage(storage);
     }
 
-    @ApiOperation(value = "Continues with failed (stopped) synchronization.", notes = "After the initial checks are done, system asynchronously continues from the last successfully synced object/operation.")
+    @Operation(summary = "Continues with failed (stopped) synchronization.", description = "After the initial checks are done, system asynchronously continues from the last successfully synced object/operation.")
     @RequestMapping(value = "/sync/{id}", method = RequestMethod.POST)
     @ApiResponses(value = {
-            @ApiResponse(code = 403, message = "synchronization is already in progress or not authorized"),
-            @ApiResponse(code = 503, message = "storage to be synchronized is not reachable")
+            @ApiResponse(responseCode = "403", description = "synchronization is already in progress or not authorized"),
+            @ApiResponse(responseCode = "503", description = "storage to be synchronized is not reachable")
     })
     public void continueSync(
-            @ApiParam(value = "id of the synchronization status entity", required = true) @PathVariable("id") String id)
+            @Parameter(name = "id of the synchronization status entity", required = true) @PathVariable("id") String id)
             throws SomeLogicalStoragesNotReachableException, SynchronizationInProgressException, InterruptedException {
         StorageSyncStatus storageSyncStatus = storageSyncStatusStore.find(id);
         notNull(storageSyncStatus, () -> new MissingObject(StorageSyncStatus.class, id));
         storageAdministrationService.synchronizeStorage(storageSyncStatus, false);
     }
 
-    @ApiOperation(value = "Retrieves sync status entity for the storage.", response = StorageSyncStatus.class)
+    @Operation(summary = "Retrieves sync status entity for the storage.")
     @RequestMapping(value = "/sync/{id}", method = RequestMethod.GET)
     @ApiResponses(value = {
-            @ApiResponse(code = 404, message = "no sync status for this storage")
+            @ApiResponse(responseCode = "404", description = "no sync status for this storage")
     })
     public StorageSyncStatus getSyncStatusOfStorage(
-            @ApiParam(value = "id of the storage", required = true) @PathVariable("id") String id) {
+            @Parameter(name = "id of the storage", required = true) @PathVariable("id") String id) {
         StorageSyncStatus syncStatusOfStorage = storageSyncStatusStore.findSyncStatusOfStorage(id);
         notNull(syncStatusOfStorage, () -> new MissingObject("storage sync status of configuration with specified id", id));
         return syncStatusOfStorage;
     }
 
-    @ApiOperation(value = "Updates a logical storage.", notes = "Only name, priority and note flags are updatable, others are ignored.", response = Storage.class)
+    @Operation(summary = "Updates a logical storage.", description = "Only name, priority and note flags are updatable, others are ignored.")
     @Transactional
     @RequestMapping(value = "/update", method = RequestMethod.POST)
     public Storage update(
-            @ApiParam(value = "update DTO of the logical storage entity", required = true)
+            @Parameter(name = "update DTO of the logical storage entity", required = true)
             @RequestBody @Valid StorageUpdateDto storageUpdateDto) {
         Storage storage = storageStore.find(storageUpdateDto.getId());
         notNull(storage, () -> new MissingObject(Storage.class, storageUpdateDto.getId()));
@@ -142,14 +142,14 @@ public class StorageAdministrationApi {
         return storage;
     }
 
-    @ApiOperation(value = "Removes a logical storage.")
+    @Operation(summary = "Removes a logical storage.")
     @Transactional
     @RequestMapping(value = "/{id}", method = RequestMethod.DELETE)
     @ApiResponses(value = {
-            @ApiResponse(code = 403, message = "not authorized or can't be deleted because count of logical storage would be less than the configured minimum")
+            @ApiResponse(responseCode = "403", description = "not authorized or can't be deleted because count of logical storage would be less than the configured minimum")
     })
     public void delete(
-            @ApiParam(value = "id of the logical storage", required = true) @PathVariable("id") String id) throws ForbiddenByConfigException {
+            @Parameter(name = "id of the logical storage", required = true) @PathVariable("id") String id) throws ForbiddenByConfigException {
         int minStorageCount = systemStateService.get().getMinStorageCount();
         Storage storage = storageStore.find(id);
         notNull(storage, () -> new MissingObject(Storage.class, id));

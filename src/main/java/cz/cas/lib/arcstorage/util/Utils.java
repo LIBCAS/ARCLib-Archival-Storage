@@ -1,13 +1,10 @@
 package cz.cas.lib.arcstorage.util;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.google.common.io.ByteSource;
-import com.google.common.io.Resources;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.dto.Checksum;
 import cz.cas.lib.arcstorage.exception.BadRequestException;
 import cz.cas.lib.arcstorage.exception.GeneralException;
-import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.service.exception.ConfigParserException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.CmdProcessException;
@@ -23,8 +20,6 @@ import org.springframework.aop.framework.Advised;
 import org.springframework.aop.support.AopUtils;
 
 import java.io.*;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.time.*;
 import java.util.*;
@@ -218,35 +213,6 @@ public class Utils {
         return copy;
     }
 
-
-    public static InputStream resource(String path) throws IOException {
-        try {
-            URL url = Resources.getResource(path);
-            ByteSource source = Resources.asByteSource(url);
-            return source.openStream();
-        } catch (IllegalArgumentException ex) {
-            throw new MissingObject("template", path);
-        }
-    }
-
-    public static byte[] resourceBytes(String path) throws IOException {
-        try {
-            URL url = Resources.getResource(path);
-            return Resources.toByteArray(url);
-        } catch (IllegalArgumentException ex) {
-            throw new MissingObject("template", path);
-        }
-    }
-
-    public static String resourceString(String path) throws IOException {
-        try {
-            URL url = Resources.getResource(path);
-            return Resources.toString(url, StandardCharsets.UTF_8);
-        } catch (IllegalArgumentException ex) {
-            throw new MissingObject("template", path);
-        }
-    }
-
     public static String join(Collection<String> data) {
         if (data == null) {
             return "";
@@ -367,7 +333,6 @@ public class Utils {
         if (!ip.matches(PATTERN))
             throw new BadRequestException(ip + " is not valid IPv4 address");
     }
-
 
 
     public static byte[] inputStreamToBytes(InputStream ios) throws IOException {

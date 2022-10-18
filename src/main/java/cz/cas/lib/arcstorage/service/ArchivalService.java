@@ -1,6 +1,5 @@
 package cz.cas.lib.arcstorage.service;
 
-import com.google.common.collect.Lists;
 import cz.cas.lib.arcstorage.domain.entity.AipSip;
 import cz.cas.lib.arcstorage.domain.entity.AipXml;
 import cz.cas.lib.arcstorage.domain.entity.ArchivalObject;
@@ -30,6 +29,7 @@ import java.io.*;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -247,7 +247,9 @@ public class ArchivalService {
         }
         List<StorageService> reachableAdapters = storageProvider.createAdaptersForModifyOperation();
 
-        for (ArchivalObject archivalObject : Lists.reverse(allObjectsToForget)) {
+        ArrayList<ArchivalObject> allObjectsToForgetReversedOrder = new ArrayList<>(allObjectsToForget);
+        Collections.reverse(allObjectsToForgetReversedOrder);
+        for (ArchivalObject archivalObject : allObjectsToForgetReversedOrder) {
             for (StorageService reachableAdapter : reachableAdapters) {
                 reachableAdapter.forgetObject(archivalObject.toDto().getStorageId(), archivalObject.getOwner().getDataSpace(), null);
             }
