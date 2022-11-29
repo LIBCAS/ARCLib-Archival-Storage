@@ -16,11 +16,14 @@ import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageReachable
 import cz.cas.lib.arcstorage.service.exception.storage.ObjectCouldNotBeRetrievedException;
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.StorageService;
+import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.storage.fs.FsAdapter;
 import cz.cas.lib.arcstorage.storage.fs.LocalFsProcessor;
 import cz.cas.lib.arcstorage.storagesync.newstorage.exception.SynchronizationInProgressException;
+import cz.cas.lib.arcstorage.util.SetUtils;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.IOUtils;
@@ -38,10 +41,10 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
-import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.*;
@@ -108,78 +111,6 @@ public class AipService {
         if (xmls.isEmpty())
             throw new IllegalStateException("found ARCHIVED SIP " + sipId + " with no ARCHIVED XML");
         return retrieveAip(sipEntity, xmls);
-    }
-
-    /**
-     * @param sipId        id of the AIP to retrieve
-     * @param filePaths    paths of specified files we want to extract from ZIP
-     * @param outputStream output stream into which result zip is stored
-     * @throws DeletedStateException              if SIP is deleted {@link ObjectState}
-     * @throws RollbackStateException             if SIP is rolled back or only one XML is requested and that one is rolled back {@link ObjectState}
-     * @throws StillProcessingStateException      if SIP or some of requested XML is still processing {@link ObjectState}
-     * @throws FailedStateException               if SIP is failed {@link ObjectState}
-     * @throws NoLogicalStorageAttachedException  if storageId is null and there is not even one logical storage attached
-     * @throws NoLogicalStorageReachableException if storageId is null and there is not even one logical storage reachable
-     * @throws IOException                        if there were an IO exception during processing
-     */
-    public void getAipSpecifiedFiles(String sipId, Set<String> filePaths, OutputStream outputStream) throws StorageException, NoLogicalStorageAttachedException, NoLogicalStorageReachableException, StillProcessingStateException, RollbackStateException, DeletedStateException, FailedStateException, IOException {
-        Optional<StorageService> storageService = storageProvider.createAdaptersForRead().stream().filter(s ->
-                (s.getStorage().getStorageType() == StorageType.FS || s.getStorage().getStorageType() == StorageType.ZFS) && isLocalhost(s.getStorage())).findFirst();
-        if (storageService.isEmpty())
-            throw new UnsupportedOperationException("Operation requires FS/ZFS storage of local type");
-        AipSip sipEntity = archivalDbService.getAip(sipId);
-        switch (sipEntity.getState()) {
-            case ROLLED_BACK:
-                throw new RollbackStateException(sipEntity);
-            case DELETED:
-                throw new DeletedStateException(sipEntity);
-            case PRE_PROCESSING:
-            case PROCESSING:
-                throw new StillProcessingStateException(sipEntity);
-            case DELETION_FAILURE:
-            case ROLLBACK_FAILURE:
-            case ARCHIVAL_FAILURE:
-                throw new FailedStateException(sipEntity);
-        }
-        LocalFsProcessor localFsProcessor;
-        if (storageService.get() instanceof FsAdapter) {
-            StorageService fsProcessor = ((FsAdapter) storageService.get()).getFsProcessor();
-            if (fsProcessor instanceof LocalFsProcessor)
-                localFsProcessor = (LocalFsProcessor) fsProcessor;
-            else
-                throw new IllegalArgumentException("expected LocalFsProcessor, but got: " + fsProcessor.getClass());
-        } else
-            throw new IllegalArgumentException("expected LocalFsProcessor, but got: " + storageService.get().getStorage());
-        Path aipDataFilePath = localFsProcessor.getAipDataFilePath(sipId, sipEntity.getOwner().getDataSpace());
-
-        ZipOutputStream zipOut = new ZipOutputStream(outputStream);
-        try (ZipFile aipDataZip = new ZipFile(aipDataFilePath.toFile())) {
-            for (String filePath : filePaths) {
-                ZipEntry zipEntry = aipDataZip.getEntry(filePath);
-                if (zipEntry == null) {
-                    //swallowed by ZIP outputstream.. this handle is not ideal
-                    //but at least there is a 'MissingObject' string instead of NPE string in response body
-                    throw new MissingObject("file", filePath);
-                }
-                zipOut.putNextEntry(new ZipEntry(sipId + "/" + zipEntry.getName()));
-                IOUtils.copyLarge(aipDataZip.getInputStream(zipEntry), zipOut);
-                zipOut.closeEntry();
-            }
-        } finally {
-            zipOut.finish();
-        }
-    }
-
-    /**
-     * Small private method to handle
-     *
-     * @param aipDataZipIn
-     * @return
-     * @throws IOException
-     */
-    private ZipEntry getNextZipEntry(ZipInputStream aipDataZipIn) throws IOException {
-        aipDataZipIn.closeEntry();
-        return aipDataZipIn.getNextEntry();
     }
 
     /**
@@ -471,6 +402,132 @@ public class AipService {
                     arcstorageMailCenter.sendAipsVerificationError(recoveryResultsGroupedByStorages);
                 });
         return allImmediateResults;
+    }
+
+    /**
+     * Fills passed output stream with AIP data reduced by list of file paths. AIP state is validated in DB and a {@link LocalFsProcessor}
+     * with the highest priority is chosen to provide AIP data.
+     *
+     * @param sipId        id of the AIP to retrieve
+     * @param filePaths    paths of specified files we want to extract from ZIP
+     * @param outputStream output stream into which result zip is stored
+     * @throws UnsupportedEncodingException       if no reachable {@link LocalFsProcessor} is attached
+     * @throws DeletedStateException              if SIP is deleted {@link ObjectState}
+     * @throws RollbackStateException             if SIP is rolled back or only one XML is requested and that one is rolled back {@link ObjectState}
+     * @throws StillProcessingStateException      if SIP or some of requested XML is still processing {@link ObjectState}
+     * @throws FailedStateException               if SIP is failed {@link ObjectState}
+     * @throws NoLogicalStorageAttachedException  if storageId is null and there is not even one logical storage attached
+     * @throws NoLogicalStorageReachableException if storageId is null and there is not even one logical storage reachable
+     * @throws IOException                        if there were an IO exception during processing
+     */
+    public void streamAipReducedByFileListFromLocalStorage(String sipId, OutputStream outputStream, Set<String> filePaths)
+            throws NoLogicalStorageAttachedException,
+            NoLogicalStorageReachableException,
+            IOStorageException,
+            RollbackStateException,
+            StillProcessingStateException,
+            DeletedStateException,
+            FailedStateException,
+            IOException,
+            UnsupportedEncodingException {
+        Path aipDataPath = getPathForLocalStorageStreaming(sipId);
+        exportAipReducedByFileList(sipId, aipDataPath, outputStream, filePaths);
+    }
+
+
+    /**
+     * Fills passed output stream with AIP data reduced by regex list. AIP state is validated in DB and a {@link LocalFsProcessor}
+     * with the highest priority is chosen to provide AIP data.
+     *
+     * @param sipId         id of the AIP to retrieve
+     * @param dataReduction specification of reduction of files we do not want to extract from ZIP
+     * @param outputStream  output stream into which result zip is stored
+     * @throws UnsupportedEncodingException       if no reachable {@link LocalFsProcessor} is attached
+     * @throws DeletedStateException              if SIP is deleted {@link ObjectState}
+     * @throws RollbackStateException             if SIP is rolled back or only one XML is requested and that one is rolled back {@link ObjectState}
+     * @throws StillProcessingStateException      if SIP or some of requested XML is still processing {@link ObjectState}
+     * @throws FailedStateException               if SIP is failed {@link ObjectState}
+     * @throws NoLogicalStorageAttachedException  if storageId is null and there is not even one logical storage attached
+     * @throws NoLogicalStorageReachableException if storageId is null and there is not even one logical storage reachable
+     * @throws IOException                        if there were an IO exception during processing
+     */
+    public void streamAipReducedByRegexesFromLocalStorage(String sipId, OutputStream outputStream, @NonNull DataReduction dataReduction)
+            throws NoLogicalStorageAttachedException,
+            NoLogicalStorageReachableException,
+            IOStorageException,
+            RollbackStateException,
+            StillProcessingStateException,
+            DeletedStateException,
+            FailedStateException,
+            IOException,
+            UnsupportedEncodingException {
+        Path aipDataPath = getPathForLocalStorageStreaming(sipId);
+        exportAipReducedByRegexes(sipId, aipDataPath, outputStream, dataReduction);
+    }
+
+
+    /**
+     * Fills passed output stream with AIP data reduced by list of file paths. Caller is responsible for validation
+     * of the AIP state in DB so as providing a {@link Path} to AIP data.
+     *
+     * @param sipId        id of the AIP to retrieve
+     * @param filePaths    list of files we want to extract from ZIP
+     * @param outputStream output stream into which result zip is stored
+     * @throws IOException if there were an IO exception during processing
+     */
+    public void exportAipReducedByFileList(String sipId, Path aipData, OutputStream outputStream, Set<String> filePaths) throws IOException {
+        ZipOutputStream zipOut = new ZipOutputStream(outputStream);
+        try (ZipFile aipDataZip = new ZipFile(aipData.toFile())) {
+            fillOutputStreamWithSpecifiedFiles(sipId, filePaths, aipDataZip, zipOut);
+        } finally {
+            zipOut.finish();
+        }
+    }
+
+    /**
+     * Fills passed output stream with AIP data reduced by regex list. Caller is responsible for validation
+     * of the AIP state in DB so as providing a {@link Path} to AIP data.
+     *
+     * @param sipId         id of the AIP to retrieve
+     * @param dataReduction specification of reduction of files we do not want to extract from ZIP
+     * @param outputStream  output stream into which result zip is stored
+     * @throws IOException if there were an IO exception during processing
+     */
+    public void exportAipReducedByRegexes(String sipId, Path aipData, OutputStream outputStream, @NonNull DataReduction dataReduction) throws IOException {
+        ZipOutputStream zipOut = new ZipOutputStream(outputStream);
+        Set<String> allFilePaths = new HashSet<>();
+        Set<String> matchedFilePaths = new HashSet<>();
+        try (ZipFile aipDataZip = new ZipFile(aipData.toFile())) {
+            for (String regex : dataReduction.getRegexes()) {
+                Pattern compiledRegex = Pattern.compile(regex);
+                Enumeration<? extends ZipEntry> allEntries = aipDataZip.entries();
+                while (allEntries.hasMoreElements()) {
+                    ZipEntry currentEntry = allEntries.nextElement();
+                    if (currentEntry.isDirectory()) {
+                        continue;
+                    }
+                    String currentEntryName = currentEntry.getName();
+                    allFilePaths.add(currentEntryName);
+                    if (compiledRegex.matcher(currentEntryName).matches()) {
+                        matchedFilePaths.add(currentEntryName);
+                    }
+                }
+            }
+            Set<String> pathsOfFilesToExport;
+            switch (dataReduction.getMode()) {
+                case INCLUDE:
+                    pathsOfFilesToExport = matchedFilePaths;
+                    break;
+                case EXCLUDE:
+                    pathsOfFilesToExport = SetUtils.difference(allFilePaths, matchedFilePaths);
+                    break;
+                default:
+                    throw new IllegalArgumentException("unsupported reduction mode");
+            }
+            fillOutputStreamWithSpecifiedFiles(sipId, pathsOfFilesToExport, aipDataZip, zipOut);
+        } finally {
+            zipOut.finish();
+        }
     }
 
     /**
@@ -786,6 +843,53 @@ public class AipService {
         arcstorageMailCenter.sendObjectRetrievalError(sipEntity.toDto(), successfulService.getStorage(), servicesToEntities(storageServices),
                 servicesToEntities(invalidChecksumStorages), servicesToEntities(recoveredStorages));
         return result.getAipFromStorage();
+    }
+
+    private Path getPathForLocalStorageStreaming(String sipId) throws NoLogicalStorageAttachedException, NoLogicalStorageReachableException, RollbackStateException, DeletedStateException, StillProcessingStateException, FailedStateException, IOStorageException {
+        Optional<StorageService> storageService = storageProvider.createAdaptersForRead().stream().filter(s ->
+                (s.getStorage().getStorageType() == StorageType.FS || s.getStorage().getStorageType() == StorageType.ZFS) && isLocalhost(s.getStorage())).findFirst();
+        if (storageService.isEmpty())
+            throw new UnsupportedOperationException("Operation requires FS/ZFS storage of local type");
+
+        AipSip sipEntity = archivalDbService.getAip(sipId);
+        switch (sipEntity.getState()) {
+            case ROLLED_BACK:
+                throw new RollbackStateException(sipEntity);
+            case DELETED:
+                throw new DeletedStateException(sipEntity);
+            case PRE_PROCESSING:
+            case PROCESSING:
+                throw new StillProcessingStateException(sipEntity);
+            case DELETION_FAILURE:
+            case ROLLBACK_FAILURE:
+            case ARCHIVAL_FAILURE:
+                throw new FailedStateException(sipEntity);
+        }
+
+        LocalFsProcessor localFsProcessor;
+        if (storageService.get() instanceof FsAdapter) {
+            StorageService fsProcessor = ((FsAdapter) storageService.get()).getFsProcessor();
+            if (fsProcessor instanceof LocalFsProcessor)
+                localFsProcessor = (LocalFsProcessor) fsProcessor;
+            else
+                throw new IllegalArgumentException("expected LocalFsProcessor, but got: " + fsProcessor.getClass());
+        } else
+            throw new IllegalArgumentException("expected LocalFsProcessor, but got: " + storageService.get().getStorage());
+        return localFsProcessor.getAipDataFilePath(sipId, sipEntity.getOwner().getDataSpace());
+    }
+
+    private void fillOutputStreamWithSpecifiedFiles(String sipId, Set<String> filePaths, ZipFile aipDataZip, ZipOutputStream zipOut) throws IOException {
+        for (String filePath : filePaths) {
+            ZipEntry zipEntry = aipDataZip.getEntry(filePath);
+            if (zipEntry == null) {
+                //swallowed by ZIP outputstream.. this handle is not ideal
+                //but at least there is a 'MissingObject' string instead of NPE string in response body
+                throw new MissingObject("file", filePath);
+            }
+            zipOut.putNextEntry(new ZipEntry(zipEntry.getName()));
+            IOUtils.copyLarge(aipDataZip.getInputStream(zipEntry), zipOut);
+            zipOut.closeEntry();
+        }
     }
 
     /**

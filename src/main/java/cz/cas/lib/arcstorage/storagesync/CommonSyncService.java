@@ -47,15 +47,18 @@ public class CommonSyncService {
             case ARCHIVED:
             case REMOVED:
                 log.trace("copying " + object);
-                ObjectRetrievalResource objectRetrievalResource = archivalService.getObject(object);
-                try (InputStream is = new BufferedInputStream(objectRetrievalResource.getInputStream())) {
+                String objectRetrievalResourceId = null;
+                try (ObjectRetrievalResource objectRetrievalResource = archivalService.getObject(object);
+                     InputStream is = new BufferedInputStream(objectRetrievalResource.getInputStream())) {
+                    objectRetrievalResourceId = objectRetrievalResource.getId();
                     object.setInputStream(is);
                     targetStorage.storeObject(object, new AtomicBoolean(false), object.getOwner().getDataSpace());
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);
                 } finally {
-                    objectRetrievalResource.close();
-                    tmpFolder.resolve(objectRetrievalResource.getId()).toFile().delete();
+                    if (objectRetrievalResourceId != null) {
+                        tmpFolder.resolve(objectRetrievalResourceId).toFile().delete();
+                    }
                 }
                 break;
             case PRE_PROCESSING:

@@ -23,7 +23,7 @@ public abstract class StorageSessionHolder implements Closeable {
      * Connection should remain open until all input streams retrieved during the session are read or no longer needed.
      * </p>
      */
-    public void close() {
+    public void close() throws IOException{
         if (connection == null)
             return;
         //developer usually calls this right after data are read but it should wait a while because used technology can

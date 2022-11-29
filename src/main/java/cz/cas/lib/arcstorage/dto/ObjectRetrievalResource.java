@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.io.Closeable;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.UUID;
 
@@ -23,5 +24,11 @@ public class ObjectRetrievalResource extends StorageSessionHolder {
     public ObjectRetrievalResource(InputStream inputStream, Closeable connection) {
         super(connection);
         this.inputStream = inputStream;
+    }
+
+    @Override
+    public void close() throws IOException {
+        super.close();
+        inputStream.close();
     }
 }

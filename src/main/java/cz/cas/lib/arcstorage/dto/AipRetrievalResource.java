@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.io.Closeable;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.Map;
 import java.util.TreeMap;
@@ -35,5 +36,14 @@ public class AipRetrievalResource extends StorageSessionHolder {
 
     public void addXml(int version, InputStream xmlInputStream) {
         xmls.put(version, xmlInputStream);
+    }
+
+    @Override
+    public void close() throws IOException {
+        super.close();
+        sip.close();
+        for (InputStream x : xmls.values()) {
+            x.close();
+        }
     }
 }

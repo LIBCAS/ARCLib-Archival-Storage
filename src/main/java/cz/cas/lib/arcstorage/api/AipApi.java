@@ -35,16 +35,15 @@ import org.springframework.web.multipart.MultipartFile;
 import javax.annotation.security.RolesAllowed;
 import javax.inject.Inject;
 import javax.servlet.http.HttpServletResponse;
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import javax.validation.Valid;
+import java.io.*;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiFunction;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -80,36 +79,21 @@ public class AipApi {
             throws IOException, RollbackStateException, DeletedStateException, StillProcessingStateException,
             FailedStateException, ObjectCouldNotBeRetrievedException, BadRequestException, RemovedStateException,
             NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
-        checkUUID(aipId);
 
-        AipRetrievalResource aipRetrievalResource = aipService.getAip(aipId, all);
-        response.setContentType("application/zip");
-        response.setStatus(200);
-        response.addHeader("Content-Disposition", "attachment; filename=aip_" + aipId + ".zip");
+        BiFunction<AipRetrievalResource, ZipOutputStream, Void> fn = (aipRetrievalResource, outputStream) -> {
+            try (BufferedInputStream bis = new BufferedInputStream(aipRetrievalResource.getSip())) {
+                IOUtils.copyLarge(bis, outputStream);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            return null;
+        };
 
-        try (ZipOutputStream zipOut = new ZipOutputStream(new BufferedOutputStream(response.getOutputStream()));
-             InputStream sipIs = new BufferedInputStream(aipRetrievalResource.getSip())) {
-            zipOut.putNextEntry(new ZipEntry(aipId + ".zip"));
-            IOUtils.copyLarge(sipIs, zipOut);
-            zipOut.closeEntry();
-            for (Integer xmlVersion : aipRetrievalResource.getXmls().keySet()) {
-                try (InputStream xmlIs = new BufferedInputStream(aipRetrievalResource.getXmls().get(xmlVersion))) {
-                    zipOut.putNextEntry(new ZipEntry(toXmlId(aipId, xmlVersion) + ".xml"));
-                    IOUtils.copyLarge(xmlIs, zipOut);
-                    zipOut.closeEntry();
-                }
-            }
-        } finally {
-            aipRetrievalResource.close();
-            String tmpFileId = aipRetrievalResource.getId();
-            tmpFolder.resolve(tmpFileId).toFile().delete();
-            for (Integer v : aipRetrievalResource.getXmls().keySet()) {
-                tmpFolder.resolve(toXmlId(tmpFileId, v)).toFile().delete();
-            }
-        }
+        exportAipData(aipId, all, response, fn);
     }
 
-    @Operation(summary = "Return specified AIP as a ZIP package with specified files")
+    @Operation(summary = "Return specified files of AIP packed in ZIP", description = "DOES NOT validate the AIP.. " +
+            "does not return any AIP XML, requires some local storage to be reachable")
     @RequestMapping(value = "/{aipId}/files-specified", method = RequestMethod.POST)
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "AIP successfully returned"),
@@ -118,8 +102,8 @@ public class AipApi {
             @ApiResponse(responseCode = "503", description = "all attached logical storages are currently unreachable"),
             @ApiResponse(responseCode = "500", description = "file is corrupted at all storages, no logical storage attached, or other internal server error")
     })
-    @RolesAllowed({Roles.READ, Roles.READ_WRITE})
-    public void getAipSpecified(
+    @RolesAllowed({Roles.READ})
+    public void getAipFilesReducedByListOfPaths(
             @Parameter(name = "AIP ID", required = true) @PathVariable("aipId") String aipId,
             @Parameter(name = "Set of wanted files paths sent as RequestBody", required = true) @RequestBody Set<String> filePaths,
             HttpServletResponse response)
@@ -131,7 +115,99 @@ public class AipApi {
         response.setContentType("application/zip");
         response.setStatus(200);
         response.addHeader("Content-Disposition", "attachment; filename=aip_" + aipId + "_partial.zip");
-        aipService.getAipSpecifiedFiles(aipId, filePaths, response.getOutputStream());
+        aipService.streamAipReducedByFileListFromLocalStorage(aipId, response.getOutputStream(), filePaths);
+    }
+
+    @Operation(summary = "Return specified files of AIP packed in ZIP", description = "DOES NOT validate the AIP, " +
+            "does not return any AIP XML, requires some local storage to be reachable")
+    @RequestMapping(value = "/{aipId}/files-reduced", method = RequestMethod.POST)
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "AIP successfully returned"),
+            @ApiResponse(responseCode = "403", description = "operation forbidden with respect to the current AIP state"),
+            @ApiResponse(responseCode = "400", description = "bad request, e.g. the specified id is not a valid UUID"),
+            @ApiResponse(responseCode = "503", description = "all attached logical storages are currently unreachable"),
+            @ApiResponse(responseCode = "500", description = "file is corrupted at all storages, no logical storage attached, or other internal server error")
+    })
+    @RolesAllowed({Roles.READ})
+    public void getAipFilesReducedByRegex(
+            @Parameter(name = "AIP ID", required = true) @PathVariable("aipId") String aipId,
+            @Parameter(name = "Set of wanted files paths sent as RequestBody", required = true) @RequestBody @Valid DataReduction dataReduction,
+            HttpServletResponse response)
+            throws IOException, RollbackStateException, DeletedStateException, StillProcessingStateException,
+            FailedStateException, BadRequestException,
+            NoLogicalStorageReachableException, NoLogicalStorageAttachedException, StorageException {
+        checkUUID(aipId);
+
+        response.setContentType("application/zip");
+        response.setStatus(200);
+        response.addHeader("Content-Disposition", "attachment; filename=aip_" + aipId + "_partial.zip");
+        aipService.streamAipReducedByRegexesFromLocalStorage(aipId, response.getOutputStream(), dataReduction);
+    }
+
+    @Operation(summary = "Return AIP with specified files packed in ZIP", description = "validates the AIP and if it is invalid" +
+            "tries to recover it from other storage.. does not return only files but also AIP XML(s)")
+    @RequestMapping(value = "/{aipId}/aip-with-files-specified", method = RequestMethod.POST)
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "AIP successfully returned"),
+            @ApiResponse(responseCode = "403", description = "operation forbidden with respect to the current AIP state"),
+            @ApiResponse(responseCode = "400", description = "bad request, e.g. the specified id is not a valid UUID"),
+            @ApiResponse(responseCode = "503", description = "all attached logical storages are currently unreachable"),
+            @ApiResponse(responseCode = "500", description = "file is corrupted at all storages, no logical storage attached, or other internal server error")
+    })
+    @RolesAllowed({Roles.READ, Roles.READ_WRITE})
+    public void getAipReducedByListOfFiles(
+            @Parameter(name = "AIP ID", required = true) @PathVariable("aipId") String aipId,
+            @Parameter(name = "Set of wanted files paths sent as RequestBody", required = true) @RequestBody Set<String> filePaths,
+            @Parameter(name = "true to return all XMLs, otherwise only the latest is returned") @RequestParam(value = "all", defaultValue = "false") boolean all,
+            HttpServletResponse response)
+            throws IOException, RollbackStateException, DeletedStateException, StillProcessingStateException,
+            FailedStateException, BadRequestException,
+            NoLogicalStorageReachableException, NoLogicalStorageAttachedException, ObjectCouldNotBeRetrievedException, RemovedStateException {
+
+        BiFunction<AipRetrievalResource, ZipOutputStream, Void> fn = (aipRetrievalResource, outputStream) -> {
+            try {
+                Path aipDataInTmpDir = tmpFolder.resolve(aipRetrievalResource.getId());
+                aipService.exportAipReducedByFileList(aipId, aipDataInTmpDir, outputStream, filePaths);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            return null;
+        };
+
+        exportAipData(aipId, all, response, fn);
+    }
+
+    @Operation(summary = "Return AIP with specified files packed in ZIP", description = "validates the AIP and if it is invalid" +
+            "tries to recover it from other storage.. does not return only files but also AIP XML(s)")
+    @RequestMapping(value = "/{aipId}/aip-with-files-reduced", method = RequestMethod.POST)
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "AIP successfully returned"),
+            @ApiResponse(responseCode = "403", description = "operation forbidden with respect to the current AIP state"),
+            @ApiResponse(responseCode = "400", description = "bad request, e.g. the specified id is not a valid UUID"),
+            @ApiResponse(responseCode = "503", description = "all attached logical storages are currently unreachable"),
+            @ApiResponse(responseCode = "500", description = "file is corrupted at all storages, no logical storage attached, or other internal server error")
+    })
+    @RolesAllowed({Roles.READ, Roles.READ_WRITE})
+    public void getAipReducedByRegex(
+            @Parameter(name = "AIP ID", required = true) @PathVariable("aipId") String aipId,
+            @Parameter(name = "Set of wanted files paths sent as RequestBody", required = true) @RequestBody @Valid DataReduction dataReduction,
+            @Parameter(name = "true to return all XMLs, otherwise only the latest is returned") @RequestParam(value = "all", defaultValue = "false") boolean all,
+            HttpServletResponse response)
+            throws IOException, RollbackStateException, DeletedStateException, StillProcessingStateException,
+            FailedStateException, BadRequestException,
+            NoLogicalStorageReachableException, NoLogicalStorageAttachedException, ObjectCouldNotBeRetrievedException, RemovedStateException {
+
+        BiFunction<AipRetrievalResource, ZipOutputStream, Void> fn = (aipRetrievalResource, outputStream) -> {
+            try {
+                Path aipDataInTmpDir = tmpFolder.resolve(aipRetrievalResource.getId());
+                aipService.exportAipReducedByRegexes(aipId, aipDataInTmpDir, outputStream, dataReduction);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            return null;
+        };
+
+        exportAipData(aipId, all, response, fn);
     }
 
     @Operation(summary = "Return specified AIP XML")
@@ -433,6 +509,37 @@ public class AipApi {
             @Parameter(name = "AIP ID", required = true) @PathVariable("aipId") String aipId,
             @Parameter(name = "XML version", required = true) @PathVariable("xmlVersion") int xmlVersion) {
         return aipService.getXmlState(aipId, xmlVersion);
+    }
+
+    private void exportAipData(String aipId, boolean allXmls, HttpServletResponse response, BiFunction<AipRetrievalResource, ZipOutputStream, Void> aipDataExportFunction) throws BadRequestException, NoLogicalStorageAttachedException, ObjectCouldNotBeRetrievedException, NoLogicalStorageReachableException, RollbackStateException, RemovedStateException, StillProcessingStateException, DeletedStateException, FailedStateException, IOException {
+        checkUUID(aipId);
+
+        AipRetrievalResource aipRetrievalResource = aipService.getAip(aipId, allXmls);
+        response.setContentType("application/zip");
+        response.setStatus(200);
+        response.addHeader("Content-Disposition", "attachment; filename=aip_" + aipId + ".zip");
+
+        try (ZipOutputStream zipOut = new ZipOutputStream(new BufferedOutputStream(response.getOutputStream()))) {
+            zipOut.putNextEntry(new ZipEntry(aipId + ".zip"));
+
+            aipDataExportFunction.apply(aipRetrievalResource, zipOut);
+
+            zipOut.closeEntry();
+            for (Integer xmlVersion : aipRetrievalResource.getXmls().keySet()) {
+                try (InputStream xmlIs = new BufferedInputStream(aipRetrievalResource.getXmls().get(xmlVersion))) {
+                    zipOut.putNextEntry(new ZipEntry(toXmlId(aipId, xmlVersion) + ".xml"));
+                    IOUtils.copyLarge(xmlIs, zipOut);
+                    zipOut.closeEntry();
+                }
+            }
+        } finally {
+            aipRetrievalResource.close();
+            String tmpFileId = aipRetrievalResource.getId();
+            tmpFolder.resolve(tmpFileId).toFile().delete();
+            for (Integer v : aipRetrievalResource.getXmls().keySet()) {
+                tmpFolder.resolve(toXmlId(tmpFileId, v)).toFile().delete();
+            }
+        }
     }
 
     @Inject

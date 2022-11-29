@@ -258,7 +258,7 @@ public class ArchivalServiceTest extends DbTest {
     }
 
     @Test
-    public void getSpecifiedFiles() throws Exception {
+    public void getAipWithListedFiles() throws Exception {
         Storage zfsStorage = new Storage();
         zfsStorage.setPriority(1);
         zfsStorage.setName("test ZFS");
@@ -283,7 +283,7 @@ public class ArchivalServiceTest extends DbTest {
         wantedFiles.add("KPW01169310/userCopy/UC_KPW01169310_0002.JP2");
 
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream(0);
-        aipService.getAipSpecifiedFiles(SIP.getId(), wantedFiles, byteArrayOutputStream);
+        aipService.streamAipReducedByFileListFromLocalStorage(SIP.getId(), byteArrayOutputStream, wantedFiles);
 
         Set<String> paths = new LinkedHashSet<>();
         HashMap<String, LinkedList<String>> files = new HashMap<>();
@@ -326,6 +326,100 @@ public class ArchivalServiceTest extends DbTest {
         assertEquals(1, files.get("ALTO_KPW01169310_0001.XML").size());
         assertEquals(1, files.get("TXT_KPW01169310_0002.TXT").size());
         assertEquals(1, files.get("UC_KPW01169310_0002.JP2").size());
+    }
+
+    @Test
+    public void getAipWithFilesReducedByRegex() throws Exception {
+        Storage zfsStorage = new Storage();
+        zfsStorage.setPriority(1);
+        zfsStorage.setName("test ZFS");
+        zfsStorage.setStorageType(StorageType.ZFS);
+        zfsStorage.setConfig(STORAGE_CONFIG);
+        zfsStorage.setReachable(true);
+        zfsStorage.setHost("localhost");
+        storageStore.save(zfsStorage);
+
+        FsAdapter fsAdapter = mock(FsAdapter.class);
+        when(fsAdapter.getStorage()).thenReturn(zfsStorage);
+        when(storageProvider.createAdaptersForRead()).thenReturn(List.of(fsAdapter));
+        LocalFsProcessor localFsProcessorMock = mock(LocalFsProcessor.class);
+        when(localFsProcessorMock.getStorage()).thenReturn(zfsStorage);
+        when(localFsProcessorMock.getAipDataFilePath(anyString(), any())).thenReturn(SIP_SOURCE_PATH);
+        when(fsAdapter.getFsProcessor()).thenReturn(localFsProcessorMock);
+
+        List<String> regexesForInclMode = new ArrayList<>();
+        regexesForInclMode.add("KPW01169310/\\w+Sec.*");
+        regexesForInclMode.add("KPW01169310/ALTO/.+\\.ini");
+        regexesForInclMode.add("KPW01169310/info\\.xml");
+
+        List<String> regexesForExclMode = new ArrayList<>();
+        regexesForExclMode.add("KPW01169310/ALTO/.+\\.XML");
+        regexesForExclMode.add("KPW01169310/masterCopy.*");
+        regexesForExclMode.add("KPW01169310/TXT.*");
+        regexesForExclMode.add("KPW01169310/userCopy.*");
+        regexesForExclMode.add("KPW01169310/desktop.ini");
+        regexesForExclMode.add("KPW01169310/KPW01169310.md5");
+        regexesForExclMode.add("KPW01169310/METS_KPW01169310.xml");
+
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream(0);
+        DataReduction inclReduction = new DataReduction(regexesForInclMode, DataReductionMode.INCLUDE);
+        aipService.streamAipReducedByRegexesFromLocalStorage(SIP.getId(), byteArrayOutputStream, inclReduction);
+        assertGetAipWithFilesReducedByRegexOutput(byteArrayOutputStream);
+
+        byteArrayOutputStream = new ByteArrayOutputStream(0);
+        DataReduction exclReduction = new DataReduction(regexesForExclMode, DataReductionMode.EXCLUDE);
+        aipService.streamAipReducedByRegexesFromLocalStorage(SIP.getId(), byteArrayOutputStream, exclReduction);
+        assertGetAipWithFilesReducedByRegexOutput(byteArrayOutputStream);
+    }
+
+    private void assertGetAipWithFilesReducedByRegexOutput(ByteArrayOutputStream byteArrayOutputStream) {
+        Set<String> paths = new LinkedHashSet<>();
+        HashMap<String, LinkedList<String>> files = new HashMap<>();
+
+        try (ZipInputStream zipInputStream = new ZipInputStream(new ByteArrayInputStream(byteArrayOutputStream.toByteArray()))) {
+            ZipEntry zipEntry = zipInputStream.getNextEntry();
+
+            while (zipEntry != null) {
+                paths.add(StringUtils.substringBeforeLast(zipEntry.getName(), "/"));
+                String fileName = StringUtils.substringAfterLast(zipEntry.getName(), "/");
+
+                if (files.containsKey(fileName)) {
+                    LinkedList<String> strings = files.get(fileName);
+                    strings.add(fileName);
+
+                    files.put(fileName, strings);
+                } else {
+                    LinkedList<String> linkedList = new LinkedList<>();
+                    linkedList.add(fileName);
+
+                    files.put(fileName, linkedList);
+                }
+
+                zipInputStream.closeEntry();
+                zipEntry = zipInputStream.getNextEntry();
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+
+        assertEquals(3, paths.size());
+
+        assertTrue(paths.contains(SIP.getId() + "/KPW01169310/amdSec"));
+        assertTrue(paths.contains(SIP.getId() + "/KPW01169310/ALTO"));
+        assertTrue(paths.contains(SIP.getId() + "/KPW01169310"));
+
+        assertEquals(10, files.size());
+
+        assertEquals(1, files.get("info.xml").size());
+        assertEquals(2, files.get("desktop.ini").size());
+        assertEquals(1, files.get("AMD_METS_KPW01169310_0001.xml").size());
+        assertEquals(1, files.get("AMD_METS_KPW01169310_0002.xml").size());
+        assertEquals(1, files.get("AMD_METS_KPW01169310_0003.xml").size());
+        assertEquals(1, files.get("AMD_METS_KPW01169310_0004.xml").size());
+        assertEquals(1, files.get("AMD_METS_KPW01169310_0005.xml").size());
+        assertEquals(1, files.get("AMD_METS_KPW01169310_0006.xml").size());
+        assertEquals(1, files.get("AMD_METS_KPW01169310_0007.xml").size());
+        assertEquals(1, files.get("AMD_METS_KPW01169310_0008.xml").size());
     }
 
     @Test
