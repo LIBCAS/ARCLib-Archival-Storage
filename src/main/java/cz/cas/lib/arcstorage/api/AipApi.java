@@ -102,7 +102,7 @@ public class AipApi {
             @ApiResponse(responseCode = "503", description = "all attached logical storages are currently unreachable"),
             @ApiResponse(responseCode = "500", description = "file is corrupted at all storages, no logical storage attached, or other internal server error")
     })
-    @RolesAllowed({Roles.READ})
+    @RolesAllowed({Roles.READ, Roles.READ_WRITE})
     public void getAipFilesReducedByListOfPaths(
             @Parameter(name = "AIP ID", required = true) @PathVariable("aipId") String aipId,
             @Parameter(name = "Set of wanted files paths sent as RequestBody", required = true) @RequestBody Set<String> filePaths,
@@ -128,7 +128,7 @@ public class AipApi {
             @ApiResponse(responseCode = "503", description = "all attached logical storages are currently unreachable"),
             @ApiResponse(responseCode = "500", description = "file is corrupted at all storages, no logical storage attached, or other internal server error")
     })
-    @RolesAllowed({Roles.READ})
+    @RolesAllowed({Roles.READ, Roles.READ_WRITE})
     public void getAipFilesReducedByRegex(
             @Parameter(name = "AIP ID", required = true) @PathVariable("aipId") String aipId,
             @Parameter(name = "Set of wanted files paths sent as RequestBody", required = true) @RequestBody @Valid DataReduction dataReduction,
