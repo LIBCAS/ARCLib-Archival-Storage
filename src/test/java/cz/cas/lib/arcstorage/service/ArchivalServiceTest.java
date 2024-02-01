@@ -494,7 +494,7 @@ public class ArchivalServiceTest extends DbTest {
 
         AipSip aipSip = archivalDbService.getAip(SIP2_ID);
         assertThat(aipSip, notNullValue());
-        verify(async).saveAip(eq(aipDto), sipHolderCaptor.capture(), xmlHolderCaptor.capture(), anyList(), anyString());
+        verify(async).saveAip(eq(aipDto), sipHolderCaptor.capture(), xmlHolderCaptor.capture(), anyList(), anyString(), null);
         try (InputStream sipStream = sipHolderCaptor.getValue().createInputStream();
              InputStream xmlStream = xmlHolderCaptor.getValue().createInputStream()) {
             assertTrue(IOUtils.contentEquals(sipStream, sipStream()));
@@ -515,7 +515,7 @@ public class ArchivalServiceTest extends DbTest {
         assertThat(allXmls.size(), is(3));
         AipXml newXml = aipXmlStore.findBySipAndVersion(SIP_ID, 3);
         ArchivalObjectDto xmlRef = newXml.toDto();
-        verify(async).saveObject(eq(xmlRef), resourceHolderCaptor.capture(), anyList(), eq(false));
+        verify(async).saveObject(eq(xmlRef), resourceHolderCaptor.capture(), anyList(), eq(false), null);
         try (
                 InputStream xmlStream = resourceHolderCaptor.getValue().createInputStream()) {
             assertTrue(IOUtils.contentEquals(xmlStream, xml1Stream()));

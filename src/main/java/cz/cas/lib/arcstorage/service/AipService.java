@@ -7,6 +7,7 @@ import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.mail.ArcstorageMailCenter;
+import cz.cas.lib.arcstorage.security.user.UserDetails;
 import cz.cas.lib.arcstorage.service.exception.BadXmlVersionProvidedException;
 import cz.cas.lib.arcstorage.service.exception.InvalidChecksumException;
 import cz.cas.lib.arcstorage.service.exception.ReadOnlyStateException;
@@ -64,6 +65,7 @@ public class AipService {
     private ExecutorService executorService;
     private ArcstorageMailCenter arcstorageMailCenter;
     private ArchivalService archivalService;
+    private UserDetails userDetails;
 
     /**
      * Retrieves reference to AIP. This method choose one {@link Storage} and COPIES THE WHOLE AIP INTO WORKSPACE.
@@ -207,7 +209,7 @@ public class AipService {
         aip.getXml().setState(ObjectState.PROCESSING);
 
         archivalDbService.setObjectsState(ObjectState.PROCESSING, aip.getSip().getDatabaseId(), aip.getXml().getDatabaseId());
-        async.saveAip(aip, new TmpFileHolder(tmpSipPath.toFile()), new TmpFileHolder(tmpXmlPath.toFile()), reachableAdapters, aipSip.getOwner().getDataSpace());
+        async.saveAip(aip, new TmpFileHolder(tmpSipPath.toFile()), new TmpFileHolder(tmpXmlPath.toFile()), reachableAdapters, aipSip.getOwner().getDataSpace(), userDetails.getId());
     }
 
     /**
@@ -259,7 +261,7 @@ public class AipService {
         log.debug("State of object with id " + xmlEntity.getId() + " changed to " + ObjectState.PROCESSING);
         ArchivalObjectDto objectDto = xmlEntity.toDto();
         objectDto.setInputStream(xml);
-        async.saveObject(objectDto, new TmpFileHolder(tmpXmlPath.toFile()), reachableAdapters, sync);
+        async.saveObject(objectDto, new TmpFileHolder(tmpXmlPath.toFile()), reachableAdapters, sync, userDetails.getId());
     }
 
     /**
@@ -296,6 +298,7 @@ public class AipService {
      *
      * @param aipId id of the AIP
      * @return state of the AIP
+     * @throws MissingObject
      */
     public ObjectState getAipState(String aipId) {
         log.debug("Getting AIP state of AIP with id " + aipId + ".");
@@ -493,36 +496,46 @@ public class AipService {
      * @param outputStream  output stream into which result zip is stored
      * @throws IOException if there were an IO exception during processing
      */
-    public void exportAipReducedByRegexes(String sipId, Path aipData, OutputStream outputStream, @NonNull DataReduction dataReduction) throws IOException {
+    public void exportAipReducedByRegexes(String sipId, Path aipData, OutputStream outputStream, DataReduction dataReduction) throws IOException {
         ZipOutputStream zipOut = new ZipOutputStream(outputStream);
         Set<String> allFilePaths = new HashSet<>();
         Set<String> matchedFilePaths = new HashSet<>();
         try (ZipFile aipDataZip = new ZipFile(aipData.toFile())) {
-            for (String regex : dataReduction.getRegexes()) {
-                Pattern compiledRegex = Pattern.compile(regex);
+            Set<String> pathsOfFilesToExport;
+            if (dataReduction != null) {
+                for (String regex : dataReduction.getRegexes()) {
+                    Pattern compiledRegex = Pattern.compile(regex);
+                    Enumeration<? extends ZipEntry> allEntries = aipDataZip.entries();
+                    while (allEntries.hasMoreElements()) {
+                        ZipEntry currentEntry = allEntries.nextElement();
+                        if (currentEntry.isDirectory()) {
+                            continue;
+                        }
+                        String currentEntryName = currentEntry.getName();
+                        allFilePaths.add(currentEntryName);
+                        if (compiledRegex.matcher(currentEntryName).matches()) {
+                            matchedFilePaths.add(currentEntryName);
+                        }
+                    }
+                }
+                switch (dataReduction.getMode()) {
+                    case INCLUDE:
+                        pathsOfFilesToExport = matchedFilePaths;
+                        break;
+                    case EXCLUDE:
+                        pathsOfFilesToExport = SetUtils.difference(allFilePaths, matchedFilePaths);
+                        break;
+                    default:
+                        throw new IllegalArgumentException("unsupported reduction mode");
+                }
+            } else {
                 Enumeration<? extends ZipEntry> allEntries = aipDataZip.entries();
                 while (allEntries.hasMoreElements()) {
                     ZipEntry currentEntry = allEntries.nextElement();
-                    if (currentEntry.isDirectory()) {
-                        continue;
-                    }
                     String currentEntryName = currentEntry.getName();
                     allFilePaths.add(currentEntryName);
-                    if (compiledRegex.matcher(currentEntryName).matches()) {
-                        matchedFilePaths.add(currentEntryName);
-                    }
                 }
-            }
-            Set<String> pathsOfFilesToExport;
-            switch (dataReduction.getMode()) {
-                case INCLUDE:
-                    pathsOfFilesToExport = matchedFilePaths;
-                    break;
-                case EXCLUDE:
-                    pathsOfFilesToExport = SetUtils.difference(allFilePaths, matchedFilePaths);
-                    break;
-                default:
-                    throw new IllegalArgumentException("unsupported reduction mode");
+                pathsOfFilesToExport = allFilePaths;
             }
             fillOutputStreamWithSpecifiedFiles(sipId, pathsOfFilesToExport, aipDataZip, zipOut);
         } finally {
@@ -948,5 +961,10 @@ public class AipService {
     @Inject
     public void setArchivalService(ArchivalService archivalService) {
         this.archivalService = archivalService;
+    }
+
+    @Inject
+    public void setUserDetails(UserDetails userDetails) {
+        this.userDetails = userDetails;
     }
 }

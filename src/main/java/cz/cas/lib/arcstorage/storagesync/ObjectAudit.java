@@ -38,10 +38,13 @@ public class ObjectAudit extends DomainObject {
     private AuditedOperation operation;
 
     public ObjectAudit(ArchivalObject obj, User user, AuditedOperation operation) {
+        this(obj.toDto(), user, operation);
+    }
+
+    public ObjectAudit(ArchivalObjectDto dto, User user, AuditedOperation operation) {
         this.user = user;
         this.operation = operation;
-        this.idInDatabase = obj.getId();
-        ArchivalObjectDto dto = obj.toDto();
+        this.idInDatabase = dto.getDatabaseId();
         if (!dto.getDatabaseId().equals(dto.getStorageId()))
             this.idInStorage = dto.getStorageId();
     }

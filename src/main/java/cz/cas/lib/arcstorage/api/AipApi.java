@@ -81,8 +81,9 @@ public class AipApi {
             NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
 
         BiFunction<AipRetrievalResource, ZipOutputStream, Void> fn = (aipRetrievalResource, outputStream) -> {
-            try (BufferedInputStream bis = new BufferedInputStream(aipRetrievalResource.getSip())) {
-                IOUtils.copyLarge(bis, outputStream);
+            try {
+                Path aipDataInTmpDir = tmpFolder.resolve(aipRetrievalResource.getId());
+                aipService.exportAipReducedByRegexes(aipId, aipDataInTmpDir, outputStream, null);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -419,7 +420,8 @@ public class AipApi {
         archivalService.forgetObject(object);
     }
 
-    @Operation(summary = "Deletes data of the latest AIP XML. Version set in the path variable must be the latest AIP XML of the AIP.")
+    @Operation(summary = "Deletes data of the latest AIP XML. Version set in the path variable must be the latest AIP XML of the AIP.",
+            description = "If the AIP or XML does not exists, Archival storage silently skips the request- ")
     @RequestMapping(value = "/{aipId}/rollbackXml/{xmlVersion}", method = RequestMethod.DELETE)
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "object successfully rolled back or rollback skipped because the object was not found"),
@@ -439,7 +441,8 @@ public class AipApi {
         aipService.rollbackOrForgetXml(aipId, xmlVersion, false);
     }
 
-    @Operation(summary = "Deletes the latest AIP XML. Version set in the path variable must be the latest AIP XML of the AIP.")
+    @Operation(summary = "Deletes the latest AIP XML. Version set in the path variable must be the latest AIP XML of the AIP.",
+            description = "If the AIP or XML does not exists, Archival storage silently skips the request- ")
     @RequestMapping(value = "/{aipId}/forgetXml/{xmlVersion}", method = RequestMethod.DELETE)
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "object successfully forgotten or forget call skipped because the object was not found"),

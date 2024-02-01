@@ -321,12 +321,15 @@ public class ArchivalDbService {
 
     @Transactional
     public void setObjectsState(ObjectState state, String... dbIds) {
-        archivalObjectStore.setObjectsState(state, asList(dbIds));
-        if (state != ObjectState.PROCESSING && state != ObjectState.PRE_PROCESSING)
-            for (String id : dbIds) {
-                ApplicationContextUtils.getProcessingObjects().remove(id);
-            }
-        log.debug("State of objects with ids " + Arrays.toString(dbIds) + " has changed to " + state + ".");
+        ne(state, ObjectState.ARCHIVED, () -> new IllegalArgumentException("setting ARCHIVED state through this method is not allowed"));
+        setObjectsStateInternal(state, dbIds);
+    }
+
+    @Transactional
+    public void setArchived(String userId, ArchivalObjectDto... objects) {
+        List<ObjectAudit> audits = Arrays.stream(objects).map(o -> new ObjectAudit(o, new User(userId), AuditedOperation.ARCHIVED)).collect(Collectors.toList());
+        objectAuditStore.save(audits);
+        setObjectsStateInternal(ObjectState.ARCHIVED, Arrays.stream(objects).map(ArchivalObjectDto::getDatabaseId).toArray(String[]::new));
     }
 
     /**
@@ -383,14 +386,6 @@ public class ArchivalDbService {
 
     public long getObjectsTotalCount() {
         return archivalObjectStore.countAll();
-    }
-
-    private ObjectType getObjectType(ArchivalObject obj) {
-        if (obj instanceof AipXml)
-            return ObjectType.XML;
-        if (obj instanceof AipSip)
-            return ObjectType.SIP;
-        return ObjectType.OBJECT;
     }
 
     /**
@@ -481,6 +476,10 @@ public class ArchivalDbService {
         });
     }
 
+    public AipSip findSip(String id) {
+        return aipSipStore.find(id);
+    }
+
     private ArchivalObject dtoToEntity(ArchivalObjectDto o) {
         ArchivalObject entity;
         switch (o.getObjectType()) {
@@ -507,8 +506,13 @@ public class ArchivalDbService {
         return entity;
     }
 
-    public AipSip findSip(String id) {
-        return aipSipStore.find(id);
+    private void setObjectsStateInternal(ObjectState state, String... dbIds) {
+        archivalObjectStore.setObjectsState(state, asList(dbIds));
+        if (state != ObjectState.PROCESSING && state != ObjectState.PRE_PROCESSING)
+            for (String id : dbIds) {
+                ApplicationContextUtils.getProcessingObjects().remove(id);
+            }
+        log.debug("State of objects with ids " + Arrays.toString(dbIds) + " has changed to " + state + ".");
     }
 
     @Inject

@@ -18,5 +18,6 @@ public enum AuditedOperation {
     /**
      * complete deletion of the object - from DB and storage
      */
-    FORGET
+    FORGET,
+    ARCHIVED
 }

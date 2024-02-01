@@ -91,8 +91,11 @@ public class CommonSyncService {
             case ROLLBACK:
                 targetStorage.rollbackObject(objectInDb.toDto(), objectAudit.getUser().getDataSpace());
                 break;
+            case ARCHIVED:
             case ARCHIVAL_RETRY:
-                copyObject(objectInDb.toDto(), targetStorage);
+                if (!objectInDb.getState().isProcessing()) {
+                    copyObject(objectInDb.toDto(), targetStorage);
+                }
                 break;
             case FORGET:
                 if (!forgetFeatureAllowed) {

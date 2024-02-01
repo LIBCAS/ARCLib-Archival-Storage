@@ -58,14 +58,16 @@ public class ArchivalAsyncService {
      * @param tmpXml          temporary source holder of XML content
      * @param storageServices storage services to store AIP to
      * @param dataSpace       data space of the AIP owner
+     * @param userId    caller
      */
-    public void saveAip(AipDto aip, TmpSourceHolder tmpSip, TmpSourceHolder tmpXml, List<StorageService> storageServices, String dataSpace) {
-        CompletableFuture<Void> parentThread = CompletableFuture.runAsync(() -> {
+    public void saveAip(AipDto aip, TmpSourceHolder tmpSip, TmpSourceHolder tmpXml, List<StorageService> storageServices, String dataSpace, String userId) {
+        String sipDbId = aip.getSip().getDatabaseId();
+        String xmlDbId = aip.getXml().getDatabaseId();
+        CompletableFuture.runAsync(() -> {
             String op = "Storing aip: ";
             String failureMsgFormat = op + " failed, because %s, current object state: %s";
             List<CompletableFuture<Void>> futures = new ArrayList<>();
-            String sipDbId = aip.getSip().getDatabaseId();
-            String xmlDbId = aip.getXml().getDatabaseId();
+
             Pair<AtomicBoolean, Lock> aipRollbackFlag = ApplicationContextUtils.getProcessingObjects().get(sipDbId);
             for (StorageService a : storageServices) {
                 CompletableFuture<Void> c = CompletableFuture.runAsync(() -> {
@@ -102,7 +104,7 @@ public class ArchivalAsyncService {
             aipRollbackFlag.getRight().lock();
             try {
                 if (!aipRollbackFlag.getLeft().get()) {
-                    archivalDbService.setObjectsState(ObjectState.ARCHIVED, sipDbId, xmlDbId);
+                    archivalDbService.setArchived(userId, aip.getSip(), aip.getXml());
                     log.info(aip + op + "success on all storages");
                     return;
                 }
@@ -137,7 +139,11 @@ public class ArchivalAsyncService {
                 archivalDbService.setObjectsState(ObjectState.ARCHIVAL_FAILURE, sipDbId, xmlDbId);
                 throw new GeneralException(msg, e);
             }
-        }, batchOpsExecutor);
+        }, batchOpsExecutor).exceptionally(t -> {
+            log.error("error", t);
+            archivalDbService.setObjectsState(ObjectState.ARCHIVAL_FAILURE, sipDbId, xmlDbId);
+            return null;
+        });
     }
 
     /**
@@ -152,8 +158,9 @@ public class ArchivalAsyncService {
      * @param tmpSourceHolder source holder with the object to store
      * @param storageServices storage services to store to
      * @param sync            if true, the operation is processed synchronously
+     * @param userId    caller
      */
-    public void saveObject(ArchivalObjectDto archivalObject, TmpSourceHolder tmpSourceHolder, List<StorageService> storageServices, boolean sync) {
+    public void saveObject(ArchivalObjectDto archivalObject, TmpSourceHolder tmpSourceHolder, List<StorageService> storageServices, boolean sync, String userId) {
         Executor executorToUse = sync ? executor : batchOpsExecutor;
         String op = sync ? "Synchronously storing object: " : "Storing object: ";
         String failureMsgFormat = op + " failed, because %s, current object state: %s";
@@ -193,7 +200,7 @@ public class ArchivalAsyncService {
             objRollbackFlag.getRight().lock();
             try {
                 if (!rollback.get()) {
-                    archivalDbService.setObjectsState(ObjectState.ARCHIVED, objDbId);
+                    archivalDbService.setArchived(userId, archivalObject);
                     log.info(archivalObject + op + "success on all storages");
                     return;
                 }
@@ -232,10 +239,15 @@ public class ArchivalAsyncService {
                 throw new GeneralException(msg, e);
             }
         };
-        if (sync)
+        if (sync) {
             saveObjectProcess.run();
-        else
-            CompletableFuture.runAsync(saveObjectProcess, batchOpsExecutor);
+        } else {
+            CompletableFuture.runAsync(saveObjectProcess, batchOpsExecutor).exceptionally(t -> {
+                log.error("error", t);
+                archivalDbService.setObjectsState(ObjectState.ARCHIVAL_FAILURE, objDbId);
+                return null;
+            });
+        }
     }
 
     /**
@@ -248,7 +260,7 @@ public class ArchivalAsyncService {
      * @param storageServices storage services to delete the object from
      */
     public void deleteObject(ArchivalObjectDto archivalObject, List<StorageService> storageServices) {
-        CompletableFuture<Void> parentThread = CompletableFuture.runAsync(() -> {
+        CompletableFuture.runAsync(() -> {
             String op = "deleting object: ";
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             boolean successOnAllStorages = true;
@@ -281,7 +293,11 @@ public class ArchivalAsyncService {
             }
             archivalDbService.setObjectsState(ObjectState.DELETION_FAILURE, archivalObject.getDatabaseId());
             log.error(archivalObject + "deletion failed on some storages");
-        }, batchOpsExecutor);
+        }, batchOpsExecutor).exceptionally(t -> {
+            log.error("error", t);
+            archivalDbService.setObjectsState(ObjectState.DELETION_FAILURE, archivalObject.getDatabaseId());
+            return null;
+        });
     }
 
     /**
@@ -294,7 +310,7 @@ public class ArchivalAsyncService {
      * @param storageServices storage services to rollback the object from
      */
     public void rollbackObject(ArchivalObjectDto archivalObject, List<StorageService> storageServices) {
-        CompletableFuture<Void> parentThread = CompletableFuture.runAsync(() -> {
+        CompletableFuture.runAsync(() -> {
             String op = "rolling back object: ";
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             boolean successOnAllStorages = true;
@@ -327,7 +343,11 @@ public class ArchivalAsyncService {
             }
             archivalDbService.setObjectsState(ObjectState.ROLLBACK_FAILURE, archivalObject.getDatabaseId());
             log.error(archivalObject + "rollback failed on some storages");
-        }, batchOpsExecutor);
+        }, batchOpsExecutor).exceptionally(t -> {
+            log.error("error", t);
+            archivalDbService.setObjectsState(ObjectState.ROLLBACK_FAILURE, archivalObject.getDatabaseId());
+            return null;
+        });
     }
 
     /**
