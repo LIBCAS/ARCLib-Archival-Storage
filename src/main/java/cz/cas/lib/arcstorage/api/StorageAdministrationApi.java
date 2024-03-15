@@ -62,7 +62,7 @@ public class StorageAdministrationApi {
     @Operation(summary = "Returns logical storage with specified ID.")
     @RequestMapping(value = "/{id}", method = RequestMethod.GET)
     public Storage getOne(
-            @Parameter(name = "id of the logical storage", required = true) @PathVariable("id") String id) {
+            @Parameter(description = "id of the logical storage", required = true) @PathVariable("id") String id) {
         Storage storage = storageStore.find(id);
         notNull(storage, () -> new MissingObject(Storage.class, id));
         return storage;
@@ -71,7 +71,7 @@ public class StorageAdministrationApi {
     @Operation(summary = "Returns state of logical storage.", description = "Data returned depends on the logical storage. E.g. self-healing data are returned only if self-healing is supported by the storage.")
     @RequestMapping(value = "/{id}/state", method = RequestMethod.GET)
     public StorageStateDto getStorageState(
-            @Parameter(name = "id of the logical storage", required = true) @PathVariable("id") String id) throws BadRequestException {
+            @Parameter(description = "id of the logical storage", required = true) @PathVariable("id") String id) throws BadRequestException {
         checkUUID(id);
         return storageAdministrationService.getStorageState(id);
     }
@@ -91,7 +91,7 @@ public class StorageAdministrationApi {
             @ApiResponse(responseCode = "567", description = "cant create some dataspace at the storage"),
             @ApiResponse(responseCode = "409", description = "storage already exists")})
     public Storage attachStorage(
-            @Parameter(name = "logical storage entity", required = true) @RequestBody @Valid Storage storage)
+            @Parameter(description = "logical storage entity", required = true) @RequestBody @Valid Storage storage)
             throws SomeLogicalStoragesNotReachableException, SynchronizationInProgressException, InterruptedException,
             IOStorageException, StorageStillProcessObjectsException, CantCreateDataspaceException, BadRequestException {
 //        if (storage.getHost() != null && !storage.getHost().equals("localhost"))
@@ -108,7 +108,7 @@ public class StorageAdministrationApi {
             @ApiResponse(responseCode = "503", description = "storage to be synchronized is not reachable")
     })
     public void continueSync(
-            @Parameter(name = "id of the synchronization status entity", required = true) @PathVariable("id") String id)
+            @Parameter(description = "id of the synchronization status entity", required = true) @PathVariable("id") String id)
             throws SomeLogicalStoragesNotReachableException, SynchronizationInProgressException, InterruptedException {
         StorageSyncStatus storageSyncStatus = storageSyncStatusStore.find(id);
         notNull(storageSyncStatus, () -> new MissingObject(StorageSyncStatus.class, id));
@@ -121,7 +121,7 @@ public class StorageAdministrationApi {
             @ApiResponse(responseCode = "404", description = "no sync status for this storage")
     })
     public StorageSyncStatus getSyncStatusOfStorage(
-            @Parameter(name = "id of the storage", required = true) @PathVariable("id") String id) {
+            @Parameter(description = "id of the storage", required = true) @PathVariable("id") String id) {
         StorageSyncStatus syncStatusOfStorage = storageSyncStatusStore.findSyncStatusOfStorage(id);
         notNull(syncStatusOfStorage, () -> new MissingObject("storage sync status of configuration with specified id", id));
         return syncStatusOfStorage;
@@ -131,7 +131,7 @@ public class StorageAdministrationApi {
     @Transactional
     @RequestMapping(value = "/update", method = RequestMethod.POST)
     public Storage update(
-            @Parameter(name = "update DTO of the logical storage entity", required = true)
+            @Parameter(description = "update DTO of the logical storage entity", required = true)
             @RequestBody @Valid StorageUpdateDto storageUpdateDto) {
         Storage storage = storageStore.find(storageUpdateDto.getId());
         notNull(storage, () -> new MissingObject(Storage.class, storageUpdateDto.getId()));
@@ -149,7 +149,7 @@ public class StorageAdministrationApi {
             @ApiResponse(responseCode = "403", description = "not authorized or can't be deleted because count of logical storage would be less than the configured minimum")
     })
     public void delete(
-            @Parameter(name = "id of the logical storage", required = true) @PathVariable("id") String id) throws ForbiddenByConfigException {
+            @Parameter(description = "id of the logical storage", required = true) @PathVariable("id") String id) throws ForbiddenByConfigException {
         int minStorageCount = systemStateService.get().getMinStorageCount();
         Storage storage = storageStore.find(id);
         notNull(storage, () -> new MissingObject(Storage.class, id));

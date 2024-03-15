@@ -1,6 +1,7 @@
 package cz.cas.lib.arcstorage.security.user;
 
 import cz.cas.lib.arcstorage.domain.entity.User;
+import cz.cas.lib.arcstorage.security.Role;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
@@ -27,6 +28,7 @@ public class UserDelegate implements UserDetails {
         }
     }
 
+    @Override
     public User getUser() {
         return user;
     }
@@ -41,6 +43,10 @@ public class UserDelegate implements UserDetails {
         return user.getDataSpace();
     }
 
+    @Override
+    public Role getRole() {
+        return user.getRole();
+    }
 
     @Override
     public String getUsername() {

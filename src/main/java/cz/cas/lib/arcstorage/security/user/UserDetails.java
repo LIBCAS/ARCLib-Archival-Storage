@@ -1,5 +1,7 @@
 package cz.cas.lib.arcstorage.security.user;
 
+import cz.cas.lib.arcstorage.domain.entity.User;
+import cz.cas.lib.arcstorage.security.Role;
 import org.springframework.security.core.GrantedAuthority;
 
 import java.util.Collection;
@@ -13,6 +15,13 @@ public interface UserDetails extends org.springframework.security.core.userdetai
         return null;
     }
     default String getDataSpace() {
+        return null;
+    }
+
+    default Role getRole() {
+        return null;
+    }
+    default User getUser() {
         return null;
     }
 

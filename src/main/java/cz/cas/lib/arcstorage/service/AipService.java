@@ -7,6 +7,7 @@ import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.mail.ArcstorageMailCenter;
+import cz.cas.lib.arcstorage.security.Role;
 import cz.cas.lib.arcstorage.security.user.UserDetails;
 import cz.cas.lib.arcstorage.service.exception.BadXmlVersionProvidedException;
 import cz.cas.lib.arcstorage.service.exception.InvalidChecksumException;
@@ -146,6 +147,18 @@ public class AipService {
         } else
             requestedXml = sipEntity.getLatestArchivedXml();
         return Pair.of(requestedXml.getVersion(), archivalService.getObject(requestedXml.toDto()));
+    }
+
+    public Pair<ArchivalObjectDto, ObjectRetrievalResource> getObject(String id) throws
+            FailedStateException, RollbackStateException, StillProcessingStateException,
+            ObjectCouldNotBeRetrievedException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
+        log.debug("Retrieving object with id " + id + ".");
+        ArchivalObject object = archivalDbService.getObject(id);
+        if (object == null || (userDetails.getRole() != Role.ROLE_ADMIN && !object.getOwner().getDataSpace().equals(userDetails.getDataSpace()))) {
+            throw new MissingObject(ArchivalObjectDto.class, id);
+        }
+        ArchivalObjectDto dto = object.toDto();
+        return Pair.of(dto, archivalService.getObject(dto));
     }
 
     /**

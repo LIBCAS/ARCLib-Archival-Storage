@@ -57,4 +57,21 @@ public class ObjectAuditStore extends DomainStore<ObjectAudit, QObjectAudit> {
         detachAll();
         return fetch;
     }
+
+    public List<ObjectAudit> findAll(Instant from, Integer count, String dataSpace) {
+        QObjectAudit audit = qObject();
+        JPAQuery<ObjectAudit> q = query().select(audit).orderBy(audit.created.asc());
+        if (from != null) {
+            q.where(audit.created.after(from));
+        }
+        if (dataSpace != null) {
+            q.where(audit.user.dataSpace.eq(dataSpace));
+        }
+        if (count != null) {
+            q.limit(count);
+        }
+        List<ObjectAudit> res = q.fetch();
+        detachAll();
+        return res;
+    }
 }

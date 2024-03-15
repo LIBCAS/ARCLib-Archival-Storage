@@ -49,7 +49,7 @@ public class UserApi {
     @RequestMapping(value = "/register", method = RequestMethod.POST)
     @Transactional
     @RolesAllowed(Roles.ADMIN)
-    public User registerUser(@Parameter(name = "User to be registered", required = true)
+    public User registerUser(@Parameter(description = "User to be registered", required = true)
                              @RequestBody @Valid User user) throws BadRequestException {
         log.debug("Registering user with username " + user.getUsername() + ".");
         if (user.getRole() == Role.ROLE_ADMIN && user.getDataSpace() != null)
@@ -58,7 +58,7 @@ public class UserApi {
         else if (user.getRole() != Role.ROLE_ADMIN) {
             if (user.getDataSpace() == null)
                 throw new BadRequestException("non-admin user account has to be bound with dataSpace");
-            if (!user.getDataSpace().toLowerCase().equals(user.getDataSpace().toUpperCase()))
+            if (!user.getDataSpace().toLowerCase().equals(user.getDataSpace()))
                 throw new BadRequestException("dataSpace can't contain upperCase characters");
         }
         User existing = userStore.findByUsername(user.getUsername());
@@ -79,7 +79,7 @@ public class UserApi {
     @Transactional
     @RolesAllowed(Roles.ADMIN)
     public void activateDataSpace(
-            @Parameter(name = "dataSpace", required = true) @PathVariable("dataSpace") String dataSpace)
+            @Parameter(description = "dataSpace", required = true) @PathVariable("dataSpace") String dataSpace)
             throws NoLogicalStorageAttachedException, SomeLogicalStoragesNotReachableException, ReadOnlyStateException {
         List<StorageService> reachableAdapters = storageProvider.createAdaptersForWriteOperation();
         reachableAdapters.forEach(

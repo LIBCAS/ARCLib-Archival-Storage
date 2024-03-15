@@ -1,5 +1,6 @@
 package cz.cas.lib.arcstorage.domain.store;
 
+import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAUpdateClause;
 import cz.cas.lib.arcstorage.domain.entity.ArchivalObject;
 import cz.cas.lib.arcstorage.domain.entity.QArchivalObject;
@@ -61,5 +62,22 @@ public class ArchivalObjectStore extends DomainStore<ArchivalObject, QArchivalOb
         if (entity.getOwner() != null && auditLogger != null)
             auditLogger.logEvent(new EntitySaveEvent(Instant.now(), entity.getOwner().getId(), type.getSimpleName(), entity.getId()));
         else super.logSaveEvent(entity);
+    }
+
+    public List<ArchivalObject> findAll(Instant from, Integer count, String dataSpace) {
+        QArchivalObject object = qObject();
+        JPAQuery<ArchivalObject> q = query().select(object).orderBy(object.created.asc());
+        if (from != null) {
+            q.where(object.created.after(from));
+        }
+        if (dataSpace != null) {
+            q.where(object.owner.dataSpace.eq(dataSpace));
+        }
+        if (count != null) {
+            q.limit(count);
+        }
+        List<ArchivalObject> res = q.fetch();
+        detachAll();
+        return res;
     }
 }

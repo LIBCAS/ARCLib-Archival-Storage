@@ -29,11 +29,14 @@ public class ObjectAudit extends DomainObject {
      * may be null if it is equal to idInDatabase (only XML has different idInStorage)
      */
     private String idInStorage;
+
     @Column(updatable = false)
     @GeneratorType(type = InstantGenerator.class, when = GenerationTime.INSERT)
     private Instant created;
+
     @ManyToOne
     private User user;
+
     @Enumerated(EnumType.STRING)
     private AuditedOperation operation;
 

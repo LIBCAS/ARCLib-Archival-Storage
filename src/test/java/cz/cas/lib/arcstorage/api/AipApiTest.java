@@ -77,7 +77,7 @@ public class AipApiTest implements ApiTest {
     private Path tmpFolder;
 
     @Inject
-    private AipApi api;
+    private ObjectReadApi api;
 
     @Inject
     private AipSipStore sipStore;

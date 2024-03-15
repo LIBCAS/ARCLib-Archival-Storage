@@ -42,7 +42,7 @@ public class SystemAdministrationApi {
             @ApiResponse(responseCode = "409", description = "provided config has different id than that stored in DB (only one config object is allowed)")
     })
     public SystemState save(
-            @Parameter(name = "systemState object", required = true) @RequestBody @Valid SystemState systemState
+            @Parameter(description = "systemState object", required = true) @RequestBody @Valid SystemState systemState
     ) {
         log.info("Saving new or updating an existing systemState of the Archival Storage.");
         return systemStateService.save(systemState);
@@ -62,7 +62,7 @@ public class SystemAdministrationApi {
             @ApiResponse(responseCode = "403", description = "some logical storage is synchronizing")
     })
     public void cleanup(
-            @Parameter(name = "all") @RequestParam(value = "all", defaultValue = "false") boolean all) throws SomeLogicalStoragesNotReachableException, IOException, NoLogicalStorageAttachedException, SynchronizationInProgressException {
+            @Parameter(description = "all") @RequestParam(value = "all", defaultValue = "false") boolean all) throws SomeLogicalStoragesNotReachableException, IOException, NoLogicalStorageAttachedException, SynchronizationInProgressException {
         systemAdministrationService.cleanup(all);
     }
 
@@ -76,7 +76,7 @@ public class SystemAdministrationApi {
             @ApiResponse(responseCode = "403", description = "some logical storage is synchronizing")
     })
     public void cleanupOne(
-            @Parameter(name = "database id of the object") @PathVariable(value = "objId") String objId) throws SomeLogicalStoragesNotReachableException, IOException, NoLogicalStorageAttachedException, SynchronizationInProgressException {
+            @Parameter(description = "database id of the object") @PathVariable(value = "objId") String objId) throws SomeLogicalStoragesNotReachableException, IOException, NoLogicalStorageAttachedException, SynchronizationInProgressException {
         systemAdministrationService.cleanupOne(objId);
     }
 
@@ -88,8 +88,8 @@ public class SystemAdministrationApi {
             @ApiResponse(responseCode = "503", description = "logical storage unreachable")
     })
     public void recoverDbFromStorage(
-            @Parameter(name = "storage id") @RequestParam("storageId") String storageId,
-            @Parameter(name = "whether to override conflicting metadata in DB with those from storage") @RequestParam(value = "override", required = false, defaultValue = "false") boolean overrideConflict) throws StorageException {
+            @Parameter(description = "storage id") @RequestParam("storageId") String storageId,
+            @Parameter(description = "whether to override conflicting metadata in DB with those from storage") @RequestParam(value = "override", required = false, defaultValue = "false") boolean overrideConflict) throws StorageException {
         systemAdministrationService.recoverDb(storageId, overrideConflict);
     }
 
@@ -99,8 +99,8 @@ public class SystemAdministrationApi {
             @ApiResponse(responseCode = "500", description = "Export location unreachable or other internal error.")
     })
     public void backup(
-            @Parameter(name = "since") @RequestParam(value = "since", required = false) Instant since,
-            @Parameter(name = "until") @RequestParam(value = "until", required = false) Instant until) throws BackupProcessException, ForbiddenByConfigException {
+            @Parameter(description = "since") @RequestParam(value = "since", required = false) Instant since,
+            @Parameter(description = "until") @RequestParam(value = "until", required = false) Instant until) throws BackupProcessException, ForbiddenByConfigException {
         backupExportService.exportDataForBackup(since, until);
     }
 
