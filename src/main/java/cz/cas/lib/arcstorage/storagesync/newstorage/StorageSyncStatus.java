@@ -3,6 +3,7 @@ package cz.cas.lib.arcstorage.storagesync.newstorage;
 import cz.cas.lib.arcstorage.domain.entity.DomainObject;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.domain.store.InstantGenerator;
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -10,7 +11,6 @@ import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.hibernate.annotations.GenerationTime;
 import org.hibernate.annotations.GeneratorType;
 
-import javax.persistence.*;
 import java.time.Instant;
 
 @Getter
@@ -21,32 +21,39 @@ public class StorageSyncStatus extends DomainObject {
 
     @ManyToOne
     private Storage storage;
+
     @Setter
     private Instant created;
-    @GeneratorType( type = InstantGenerator.class, when = GenerationTime.ALWAYS)
+
+    @GeneratorType(type = InstantGenerator.class, when = GenerationTime.ALWAYS)
     private Instant updated;
+
     @Setter
     @Enumerated(EnumType.STRING)
     private StorageSyncPhase phase;
-    @Setter
+
     /**
      * number of objects/operations to be synced.. if the sync was stopped and then continues, this number does not contain
      * objects/operations which were synced previously
      */
-    private long totalInThisPhase;
     @Setter
+    private long totalInThisPhase;
+
     /**
      * number of objects/operations already synced
      */
-    private long doneInThisPhase;
-    private String exceptionMsg;
-    private String exceptionStackTrace;
     @Setter
+    private long doneInThisPhase;
+
+    private String exceptionMsg;
+
+    private String exceptionStackTrace;
+
     /**
      * marks the latest object/record which was not yet synchronized to a new storage
      * when sync fails, the timestamp is marked, admin has to solve the failure and can then continue with the sync
-     *
      */
+    @Setter
     private Instant stuckAt;
 
     public void setExceptionInfo(Exception ex, Instant problemObjectCreationTime) {

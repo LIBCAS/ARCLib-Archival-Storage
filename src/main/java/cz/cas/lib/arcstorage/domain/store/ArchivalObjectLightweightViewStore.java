@@ -6,10 +6,10 @@ import com.querydsl.jpa.impl.JPAQueryFactory;
 import cz.cas.lib.arcstorage.domain.entity.User;
 import cz.cas.lib.arcstorage.domain.views.*;
 import cz.cas.lib.arcstorage.dto.ObjectState;
+import jakarta.persistence.EntityManager;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
 
-import javax.inject.Inject;
-import javax.persistence.EntityManager;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -149,12 +149,12 @@ public class ArchivalObjectLightweightViewStore {
         entityManager.clear();
     }
 
-    @Inject
+    @Autowired
     public void setEntityManager(EntityManager entityManager) {
         this.entityManager = entityManager;
     }
 
-    @Inject
+    @Autowired
     public void setQueryFactory(JPAQueryFactory queryFactory) {
         this.queryFactory = queryFactory;
     }

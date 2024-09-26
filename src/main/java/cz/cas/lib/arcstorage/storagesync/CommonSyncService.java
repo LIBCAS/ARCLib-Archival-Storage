@@ -14,10 +14,10 @@ import cz.cas.lib.arcstorage.service.exception.storage.ObjectCouldNotBeRetrieved
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import javax.inject.Inject;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -109,17 +109,17 @@ public class CommonSyncService {
         }
     }
 
-    @Inject
+    @Autowired
     public void setArchivalService(ArchivalService archivalService) {
         this.archivalService = archivalService;
     }
 
-    @Inject
-    public void setTmpFolder(@Value("${arcstorage.tmpFolder}") String path) {
+    @Autowired
+    public void setTmpFolder(@Value("${spring.servlet.multipart.location}") String path) {
         this.tmpFolder = Paths.get(path);
     }
 
-    @Inject
+    @Autowired
     public void setForgetFeatureAllowed(@Value("${arcstorage.optionalFeatures.forgetObject}") boolean forgetFeatureAllowed) {
         this.forgetFeatureAllowed = forgetFeatureAllowed;
     }

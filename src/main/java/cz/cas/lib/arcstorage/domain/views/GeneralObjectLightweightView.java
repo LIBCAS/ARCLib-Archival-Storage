@@ -5,8 +5,8 @@ import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
 import lombok.Getter;
 import org.hibernate.annotations.Immutable;
 
-import javax.persistence.Entity;
-import javax.persistence.Table;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
 
 
 @Getter

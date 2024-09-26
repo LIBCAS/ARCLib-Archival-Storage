@@ -5,10 +5,9 @@ import cz.cas.lib.arcstorage.domain.store.SystemStateStore;
 import cz.cas.lib.arcstorage.domain.store.Transactional;
 import cz.cas.lib.arcstorage.exception.ConflictObject;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
-
-import javax.inject.Inject;
 
 import static cz.cas.lib.arcstorage.util.Utils.notNull;
 
@@ -45,12 +44,12 @@ public class SystemStateService {
         return any;
     }
 
-    @Inject
+    @Autowired
     public void setSystemStateStore(SystemStateStore systemStateStore) {
         this.systemStateStore = systemStateStore;
     }
 
-    @Inject
+    @Autowired
     public void setIntervalJobService(IntervalJobService intervalJobService) {
         this.intervalJobService = intervalJobService;
     }

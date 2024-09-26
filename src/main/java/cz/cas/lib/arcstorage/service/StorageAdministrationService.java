@@ -20,10 +20,10 @@ import cz.cas.lib.arcstorage.storagesync.newstorage.exception.CantCreateDataspac
 import cz.cas.lib.arcstorage.storagesync.newstorage.exception.StorageStillProcessObjectsException;
 import cz.cas.lib.arcstorage.storagesync.newstorage.exception.SynchronizationInProgressException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import javax.inject.Inject;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -51,17 +51,18 @@ public class StorageAdministrationService {
      * 2) sets whole archival storage to read-only mode
      * 3) checks availability of the new storage
      * 4) waits {@link StorageAdministrationService#transactionTimeoutSeconds} for already started DB transactions to finish
-     *  (to make sure that there is no transaction which would successfully add package while the sync is initializing)
+     * (to make sure that there is no transaction which would successfully add package while the sync is initializing)
      * 5) tries to start the synchronization - waits max {@link StorageAdministrationService#synchronizationInitTimeoutSeconds}
      * for packages which are currently ingesting to finish
      * 6) create data spaces (i.e. user specific folder/bucket...) for all registered user accounts at the new storage
      * 7) sets whole archival storage to read-write mode
      * 8) starts synchronization phase 1 i.e. copying of all currently archived packages
-     *
+     * <p>
      * It is important to have the {@link StorageSyncPhase#INIT} persisted in DB so that if other thread
      * calls {@link StorageSyncStatusStore#anyInInitialOrFinishingPhase()} it may see the INIT status.
      * That is the reason why the whole {@link #attachStorage(Storage)} is not Transactional.
      * Otherwise the {@link StorageSyncService#setReadWriteConfig(SystemState)} method could set the storage to readwrite just in the same time this method sets it to readonly, which would break the logic of this method.
+     *
      * @param storage
      * @return
      * @throws SomeLogicalStoragesNotReachableException
@@ -76,7 +77,7 @@ public class StorageAdministrationService {
 
         log.info("attaching " + storage);
         SystemState systemState = systemStateService.get();
-        if(systemState.isReadOnly())
+        if (systemState.isReadOnly())
             throw new ReadOnlyStateException();
         log.debug("checking config validity and reachability of " + storage);
 
@@ -119,11 +120,11 @@ public class StorageAdministrationService {
             processingObjects = archivalObjectStore.findProcessingObjects();
         }
         Set<String> dataSpaces = userStore.findAll().stream().map(User::getDataSpace).filter(Objects::nonNull).collect(Collectors.toSet());
-        String currentDataspace="";
+        String currentDataspace = "";
         try {
             log.debug("creating dataspaces for storage " + storage);
             for (String dataSpace : dataSpaces) {
-                currentDataspace=dataSpace;
+                currentDataspace = dataSpace;
                 log.debug("creating dataspace:" + dataSpace);
                 destinationStorageService.createNewDataSpace(dataSpace);
             }
@@ -167,8 +168,8 @@ public class StorageAdministrationService {
      */
     public void synchronizeStorage(StorageSyncStatus syncStatus, boolean firstTime) throws SomeLogicalStoragesNotReachableException,
             SynchronizationInProgressException, InterruptedException {
-        if (syncStatus.getPhase() == StorageSyncPhase.DONE || syncStatus.getPhase() == null){
-            log.debug("attempt to continue with synchronization of storage "+syncStatus.getStorage().getId()+" silently skipped - the storage is already synced");
+        if (syncStatus.getPhase() == StorageSyncPhase.DONE || syncStatus.getPhase() == null) {
+            log.debug("attempt to continue with synchronization of storage " + syncStatus.getStorage().getId() + " silently skipped - the storage is already synced");
             return;
         }
         if (!firstTime && syncStatus.getStuckAt() == null)
@@ -178,7 +179,7 @@ public class StorageAdministrationService {
         if (!destinationStorageService.getStorage().isReachable()) {
             SomeLogicalStoragesNotReachableException ex = new SomeLogicalStoragesNotReachableException(destinationStorageService.getStorage());
             syncStatus.setExceptionInfo(ex);
-            log.error("Storage "+ syncStatus.getStorage().getId() + " not reachable. Synchronization failed.");
+            log.error("Storage " + syncStatus.getStorage().getId() + " not reachable. Synchronization failed.");
             syncStatusStore.save(syncStatus);
             throw ex;
         }
@@ -207,47 +208,47 @@ public class StorageAdministrationService {
         log.error("error occurred during initial phase of synchronizing storage: " + storage + " the storage and its status entities will be deleted");
     }
 
-    @Inject
+    @Autowired
     public void setSyncStatusStore(StorageSyncStatusStore syncStatusStore) {
         this.syncStatusStore = syncStatusStore;
     }
 
-    @Inject
+    @Autowired
     public void setStorageStore(StorageStore storageStore) {
         this.storageStore = storageStore;
     }
 
-    @Inject
+    @Autowired
     public void setStorageSyncService(StorageSyncService storageSyncService) {
         this.storageSyncService = storageSyncService;
     }
 
-    @Inject
+    @Autowired
     public void setStorageProvider(StorageProvider storageProvider) {
         this.storageProvider = storageProvider;
     }
 
-    @Inject
+    @Autowired
     public void setUserStore(UserStore userStore) {
         this.userStore = userStore;
     }
 
-    @Inject
+    @Autowired
     public void setSystemStateService(SystemStateService systemStateService) {
         this.systemStateService = systemStateService;
     }
 
-    @Inject
+    @Autowired
     public void setArchivalObjectStore(ArchivalObjectStore archivalObjectStore) {
         this.archivalObjectStore = archivalObjectStore;
     }
 
-    @Inject
+    @Autowired
     public void setTransactionTimeoutSeconds(@Value("${arcstorage.stateChangeTransactionTimeout}") int transactionTimeoutSeconds) {
         this.transactionTimeoutSeconds = transactionTimeoutSeconds;
     }
 
-    @Inject
+    @Autowired
     public void setSynchronizationInitTimeoutSeconds(@Value("${arcstorage.synchronizationInitTimeout}") int synchronizationInitTimeoutSeconds) {
         this.synchronizationInitTimeoutSeconds = synchronizationInitTimeoutSeconds;
     }

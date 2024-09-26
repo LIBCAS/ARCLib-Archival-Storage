@@ -30,10 +30,10 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.tuple.Pair;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import javax.inject.Inject;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -402,21 +402,23 @@ public class AipService {
         if (!candidatesForCleanup.isEmpty())
             arcstorageMailCenter.sendCleanupRecommendation(candidatesForCleanup);
 
-        Map<String, RecoveryResultDto> recoveryResultsGroupedByStorages = new HashMap<>();
-        CompletableFuture.allOf(allRecoveryResults.toArray(new CompletableFuture[0]))
-                .whenComplete((a, b) -> {
-                    for (CompletableFuture<RecoveryResultDto> recRes : allRecoveryResults) {
-                        if (!recRes.isCompletedExceptionally()) {
-                            RecoveryResultDto result = recRes.join();
-                            RecoveryResultDto fromMap = recoveryResultsGroupedByStorages.get(result.getStorageId());
-                            if (fromMap != null)
-                                fromMap.merge(result);
-                            else
-                                recoveryResultsGroupedByStorages.put(result.getStorageId(), result);
+        if (!allRecoveryResults.isEmpty()) {
+            Map<String, RecoveryResultDto> recoveryResultsGroupedByStorages = new HashMap<>();
+            CompletableFuture.allOf(allRecoveryResults.toArray(new CompletableFuture[0]))
+                    .whenComplete((a, b) -> {
+                        for (CompletableFuture<RecoveryResultDto> recRes : allRecoveryResults) {
+                            if (!recRes.isCompletedExceptionally()) {
+                                RecoveryResultDto result = recRes.join();
+                                RecoveryResultDto fromMap = recoveryResultsGroupedByStorages.get(result.getStorageId());
+                                if (fromMap != null)
+                                    fromMap.merge(result);
+                                else
+                                    recoveryResultsGroupedByStorages.put(result.getStorageId(), result);
+                            }
                         }
-                    }
-                    arcstorageMailCenter.sendAipsVerificationError(recoveryResultsGroupedByStorages);
-                });
+                        arcstorageMailCenter.sendAipsVerificationError(recoveryResultsGroupedByStorages);
+                    });
+        }
         return allImmediateResults;
     }
 
@@ -941,42 +943,42 @@ public class AipService {
         }
     }
 
-    @Inject
+    @Autowired
     public void setArchivalDbService(ArchivalDbService archivalDbService) {
         this.archivalDbService = archivalDbService;
     }
 
-    @Inject
+    @Autowired
     public void setAsyncService(ArchivalAsyncService async) {
         this.async = async;
     }
 
-    @Inject
+    @Autowired
     public void setStorageProvider(StorageProvider storageProvider) {
         this.storageProvider = storageProvider;
     }
 
-    @Inject
+    @Autowired
     public void setArcstorageMailCenter(ArcstorageMailCenter arcstorageMailCenter) {
         this.arcstorageMailCenter = arcstorageMailCenter;
     }
 
-    @Inject
-    public void setTmpFolder(@Value("${arcstorage.tmpFolder}") String path) {
+    @Autowired
+    public void setTmpFolder(@Value("${spring.servlet.multipart.location}") String path) {
         this.tmpFolder = Paths.get(path);
     }
 
-    @Inject
+    @Autowired
     public void setExecutorService(ExecutorService executorService) {
         this.executorService = executorService;
     }
 
-    @Inject
+    @Autowired
     public void setArchivalService(ArchivalService archivalService) {
         this.archivalService = archivalService;
     }
 
-    @Inject
+    @Autowired
     public void setUserDetails(UserDetails userDetails) {
         this.userDetails = userDetails;
     }

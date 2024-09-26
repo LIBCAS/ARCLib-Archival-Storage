@@ -12,11 +12,11 @@ import cz.cas.lib.arcstorage.storagesync.CommonSyncService;
 import cz.cas.lib.arcstorage.storagesync.ObjectAudit;
 import cz.cas.lib.arcstorage.storagesync.ObjectAuditStore;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
-import javax.inject.Inject;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
@@ -139,32 +139,32 @@ public class BackupExportService {
         loopStopped.set(true);
     }
 
-    @Inject
+    @Autowired
     public void setArchivalObjectLightweightViewStore(ArchivalObjectLightweightViewStore archivalObjectLightweightViewStore) {
         this.archivalObjectLightweightViewStore = archivalObjectLightweightViewStore;
     }
 
-    @Inject
+    @Autowired
     public void setBackupDir(@Value("${arcstorage.backupDirPath}") String path) {
         this.backupDir = Paths.get(path);
     }
 
-    @Inject
+    @Autowired
     public void setObjectAuditStore(ObjectAuditStore objectAuditStore) {
         this.objectAuditStore = objectAuditStore;
     }
 
-    @Inject
+    @Autowired
     public void setExecutor(ExecutorService executor) {
         this.executor = executor;
     }
 
-    @Inject
+    @Autowired
     public void setCommonSyncService(CommonSyncService commonSyncService) {
         this.commonSyncService = commonSyncService;
     }
 
-    @Inject
+    @Autowired
     public void setIncrementalBackupAllowed(@Value("${arcstorage.optionalFeatures.incrementalBackup}") boolean incrementalBackupAllowed) {
         this.incrementalBackupAllowed = incrementalBackupAllowed;
     }

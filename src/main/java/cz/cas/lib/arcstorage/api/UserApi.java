@@ -18,12 +18,12 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
-import javax.annotation.security.RolesAllowed;
-import javax.inject.Inject;
-import javax.validation.Valid;
+import jakarta.annotation.security.RolesAllowed;
+import jakarta.validation.Valid;
 import java.util.List;
 
 import static cz.cas.lib.arcstorage.util.Utils.isNull;
@@ -95,17 +95,17 @@ public class UserApi {
         );
     }
 
-    @Inject
+    @Autowired
     public void setStorageProvider(StorageProvider storageProvider) {
         this.storageProvider = storageProvider;
     }
 
-    @Inject
+    @Autowired
     public void setUserStore(UserStore userStore) {
         this.userStore = userStore;
     }
 
-    @Inject
+    @Autowired
     public void setPasswordEncoder(PasswordEncoder passwordEncoder) {
         this.passwordEncoder = passwordEncoder;
     }

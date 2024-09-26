@@ -21,13 +21,13 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.tuple.Pair;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
-import javax.annotation.security.RolesAllowed;
-import javax.inject.Inject;
-import javax.servlet.http.HttpServletResponse;
-import javax.validation.Valid;
+import jakarta.annotation.security.RolesAllowed;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
 import java.io.*;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -295,13 +295,13 @@ public class ObjectReadApi {
         }
     }
 
-    @Inject
+    @Autowired
     public void setAipService(AipService aipService) {
         this.aipService = aipService;
     }
 
-    @Inject
-    public void setTmpFolder(@Value("${arcstorage.tmpFolder}") String path) {
+    @Autowired
+    public void setTmpFolder(@Value("${spring.servlet.multipart.location}") String path) {
         this.tmpFolder = Paths.get(path);
     }
 }

@@ -1,6 +1,9 @@
 server:
   port: 8081
 spring:
+  servlet:
+    multipart:
+      location: tmp # folder to which uploaded files are written before sent to logical storages.. also used when downloading files etc.
   application:
     name: arcstorage
   datasource:
@@ -11,7 +14,7 @@ spring:
     password: changeme
   jpa:
     show-sql: false
-    database-platform: org.hibernate.dialect.PostgreSQL9Dialect
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
       ddl-auto: validate
       naming-strategy: org.hibernate.cfg.ImprovedNamingStrategy
@@ -28,11 +31,6 @@ spring:
     username: unknown
     password: unknown
     protocol: smtp
-    properties.mail.smtp:
-      auth: true
-      starttls.enable: false
-      ssl.trust: smtp.gmail.com
-      ssl.enable: true
   liquibase:
     enabled: true
     changeLog: classpath:/dbchangelog.arcstorage.xml
@@ -54,7 +52,6 @@ arcstorage:
   threadPools:
     batchOps: 16 # threads for asynchronous batch operations (saveAip, saveXml, deleteAip etc.)
     scheduled: 2 # threads reserved for periodical jobs (e.g. reachability check)
-  tmpFolder: tmp # folder to which uploaded files are written before sent to logical storages.. also used when downloading files etc.
   # tmpFolderUploadSizeLimit: 500000 # in MB, if tmp folder reach the limit, all multipart upload requests will fail, not value set means no limit
   connectionTimeout: 5000 # timeout for initial connection to remote logical storage, in milliseconds
   stateChangeTransactionTimeout: 5 # timeout of all DB transactions that changes the state of an archival object, in seconds

@@ -9,8 +9,7 @@ import cz.cas.lib.arcstorage.security.user.UserDetails;
 import org.springframework.beans.factory.BeanCreationException;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import javax.inject.Inject;
-import javax.persistence.EntityManager;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -151,7 +150,7 @@ public abstract class DomainStore<T extends DomainObject, Q extends EntityPathBa
         }
     }
 
-    @Inject
+    @Autowired
     public void setAuditLogger(AuditLogger auditLogger) {
         this.auditLogger = auditLogger;
     }

@@ -13,13 +13,13 @@ import cz.cas.lib.arcstorage.service.exception.CantReadException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.util.ApplicationContextUtils;
+import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
-import javax.inject.Inject;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -58,7 +58,7 @@ public class ArchivalAsyncService {
      * @param tmpXml          temporary source holder of XML content
      * @param storageServices storage services to store AIP to
      * @param dataSpace       data space of the AIP owner
-     * @param userId    caller
+     * @param userId          caller
      */
     public void saveAip(AipDto aip, TmpSourceHolder tmpSip, TmpSourceHolder tmpXml, List<StorageService> storageServices, String dataSpace, String userId) {
         String sipDbId = aip.getSip().getDatabaseId();
@@ -158,7 +158,7 @@ public class ArchivalAsyncService {
      * @param tmpSourceHolder source holder with the object to store
      * @param storageServices storage services to store to
      * @param sync            if true, the operation is processed synchronously
-     * @param userId    caller
+     * @param userId          caller
      */
     public void saveObject(ArchivalObjectDto archivalObject, TmpSourceHolder tmpSourceHolder, List<StorageService> storageServices, boolean sync, String userId) {
         Executor executorToUse = sync ? executor : batchOpsExecutor;
@@ -465,17 +465,17 @@ public class ArchivalAsyncService {
         log.info("Object: {} has been successfully renewed.", object.getStorageId());
     }
 
-    @Inject
+    @Autowired
     public void setArchivalDbService(ArchivalDbService archivalDbService) {
         this.archivalDbService = archivalDbService;
     }
 
-    @Inject
+    @Autowired
     public void setMailCenter(ArcstorageMailCenter mailCenter) {
         this.mailCenter = mailCenter;
     }
 
-    @Inject
+    @Autowired
     public void setExecutor(ExecutorService executor) {
         this.executor = executor;
     }

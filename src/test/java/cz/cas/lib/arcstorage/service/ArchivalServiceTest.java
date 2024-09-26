@@ -129,7 +129,7 @@ public class ArchivalServiceTest extends DbTest {
     public static void beforeClass() throws IOException {
         Properties props = new Properties();
         props.load(ClassLoader.getSystemResourceAsStream("application.properties"));
-        tmpFolder = Paths.get(props.getProperty("arcstorage.tmpFolder"));
+        tmpFolder = Paths.get(props.getProperty("spring.servlet.multipart.location"));
         Files.createDirectories(tmpFolder);
     }
 

@@ -1,6 +1,9 @@
 package cz.cas.lib.arcstorage.service;
 
-import cz.cas.lib.arcstorage.domain.entity.*;
+import cz.cas.lib.arcstorage.domain.entity.AipSip;
+import cz.cas.lib.arcstorage.domain.entity.AipXml;
+import cz.cas.lib.arcstorage.domain.entity.ArchivalObject;
+import cz.cas.lib.arcstorage.domain.entity.User;
 import cz.cas.lib.arcstorage.domain.store.*;
 import cz.cas.lib.arcstorage.domain.views.ArchivalObjectLightweightView;
 import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
@@ -26,13 +29,13 @@ import cz.cas.lib.arcstorage.storagesync.ObjectAuditStore;
 import cz.cas.lib.arcstorage.util.ApplicationContextUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import javax.inject.Inject;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -63,6 +66,8 @@ public class ArchivalDbService {
     /**
      * Registers that AIP creation process has started. Stores AIP records to database and sets their state to <i>processing</i>.
      * returns AipSip entity and flag which is true if this is {@link AuditedOperation#ARCHIVAL_RETRY}
+     *
+     * @return pair of AipSip and flag indication whether the creation is first attempt (false) or retry (true)
      */
     public Pair<AipSip, Boolean> registerAipCreation(String sipId, Checksum sipChecksum, Checksum xmlChecksum, Instant creationTime) throws ReadOnlyStateException {
         AipSip existingSip = aipSipStore.find(sipId);
@@ -515,37 +520,37 @@ public class ArchivalDbService {
         log.debug("State of objects with ids " + Arrays.toString(dbIds) + " has changed to " + state + ".");
     }
 
-    @Inject
+    @Autowired
     public void setArchivalObjectStore(ArchivalObjectStore archivalObjectStore) {
         this.archivalObjectStore = archivalObjectStore;
     }
 
-    @Inject
+    @Autowired
     public void setAipSipStore(AipSipStore store) {
         this.aipSipStore = store;
     }
 
-    @Inject
+    @Autowired
     public void setAipXmlStore(AipXmlStore store) {
         this.aipXmlStore = store;
     }
 
-    @Inject
+    @Autowired
     public void setObjectAuditStore(ObjectAuditStore objectAuditStore) {
         this.objectAuditStore = objectAuditStore;
     }
 
-    @Inject
+    @Autowired
     public void setUserDetails(UserDetails userDetails) {
         this.userDetails = userDetails;
     }
 
-    @Inject
+    @Autowired
     public void setSystemStateService(SystemStateService systemStateService) {
         this.systemStateService = systemStateService;
     }
 
-    @Inject
+    @Autowired
     public void setTransactionTemplate(PlatformTransactionManager transactionManager, @Value("${arcstorage.stateChangeTransactionTimeout}") int timeout) {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         transactionTemplate.setPropagationBehaviorName("PROPAGATION_REQUIRES_NEW");
@@ -553,7 +558,7 @@ public class ArchivalDbService {
         transactionTemplate.afterPropertiesSet();
     }
 
-    @Inject
+    @Autowired
     public void setUserStore(UserStore userStore) {
         this.userStore = userStore;
     }
@@ -562,7 +567,7 @@ public class ArchivalDbService {
         transactionTemplate.setTimeout(timeout);
     }
 
-    @Inject
+    @Autowired
     public void setArchivalObjectLightweightViewStore(ArchivalObjectLightweightViewStore archivalObjectLightweightViewStore) {
         this.archivalObjectLightweightViewStore = archivalObjectLightweightViewStore;
     }

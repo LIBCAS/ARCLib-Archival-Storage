@@ -11,7 +11,7 @@ import lombok.Setter;
 import org.hibernate.annotations.GenerationTime;
 import org.hibernate.annotations.GeneratorType;
 
-import javax.persistence.*;
+import jakarta.persistence.*;
 import java.time.Instant;
 
 /**

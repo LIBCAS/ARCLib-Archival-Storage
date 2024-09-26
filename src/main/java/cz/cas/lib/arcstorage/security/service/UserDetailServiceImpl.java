@@ -5,11 +5,10 @@ import cz.cas.lib.arcstorage.exception.MissingObject;
 import cz.cas.lib.arcstorage.security.user.UserDelegate;
 import cz.cas.lib.arcstorage.security.user.UserDetails;
 import cz.cas.lib.arcstorage.security.user.UserStore;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
-
-import javax.inject.Inject;
 
 import static cz.cas.lib.arcstorage.util.Utils.notNull;
 
@@ -32,7 +31,7 @@ public class UserDetailServiceImpl implements UserDetailsService {
         return new UserDelegate(user);
     }
 
-    @Inject
+    @Autowired
     public void setUserStore(UserStore store) {
         this.userStore = store;
     }

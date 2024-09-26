@@ -21,10 +21,10 @@ import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.util.ApplicationContextUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import javax.inject.Inject;
 import java.io.*;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -471,27 +471,27 @@ public class ArchivalService {
         }
     }
 
-    @Inject
+    @Autowired
     public void setArcstorageMailCenter(ArcstorageMailCenter arcstorageMailCenter) {
         this.arcstorageMailCenter = arcstorageMailCenter;
     }
 
-    @Inject
-    public void setTmpFolder(@Value("${arcstorage.tmpFolder}") String path) {
+    @Autowired
+    public void setTmpFolder(@Value("${spring.servlet.multipart.location}") String path) {
         this.tmpFolder = Paths.get(path);
     }
 
-    @Inject
+    @Autowired
     public void setStorageProvider(StorageProvider storageProvider) {
         this.storageProvider = storageProvider;
     }
 
-    @Inject
+    @Autowired
     public void setArchivalDbService(ArchivalDbService archivalDbService) {
         this.archivalDbService = archivalDbService;
     }
 
-    @Inject
+    @Autowired
     public void setAsync(ArchivalAsyncService async) {
         this.async = async;
     }

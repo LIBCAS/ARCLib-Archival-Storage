@@ -22,11 +22,11 @@ import cz.cas.lib.arcstorage.storage.fs.FsStorageService;
 import cz.cas.lib.arcstorage.storage.fs.ZfsStorageService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import javax.inject.Inject;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -261,32 +261,32 @@ public class StorageProvider {
         return storageStore.getCount();
     }
 
-    @Inject
+    @Autowired
     public void setSshKeyFilePath(@Value("${arcstorage.ssh.authKey}") String keyFilePath) {
         this.sshKeyFilePath = keyFilePath;
     }
 
-    @Inject
+    @Autowired
     public void setSshUsername(@Value("${arcstorage.ssh.userName}") String username) {
         this.sshUsername = username;
     }
 
-    @Inject
+    @Autowired
     public void setStorageStore(StorageStore storageStore) {
         this.storageStore = storageStore;
     }
 
-    @Inject
+    @Autowired
     public void setConnectionTimeout(@Value("${arcstorage.connectionTimeout}") String connectionTimeout) {
         this.connectionTimeout = Integer.parseInt(connectionTimeout);
     }
 
-    @Inject
+    @Autowired
     public void setSystemStateStore(SystemStateStore systemStateStore) {
         this.systemStateStore = systemStateStore;
     }
 
-    @Inject
+    @Autowired
     public void setTransactionTemplate(TransactionTemplate transactionTemplate) {
         this.transactionTemplate = transactionTemplate;
     }

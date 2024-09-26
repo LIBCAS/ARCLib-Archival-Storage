@@ -17,11 +17,11 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-import javax.annotation.security.RolesAllowed;
-import javax.inject.Inject;
-import javax.validation.Valid;
+import jakarta.annotation.security.RolesAllowed;
+import jakarta.validation.Valid;
 import java.io.IOException;
 import java.time.Instant;
 
@@ -104,17 +104,17 @@ public class SystemAdministrationApi {
         backupExportService.exportDataForBackup(since, until);
     }
 
-    @Inject
+    @Autowired
     public void setBackupExportService(BackupExportService backupExportService) {
         this.backupExportService = backupExportService;
     }
 
-    @Inject
+    @Autowired
     public void setsystemStateService(SystemStateService systemStateService) {
         this.systemStateService = systemStateService;
     }
 
-    @Inject
+    @Autowired
     public void setSystemAdministrationService(SystemAdministrationService systemAdministrationService) {
         this.systemAdministrationService = systemAdministrationService;
     }

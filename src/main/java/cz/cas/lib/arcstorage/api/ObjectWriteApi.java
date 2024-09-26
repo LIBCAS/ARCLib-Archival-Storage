@@ -24,12 +24,12 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import javax.annotation.security.RolesAllowed;
-import javax.inject.Inject;
+import jakarta.annotation.security.RolesAllowed;
 import java.io.IOException;
 import java.util.UUID;
 
@@ -273,27 +273,27 @@ public class ObjectWriteApi {
         aipService.rollbackOrForgetXml(aipId, xmlVersion, true);
     }
 
-    @Inject
+    @Autowired
     public void setAipService(AipService aipService) {
         this.aipService = aipService;
     }
 
-    @Inject
+    @Autowired
     public void setUserDetails(UserDetails userDetails) {
         this.userDetails = userDetails;
     }
 
-    @Inject
+    @Autowired
     public void setArchivalDbService(ArchivalDbService archivalDbService) {
         this.archivalDbService = archivalDbService;
     }
 
-    @Inject
+    @Autowired
     public void setArchivalService(ArchivalService archivalService) {
         this.archivalService = archivalService;
     }
 
-    @Inject
+    @Autowired
     public void setForgetFeatureAllowed(@Value("${arcstorage.optionalFeatures.forgetObject}") boolean forgetFeatureAllowed) {
         this.forgetFeatureAllowed = forgetFeatureAllowed;
     }

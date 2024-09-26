@@ -2,6 +2,9 @@ package helper;
 
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import cz.cas.lib.arcstorage.domain.store.DomainStore;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.Persistence;
 import lombok.Getter;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
@@ -11,10 +14,6 @@ import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 
-import javax.persistence.EntityManager;
-import javax.persistence.EntityManagerFactory;
-import javax.persistence.Persistence;
-import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
 
@@ -71,20 +70,23 @@ public abstract class DbTest {
     }
 
     public void setSyntax() throws SQLException {
-        Connection c = ((SessionImpl) em.getDelegate()).connection();
-        Statement s = c.createStatement();
-
-        s.execute("SET DATABASE SQL SYNTAX PGS TRUE");
-        s.close();
+        ((SessionImpl) em.getDelegate()).doWork(c -> {
+                    Statement s = c.createStatement();
+                    s.execute("SET DATABASE SQL SYNTAX PGS TRUE");
+                    s.close();
+                }
+        );
     }
 
     public void clearDatabase() throws SQLException {
-        Connection c = ((SessionImpl) em.getDelegate()).connection();
-        Statement s = c.createStatement();
+        ((SessionImpl) em.getDelegate()).doWork(c -> {
+                    Statement s = c.createStatement();
 
-        //s.execute("DROP SCHEMA PUBLIC CASCADE ");
-        s.execute("TRUNCATE SCHEMA PUBLIC AND COMMIT");
-        s.close();
+                    //s.execute("DROP SCHEMA PUBLIC CASCADE ");
+                    s.execute("TRUNCATE SCHEMA PUBLIC AND COMMIT");
+                    s.close();
+                }
+        );
     }
 
     public void initializeStores(DomainStore... stores) {

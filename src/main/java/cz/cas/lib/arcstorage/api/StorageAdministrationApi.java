@@ -1,7 +1,6 @@
 package cz.cas.lib.arcstorage.api;
 
 import cz.cas.lib.arcstorage.domain.entity.Storage;
-import cz.cas.lib.arcstorage.domain.entity.SystemState;
 import cz.cas.lib.arcstorage.domain.store.StorageStore;
 import cz.cas.lib.arcstorage.domain.store.Transactional;
 import cz.cas.lib.arcstorage.dto.StorageBasicDto;
@@ -26,11 +25,11 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-import javax.annotation.security.RolesAllowed;
-import javax.inject.Inject;
-import javax.validation.Valid;
+import jakarta.annotation.security.RolesAllowed;
+import jakarta.validation.Valid;
 import java.util.Collection;
 
 import static cz.cas.lib.arcstorage.util.Utils.checkUUID;
@@ -159,27 +158,27 @@ public class StorageAdministrationApi {
         storageStore.delete(storage);
     }
 
-    @Inject
+    @Autowired
     public void setSystemStateService(SystemStateService systemStateService) {
         this.systemStateService = systemStateService;
     }
 
-    @Inject
+    @Autowired
     public void setStorageStore(StorageStore storageStore) {
         this.storageStore = storageStore;
     }
 
-    @Inject
+    @Autowired
     public void setStorageAdministrationService(StorageAdministrationService storageAdministrationService) {
         this.storageAdministrationService = storageAdministrationService;
     }
 
-    @Inject
+    @Autowired
     public void setStorageSyncStatusStore(StorageSyncStatusStore storageSyncStatusStore) {
         this.storageSyncStatusStore = storageSyncStatusStore;
     }
 
-    @Inject
+    @Autowired
     public void setStorageProvider(StorageProvider storageProvider) {
         this.storageProvider = storageProvider;
     }

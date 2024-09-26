@@ -22,11 +22,11 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import jakarta.annotation.security.RolesAllowed;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-import javax.annotation.security.RolesAllowed;
-import javax.inject.Inject;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -131,27 +131,27 @@ public class ObjectInfoApi {
         return ObjectInfoDto.of(object.toDto());
     }
 
-    @Inject
+    @Autowired
     public void setAipService(AipService aipService) {
         this.aipService = aipService;
     }
 
-    @Inject
+    @Autowired
     public void setArchivalDbService(ArchivalDbService archivalDbService) {
         this.archivalDbService = archivalDbService;
     }
 
-    @Inject
+    @Autowired
     public void setArchivalObjectStore(ArchivalObjectStore archivalObjectStore) {
         this.archivalObjectStore = archivalObjectStore;
     }
 
-    @Inject
+    @Autowired
     public void setObjectAuditStore(ObjectAuditStore objectAuditStore) {
         this.objectAuditStore = objectAuditStore;
     }
 
-    @Inject
+    @Autowired
     public void setUserDetails(UserDetails userDetails) {
         this.userDetails = userDetails;
     }

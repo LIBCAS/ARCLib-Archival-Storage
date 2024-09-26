@@ -29,6 +29,7 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -38,7 +39,6 @@ import org.springframework.test.context.junit4.SpringRunner;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import javax.inject.Inject;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
@@ -76,12 +76,12 @@ public class AipApiTest implements ApiTest {
 
     private Path tmpFolder;
 
-    @Inject
+    @Autowired
     private ObjectReadApi api;
 
-    @Inject
+    @Autowired
     private AipSipStore sipStore;
-    @Inject
+    @Autowired
     private AipXmlStore xmlStore;
 
     @MockBean
@@ -96,16 +96,16 @@ public class AipApiTest implements ApiTest {
     @MockBean
     private StorageProvider storageProvider;
 
-    @Inject
+    @Autowired
     private SystemStateStore systemStateStore;
-    @Inject
+    @Autowired
     private ObjectAuditStore objectAuditStore;
-    @Inject
+    @Autowired
     private ArchivalDbService archivalDbService;
-    @Inject
+    @Autowired
     private TransactionTemplate transactionTemplate;
 
-    @Inject
+    @Autowired
     private UserStore userStore;
 
     private static final String SIP_ID = "8f719ff7-8756-4101-9e87-42391ced37f1";
@@ -410,7 +410,7 @@ public class AipApiTest implements ApiTest {
         String xmlHash = "af5e897c3cc424f31b84af579b274626";
         String aipIdReturned = mvc(api)
                 .perform(MockMvcRequestBuilders
-                        .fileUpload(BASE + "/save").file(sipFile).file(xmlFile)
+                        .multipart(BASE + "/save").file(sipFile).file(xmlFile)
                         .param("sipChecksumValue", SIP_HASH)
                         .param("sipChecksumType", valueOf(ChecksumType.MD5))
                         .param("aipXmlChecksumValue", xmlHash)
@@ -448,7 +448,7 @@ public class AipApiTest implements ApiTest {
         String xmlHash = "af5e897c3cc424f31b84af579b274626";
         String aipId = mvc(api)
                 .perform(MockMvcRequestBuilders
-                        .fileUpload(BASE + "/save").file(sipFile).file(xmlFile)
+                        .multipart(BASE + "/save").file(sipFile).file(xmlFile)
                         .param("sipChecksumValue", SIP_HASH)
                         .param("sipChecksumType", valueOf(ChecksumType.MD5))
                         .param("aipXmlChecksumValue", xmlHash)
@@ -478,7 +478,7 @@ public class AipApiTest implements ApiTest {
 
         mvc(api)
                 .perform(MockMvcRequestBuilders
-                        .fileUpload(BASE + "/save").file(sipFile).file(xmlFile)
+                        .multipart(BASE + "/save").file(sipFile).file(xmlFile)
                         .param("sipChecksumValue", XML1_HASH)
                         .param("sipChecksumType", valueOf(ChecksumType.MD5))
                         .param("aipXmlChecksumValue", XML1_HASH)
@@ -500,7 +500,7 @@ public class AipApiTest implements ApiTest {
 
         mvc(api)
                 .perform(MockMvcRequestBuilders
-                        .fileUpload(BASE + "/save").file(sipFile).file(xmlFile)
+                        .multipart(BASE + "/save").file(sipFile).file(xmlFile)
                         .param("sipChecksumValue", SIP_HASH)
                         .param("sipChecksumType", valueOf(ChecksumType.MD5))
                         .param("aipXmlChecksumValue", SIP_HASH)
@@ -523,7 +523,7 @@ public class AipApiTest implements ApiTest {
                 "xml", "xml", "text/plain", XML2_CONTENT.getBytes());
 
         mvc(api)
-                .perform(MockMvcRequestBuilders.fileUpload(BASE + "/{aipId}/update", SIP_ID).file(xmlFile)
+                .perform(MockMvcRequestBuilders.multipart(BASE + "/{aipId}/update", SIP_ID).file(xmlFile)
                         .param("checksumType", ChecksumType.MD5.toString())
                         .param("checksumValue", XML2_HASH)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -550,7 +550,7 @@ public class AipApiTest implements ApiTest {
         MockMultipartFile xmlFile = new MockMultipartFile(
                 "xml", "xml", "text/plain", XML2_CONTENT.getBytes());
         mvc(api)
-                .perform(MockMvcRequestBuilders.fileUpload(BASE + "/{aipId}/update", SIP_ID).file(xmlFile)
+                .perform(MockMvcRequestBuilders.multipart(BASE + "/{aipId}/update", SIP_ID).file(xmlFile)
                         .param("checksumType", ChecksumType.MD5.toString())
                         .param("checksumValue", SIP_HASH)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -580,7 +580,7 @@ public class AipApiTest implements ApiTest {
         MockMultipartFile xmlFile = new MockMultipartFile(
                 "xml", "xml", "text/plain", XML2_CONTENT.getBytes());
         mvc(api)
-                .perform(MockMvcRequestBuilders.fileUpload(BASE + "/{aipId}/update", SIP_ID).file(xmlFile)
+                .perform(MockMvcRequestBuilders.multipart(BASE + "/{aipId}/update", SIP_ID).file(xmlFile)
                         .param("checksumType", ChecksumType.MD5.toString())
                         .param("checksumValue", XML2_HASH)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -692,7 +692,7 @@ public class AipApiTest implements ApiTest {
         MockMultipartFile xmlFile = new MockMultipartFile(
                 "xml", "xml", "text/plain", XML2_CONTENT.getBytes());
         mvc(api)
-                .perform(MockMvcRequestBuilders.fileUpload(BASE + "/{aipId}/update", SIP_ID).file(xmlFile)
+                .perform(MockMvcRequestBuilders.multipart(BASE + "/{aipId}/update", SIP_ID).file(xmlFile)
                         .param("checksumType", ChecksumType.MD5.toString())
                         .param("checksumValue", "invalidhash")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -735,7 +735,7 @@ public class AipApiTest implements ApiTest {
         MockMultipartFile xmlFile = new MockMultipartFile(
                 "xml", "xml", "text/plain", XML2_CONTENT.getBytes());
         String contentAsString = mvc(api)
-                .perform(MockMvcRequestBuilders.fileUpload(BASE + "/{aipId}/update", SIP_ID).file(xmlFile)
+                .perform(MockMvcRequestBuilders.multipart(BASE + "/{aipId}/update", SIP_ID).file(xmlFile)
                         .param("checksumType", ChecksumType.MD5.toString())
                         .param("checksumValue", XML2_HASH)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -774,7 +774,7 @@ public class AipApiTest implements ApiTest {
         String xmlHash = "af5e897c3cc424f31b84af579b274626";
         contentAsString = mvc(api)
                 .perform(MockMvcRequestBuilders
-                        .fileUpload(BASE + "/save").file(sipFile).file(xmlFile)
+                        .multipart(BASE + "/save").file(sipFile).file(xmlFile)
                         .param("sipChecksumValue", SIP_HASH)
                         .param("sipChecksumType", valueOf(ChecksumType.MD5))
                         .param("aipXmlChecksumValue", xmlHash)
@@ -900,7 +900,7 @@ public class AipApiTest implements ApiTest {
 
         mvc(api)
                 .perform(MockMvcRequestBuilders
-                        .fileUpload(BASE + "/save").file(sipFile).file(xmlFile)
+                        .multipart(BASE + "/save").file(sipFile).file(xmlFile)
                         .param("sipChecksumValue", SIP_HASH)
                         .param("sipChecksumType", valueOf(ChecksumType.MD5))
                         .param("aipXmlChecksumValue", XML1_HASH)
@@ -914,7 +914,7 @@ public class AipApiTest implements ApiTest {
         //valid archival retry
         mvc(api)
                 .perform(MockMvcRequestBuilders
-                        .fileUpload(BASE + "/save").file(sipFile).file(xmlFile)
+                        .multipart(BASE + "/save").file(sipFile).file(xmlFile)
                         .param("sipChecksumValue", SIP_HASH)
                         .param("sipChecksumType", valueOf(ChecksumType.MD5))
                         .param("aipXmlChecksumValue", XML1_HASH)
@@ -964,7 +964,7 @@ public class AipApiTest implements ApiTest {
         MockMultipartFile xmlFile = new MockMultipartFile(
                 "xml", "xml", "text/plain", XML2_CONTENT.getBytes());
         mvc(api)
-                .perform(MockMvcRequestBuilders.fileUpload(BASE + "/{aipId}/update", SIP_ID).file(xmlFile)
+                .perform(MockMvcRequestBuilders.multipart(BASE + "/{aipId}/update", SIP_ID).file(xmlFile)
                         .param("checksumType", ChecksumType.MD5.toString())
                         .param("checksumValue", XML2_HASH)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -991,12 +991,12 @@ public class AipApiTest implements ApiTest {
         return String.format("%s_xml_%d", aipId, version);
     }
 
-    @Inject
-    public void setTmpFolder(@Value("${arcstorage.tmpFolder}") String path) {
+    @Autowired
+    public void setTmpFolder(@Value("${spring.servlet.multipart.location}") String path) {
         this.tmpFolder = Paths.get(path);
     }
 
-    @Inject
+    @Autowired
     public void setObjectAuditStore(ObjectAuditStore objectAuditStore) {
         this.objectAuditStore = objectAuditStore;
     }

@@ -3,7 +3,7 @@ package cz.cas.lib.arcstorage.init;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.util.StdDateFormat;
-import com.fasterxml.jackson.datatype.hibernate5.Hibernate5Module;
+import com.fasterxml.jackson.datatype.hibernate6.Hibernate6Module;
 import cz.cas.lib.arcstorage.domain.entity.DomainObject;
 import cz.cas.lib.arcstorage.domain.entity.SystemState;
 import cz.cas.lib.arcstorage.domain.store.ArchivalObjectStore;
@@ -19,12 +19,13 @@ import cz.cas.lib.arcstorage.storagesync.newstorage.exception.SynchronizationInP
 import cz.cas.lib.arcstorage.util.ApplicationContextUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
-import javax.inject.Inject;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -35,12 +36,13 @@ import java.util.stream.Collectors;
 
 @Component
 @Slf4j
-public class PostInitializer implements ApplicationListener<ApplicationReadyEvent> {
-    @Inject
+@Order(0)
+public class BaseInitializer implements ApplicationListener<ApplicationReadyEvent> {
+    @Autowired
     private ObjectMapper objectMapper;
-    @Inject
+    @Autowired
     private ArcstorageMailCenter arcstorageMailCenter;
-    @Inject
+    @Autowired
     private IntervalJobService intervalJobService;
 
     @Value("${env}")
@@ -48,19 +50,21 @@ public class PostInitializer implements ApplicationListener<ApplicationReadyEven
 
     @Value("${arcstorage.cleanUpAtApplicationStart:false}")
     private boolean startUpCleanUp;
-    @Inject
+    @Autowired
     private StorageProvider storageProvider;
-    @Inject
+    @Autowired
     private SystemStateService systemStateService;
-    @Inject
+    @Autowired
     private SystemAdministrationService systemAdministrationService;
-    @Inject
+    @Autowired
     private ArchivalObjectStore archivalObjectStore;
 
     @Override
     public void onApplicationEvent(ApplicationReadyEvent events) {
-        objectMapper.registerModule(new Hibernate5Module());
+        log.info("base initializer started");
+        objectMapper.registerModule(new Hibernate6Module());
         objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        objectMapper.enable(SerializationFeature.WRITE_DATES_WITH_ZONE_ID);
         objectMapper.setDateFormat(new StdDateFormat());
         SystemState systemState = systemStateService.createDefaultIfNotExist();
         if (!env.equals("test")) {
@@ -70,7 +74,8 @@ public class PostInitializer implements ApplicationListener<ApplicationReadyEven
         if (startUpCleanUp) {
             try {
                 systemAdministrationService.cleanup(true);
-            } catch (SomeLogicalStoragesNotReachableException | NoLogicalStorageAttachedException | IOException | SynchronizationInProgressException e) {
+            } catch (SomeLogicalStoragesNotReachableException | NoLogicalStorageAttachedException | IOException |
+                     SynchronizationInProgressException e) {
                 throw new RuntimeException("Cant perform startup cleanup", e);
             }
         } else {
@@ -79,7 +84,7 @@ public class PostInitializer implements ApplicationListener<ApplicationReadyEven
                     .collect(Collectors.toMap(DomainObject::getId, o -> Pair.of(new AtomicBoolean(true), new ReentrantLock())));
             ApplicationContextUtils.getProcessingObjects().putAll(collect);
         }
-
+        log.info("base initializer finished");
     }
 
     private void checkAttachedStorages(SystemState systemState) {

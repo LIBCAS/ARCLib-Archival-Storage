@@ -15,11 +15,11 @@ import cz.cas.lib.arcstorage.storagesync.ObjectAudit;
 import cz.cas.lib.arcstorage.storagesync.ObjectAuditStore;
 import cz.cas.lib.arcstorage.storagesync.newstorage.exception.PostSyncCheckException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
-import javax.inject.Inject;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -216,47 +216,47 @@ public class StorageSyncService {
         }
     }
 
-    @Inject
+    @Autowired
     public void setSyncStatusStore(StorageSyncStatusStore syncStatusStore) {
         this.syncStatusStore = syncStatusStore;
     }
 
-    @Inject
+    @Autowired
     public void setObjectAuditStore(ObjectAuditStore objectAuditStore) {
         this.objectAuditStore = objectAuditStore;
     }
 
-    @Inject
+    @Autowired
     public void setArchivalDbService(ArchivalDbService archivalDbService) {
         this.archivalDbService = archivalDbService;
     }
 
-    @Inject
+    @Autowired
     public void setSystemStateService(SystemStateService systemStateService) {
         this.systemStateService = systemStateService;
     }
 
-    @Inject
+    @Autowired
     public void setTransactionTimeoutSeconds(@Value("${arcstorage.stateChangeTransactionTimeout}") int transactionTimeoutSeconds) {
         this.transactionTimeoutSeconds = transactionTimeoutSeconds;
     }
 
-    @Inject
+    @Autowired
     public void setStorageStore(StorageStore storageStore) {
         this.storageStore = storageStore;
     }
 
-    @Inject
+    @Autowired
     public void setArchivalObjectLightweightViewStore(ArchivalObjectLightweightViewStore archivalObjectLightweightViewStore) {
         this.archivalObjectLightweightViewStore = archivalObjectLightweightViewStore;
     }
 
-    @Inject
+    @Autowired
     public void setArcstorageMailCenter(ArcstorageMailCenter arcstorageMailCenter) {
         this.arcstorageMailCenter = arcstorageMailCenter;
     }
 
-    @Inject
+    @Autowired
     public void setCommonSyncService(CommonSyncService commonSyncService) {
         this.commonSyncService = commonSyncService;
     }

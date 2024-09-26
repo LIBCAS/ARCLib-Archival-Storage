@@ -623,17 +623,13 @@ public class RemoteFsProcessor implements StorageService {
 
     public static class InputStreamSource extends InMemorySourceFile {
 
-        private String name;
-        private InputStream inputStream;
+        @Getter
+        private final String name;
+        private final InputStream inputStream;
 
         public InputStreamSource(InputStream is, String name) {
             this.inputStream = is;
             this.name = name;
-        }
-
-
-        public String getName() {
-            return name;
         }
 
 
@@ -649,7 +645,7 @@ public class RemoteFsProcessor implements StorageService {
 
     public static class OutputStreamSource extends InMemoryDestFile {
 
-        private OutputStream outputStream;
+        private final OutputStream outputStream;
 
         public OutputStreamSource(OutputStream os) {
             this.outputStream = os;
@@ -657,6 +653,16 @@ public class RemoteFsProcessor implements StorageService {
 
 
         public OutputStream getOutputStream() throws IOException {
+            return outputStream;
+        }
+
+        @Override
+        public long getLength() {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public OutputStream getOutputStream(boolean append) throws IOException {
             return outputStream;
         }
     }

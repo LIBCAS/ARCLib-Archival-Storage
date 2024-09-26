@@ -17,14 +17,14 @@ import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storagesync.newstorage.StorageSyncStatus;
 import freemarker.template.TemplateException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.Nullable;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Component;
 
-import javax.inject.Inject;
-import javax.mail.MessagingException;
-import javax.mail.internet.MimeMessage;
+import jakarta.mail.MessagingException;
+import jakarta.mail.internet.MimeMessage;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.util.HashMap;
@@ -228,47 +228,47 @@ public class ArcstorageMailCenter {
         }
     }
 
-    @Inject
+    @Autowired
     public void setObjectMapper(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
 
-    @Inject
+    @Autowired
     public void setApplicationName(@Value("${mail.app.name}") String applicationName) {
         this.applicationName = applicationName;
     }
 
-    @Inject
+    @Autowired
     public void setApplicationUrl(@Value("${mail.app.url}") String applicationUrl) {
         this.applicationUrl = applicationUrl;
     }
 
-    @Inject
+    @Autowired
     public void setSender(AsyncMailSender sender) {
         this.sender = sender;
     }
 
-    @Inject
+    @Autowired
     public void setSenderEmail(@Value("${spring.mail.username}") String senderEmail) {
         this.senderEmail = senderEmail;
     }
 
-    @Inject
+    @Autowired
     public void setSenderName(@Value("${mail.sender.name}") String senderName) {
         this.senderName = senderName;
     }
 
-    @Inject
+    @Autowired
     public void setTemplater(Templater templater) {
         this.templater = templater;
     }
 
-    @Inject
+    @Autowired
     public void setUserStore(UserStore userStore) {
         this.userStore = userStore;
     }
 
-    @Inject
+    @Autowired
     public void setStorageStore(StorageStore storageStore) {
         this.storageStore = storageStore;
     }

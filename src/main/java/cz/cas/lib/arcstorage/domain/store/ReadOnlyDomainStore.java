@@ -7,9 +7,9 @@ import com.querydsl.jpa.impl.JPAQueryFactory;
 import cz.cas.lib.arcstorage.domain.entity.DomainObject;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import lombok.Getter;
+import org.springframework.beans.factory.annotation.Autowired;
 
-import javax.inject.Inject;
-import javax.persistence.EntityManager;
+import jakarta.persistence.EntityManager;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.util.*;
@@ -311,17 +311,18 @@ public abstract class ReadOnlyDomainStore<T extends DomainObject, Q extends Enti
         try {
             Constructor<Q> constructor = qType.getConstructor(String.class);
             return constructor.newInstance(name);
-        } catch (NoSuchMethodException | IllegalAccessException | InstantiationException | InvocationTargetException e) {
+        } catch (NoSuchMethodException | IllegalAccessException | InstantiationException |
+                 InvocationTargetException e) {
             throw new GeneralException("Error creating Q object for + " + type.getName());
         }
     }
 
-    @Inject
+    @Autowired
     public void setEntityManager(EntityManager entityManager) {
         this.entityManager = entityManager;
     }
 
-    @Inject
+    @Autowired
     public void setQueryFactory(JPAQueryFactory queryFactory) {
         this.queryFactory = queryFactory;
     }

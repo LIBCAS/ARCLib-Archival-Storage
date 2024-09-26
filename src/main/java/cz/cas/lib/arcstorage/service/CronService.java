@@ -11,6 +11,7 @@ import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageReachable
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storagesync.newstorage.exception.SynchronizationInProgressException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.SchedulingConfigurer;
@@ -18,7 +19,6 @@ import org.springframework.scheduling.config.ScheduledTaskRegistrar;
 import org.springframework.scheduling.support.CronTrigger;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import javax.inject.Inject;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -81,47 +81,47 @@ public class CronService implements SchedulingConfigurer {
         arcstorageMailCenter.sendStorageStateReport(states);
     }
 
-    @Inject
+    @Autowired
     public void setAipSipStore(AipSipStore aipSipStore) {
         this.aipSipStore = aipSipStore;
     }
 
-    @Inject
+    @Autowired
     public void setAipService(AipService aipService) {
         this.aipService = aipService;
     }
 
-    @Inject
+    @Autowired
     public void setTransactionTemplate(TransactionTemplate transactionTemplate) {
         this.transactionTemplate = transactionTemplate;
     }
 
-    @Inject
+    @Autowired
     public void setSystemStateService(SystemStateService systemStateService) {
         this.systemStateService = systemStateService;
     }
 
-    @Inject
+    @Autowired
     public void setStorageAdministrationService(StorageAdministrationService storageAdministrationService) {
         this.storageAdministrationService = storageAdministrationService;
     }
 
-    @Inject
+    @Autowired
     public void setArcstorageMailCenter(ArcstorageMailCenter arcstorageMailCenter) {
         this.arcstorageMailCenter = arcstorageMailCenter;
     }
 
-    @Inject
+    @Autowired
     public void setConsistencyCheckCron(@Value("${arcstorage.consistencyCheck.cron}") String consistencyCheckCron) {
         this.consistencyCheckCron = consistencyCheckCron;
     }
 
-    @Inject
+    @Autowired
     public void setStorageStateCheckCron(@Value("${arcstorage.storageStateCheck.cron}") String storageStateCheckCron) {
         this.storageStateCheckCron = storageStateCheckCron;
     }
 
-    @Inject
+    @Autowired
     public void setConsistencyCheckCount(@Value("${arcstorage.consistencyCheck.count:#{null}}") Integer consistencyCheckCount) {
         this.consistencyCheckCount = consistencyCheckCount;
     }
