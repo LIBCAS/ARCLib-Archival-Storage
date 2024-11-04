@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -196,7 +197,7 @@ public class LocalFsProcessor implements StorageService {
                 Files.deleteIfExists(folder.resolve(objectIdAtStorage));
             } else {
                 if (objectMetadata != null) {
-                    if (objectMetadata.getCreated() != null && objectMetadata.getCreated().isAfter(forgetAuditTimestamp)) {
+                    if (objectMetadata.getCreated() != null && objectMetadata.getCreated().truncatedTo(ChronoUnit.MILLIS).isAfter(forgetAuditTimestamp.truncatedTo(ChronoUnit.MILLIS))) {
                         log.trace("skipping propagation of FORGET operation on {} as the forget operation was related to object which has been overridden by other", objectIdAtStorage);
                         return;
                     }
@@ -376,7 +377,7 @@ public class LocalFsProcessor implements StorageService {
         if (metadataAtStorage == null)
             throw new FileDoesNotExistException(metadataFilePath(folder, object.getStorageId()).toString(), storage);
         boolean stateMetadataConsistent = metadataAtStorage.getState() == object.getState();
-        boolean timestampMetadataConsistent = object.getCreated().equals(metadataAtStorage.getCreated());
+        boolean timestampMetadataConsistent = object.getCreated().getEpochSecond() == (metadataAtStorage.getCreated().getEpochSecond());
         boolean checksumMetadataConsistent = object.getChecksum().equals(metadataAtStorage.getChecksum());
         info.setMetadataConsistent(stateMetadataConsistent && checksumMetadataConsistent && timestampMetadataConsistent);
         if (object.getState().contentMustBeStoredAtLogicalStorage()) {

@@ -12,3 +12,4 @@ data
 application.yml
 application.properties
 local-storage-folder/
+sample-storage-dir/

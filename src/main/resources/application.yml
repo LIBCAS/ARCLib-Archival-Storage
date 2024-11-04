@@ -16,7 +16,6 @@ spring:
     password: changeme
   jpa:
     show-sql: false
-    database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
       ddl-auto: validate
       naming-strategy: org.hibernate.cfg.ImprovedNamingStrategy

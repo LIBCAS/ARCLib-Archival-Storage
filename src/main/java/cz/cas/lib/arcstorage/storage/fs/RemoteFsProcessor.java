@@ -347,7 +347,7 @@ public class RemoteFsProcessor implements StorageService {
                 if (metadataAtStorage == null)
                     throw new FileDoesNotExistException(metadataFilePath(folder, object.getStorageId()), storage);
                 boolean stateMetadataConsistent = metadataAtStorage.getState() == object.getState();
-                boolean timestampMetadataConsistent = object.getCreated().equals(metadataAtStorage.getCreated());
+                boolean timestampMetadataConsistent = object.getCreated().getEpochSecond() == (metadataAtStorage.getCreated().getEpochSecond());
                 boolean checksumMetadataConsistent = object.getChecksum().equals(metadataAtStorage.getChecksum());
                 info.setMetadataConsistent(stateMetadataConsistent && checksumMetadataConsistent && timestampMetadataConsistent);
                 if (object.getState().contentMustBeStoredAtLogicalStorage()) {
