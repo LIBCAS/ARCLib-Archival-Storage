@@ -14,6 +14,7 @@ import cz.cas.lib.arcstorage.storage.StorageUtils;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import lombok.Getter;
+import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.util.Strings;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -47,6 +48,7 @@ public class CephS3Test extends StorageServiceTest {
     private static String sshUser;
     private static String cluster;
     private static String cephBinHome;
+    private static String region;
 
     @BeforeClass
     public static void beforeClass() throws IOException {
@@ -56,12 +58,14 @@ public class CephS3Test extends StorageServiceTest {
         storage.setPort(Integer.parseInt(props.getProperty("test.ceph.port")));
         storage.setPriority(1);
         storage.setStorageType(StorageType.CEPH);
-        storage.setConfig("{\"adapterType\":\"S3\"," +
-                "\"userKey\":\"" + props.getProperty("test.ceph.s3.user.key") + "\"," +
-                "\"userSecret\":\"" + props.getProperty("test.ceph.s3.user.secret") + "\"}");
-        storage.setReachable(true);
         userKey = props.getProperty("test.ceph.s3.user.key");
+        region = props.getProperty("test.ceph.region");
         String unsanitizedSecretKey = props.getProperty("test.ceph.s3.user.secret");
+        storage.setConfig("{\"adapterType\":\"S3\"," +
+                "\"region\":" + (StringUtils.isBlank(region) ? "null" : StringUtils.wrap(region, "\"")) + "," +
+                "\"userKey\":\"" + userKey + "\"," +
+                "\"userSecret\":\"" + unsanitizedSecretKey + "\"}");
+        storage.setReachable(true);
         secretKey = Strings.isNullOrEmpty(unsanitizedSecretKey) ? "ldap" : unsanitizedSecretKey;
         https = Boolean.parseBoolean(props.getProperty("test.ceph.https"));
         bucketName = props.getProperty("test.ceph.bucketname");
@@ -73,7 +77,7 @@ public class CephS3Test extends StorageServiceTest {
 
     @Before
     public void before() throws IOException {
-        service = new CephS3StorageService(storage, userKey, secretKey, https, null, 10000, sshServer, sshPort, sshKeyPath, sshUser, virtualHost, cluster, cephBinHome);
+        service = new CephS3StorageService(storage, userKey, secretKey, https, region, 10000, sshServer, sshPort, sshKeyPath, sshUser, virtualHost, cluster, cephBinHome);
     }
 
     @Override

@@ -70,8 +70,6 @@ public class CephS3StorageService implements StorageService {
     private String sshUserName;
     private String cluster;
     private String cephBinHome;
-
-    //not used for now
     private String region;
 
     public CephS3StorageService(Storage storage,
