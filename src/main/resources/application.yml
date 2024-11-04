@@ -3,6 +3,8 @@ server:
 spring:
   servlet:
     multipart:
+      max-file-size: -1
+      max-request-size: -1
       location: tmp # folder to which uploaded files are written before sent to logical storages.. also used when downloading files etc.
   application:
     name: arcstorage
