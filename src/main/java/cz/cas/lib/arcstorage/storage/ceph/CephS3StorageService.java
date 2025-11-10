@@ -16,12 +16,12 @@ import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.StorageUtils;
 import cz.cas.lib.arcstorage.storage.exception.*;
 import lombok.Getter;
-import lombok.NonNull;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import net.schmizz.sshj.SSHClient;
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier;
 import org.apache.commons.io.input.NullInputStream;
+import org.springframework.lang.NonNull;
 
 import java.io.*;
 import java.time.Instant;
@@ -129,29 +129,30 @@ public class CephS3StorageService implements StorageService {
     }
 
     @Override
-    public void storeObject(ArchivalObjectDto objectDto, AtomicBoolean rollback, String dataSpace) throws StorageException {
+    public void storeObject(ArchivalObjectDto objectDto, AtomicBoolean rollback, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
         try {
-            AmazonS3 s3 = connect();
-            String id = objectDto.getStorageId();
             switch (objectDto.getState()) {
                 case DELETION_FAILURE:
-                    storeMetadata(s3, id, objectDto.getChecksum(), ObjectState.DELETED, dataSpace, objectDto.getCreated());
+                case DELETED:
+                    delete(objectDto, dataSpace, operationTimestamp);
                     break;
                 case ARCHIVAL_FAILURE:
                 case ROLLBACK_FAILURE:
-                    storeMetadata(s3, id, objectDto.getChecksum(), ObjectState.ROLLED_BACK, dataSpace, objectDto.getCreated());
-                    break;
                 case ROLLED_BACK:
-                case DELETED:
-                    storeMetadata(s3, id, objectDto.getChecksum(), objectDto.getState(), dataSpace, objectDto.getCreated());
-                    break;
-                case REMOVED:
-                    storeFile(s3, objectDto.getStorageId(), objectDto.getInputStream(), objectDto.getChecksum(), rollback, dataSpace, objectDto.getCreated());
-                    remove(objectDto, dataSpace, false);
+                    rollbackObject(objectDto, dataSpace, operationTimestamp);
                     break;
                 case ARCHIVED:
                 case PROCESSING:
+                case REMOVED:
+                    AmazonS3 s3 = connect();
+                    boolean newerObjectExists = checkIfNewerObjectExits(s3, dataSpace, objectDto.getStorageId(), operationTimestamp);
+                    if (newerObjectExists) {
+                        return;
+                    }
                     storeFile(s3, objectDto.getStorageId(), objectDto.getInputStream(), objectDto.getChecksum(), rollback, dataSpace, objectDto.getCreated());
+                    if (objectDto.getState() == ObjectState.REMOVED) {
+                        setState(s3, dataSpace, objectDto, ObjectState.REMOVED, operationTimestamp);
+                    }
                     break;
                 default:
                     throw new IllegalStateException(objectDto.toString());
@@ -178,67 +179,64 @@ public class CephS3StorageService implements StorageService {
     }
 
     @Override
-    public void delete(ArchivalObjectDto sipDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException {
-        if (createMetaFileIfMissing) {
-            throw new UnsupportedOperationException("not implemented yet");
-        }
+    public void delete(ArchivalObjectDto sipDto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
         AmazonS3 s3 = connect();
-        String metadataId = toMetadataObjectId(sipDto.getStorageId());
-        ObjectMetadata oldMetadata = s3.getObjectMetadata(dataSpace, metadataId);
-        oldMetadata.addUserMetadata(STATE_KEY, ObjectState.DELETED.toString());
-        ObjectMetadata newMetadata = new ObjectMetadata();
-        newMetadata.setUserMetadata(oldMetadata.getUserMetadata());
-        s3.putObject(dataSpace, toMetadataObjectId(sipDto.getStorageId()), new NullInputStream(0), newMetadata);
-        s3.deleteObject(dataSpace, sipDto.getStorageId());
+        boolean deleted = setState(s3, dataSpace, sipDto, ObjectState.DELETED, operationTimestamp);
+        if (deleted) {
+            s3.deleteObject(dataSpace, sipDto.getStorageId());
+        }
     }
 
     @Override
-    public void remove(ArchivalObjectDto sipDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException {
-        if (createMetaFileIfMissing) {
-            throw new UnsupportedOperationException("not implemented yet");
-        }
+    public void remove(ArchivalObjectDto sipDto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
         AmazonS3 s3 = connect();
-        String metadataId = toMetadataObjectId(sipDto.getStorageId());
-        ObjectMetadata oldMetadata = s3.getObjectMetadata(dataSpace, metadataId);
-        oldMetadata.addUserMetadata(STATE_KEY, ObjectState.REMOVED.toString());
-        ObjectMetadata newMetadata = new ObjectMetadata();
-        newMetadata.setUserMetadata(oldMetadata.getUserMetadata());
-        s3.putObject(dataSpace, toMetadataObjectId(sipDto.getStorageId()), new NullInputStream(0), newMetadata);
+        setState(s3, dataSpace, sipDto, ObjectState.REMOVED, operationTimestamp);
     }
 
     @Override
-    public void renew(ArchivalObjectDto sipDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException {
-        if (createMetaFileIfMissing) {
-            throw new UnsupportedOperationException("not implemented yet");
-        }
+    public void renew(ArchivalObjectDto sipDto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
         AmazonS3 s3 = connect();
-        String metadataId = toMetadataObjectId(sipDto.getStorageId());
-        ObjectMetadata oldMetadata = s3.getObjectMetadata(dataSpace, metadataId);
-        oldMetadata.addUserMetadata(STATE_KEY, ObjectState.ARCHIVED.toString());
-        ObjectMetadata newMetadata = new ObjectMetadata();
-        newMetadata.setUserMetadata(oldMetadata.getUserMetadata());
-        s3.putObject(dataSpace, toMetadataObjectId(sipDto.getStorageId()), new NullInputStream(0), newMetadata);
+        setState(s3, dataSpace, sipDto, ObjectState.ARCHIVED, operationTimestamp);
     }
 
 
     @Override
-    public void rollbackAip(AipDto aipDto, String dataSpace) {
+    public void rollbackAip(AipDto aipDto, String dataSpace, @NonNull Instant operationTimestamp) {
         AmazonS3 s3 = connect();
-        rollbackFile(s3, aipDto.getSip(), dataSpace);
+        rollbackFile(s3, aipDto.getSip(), dataSpace, operationTimestamp);
         for (ArchivalObjectDto xml : aipDto.getXmls()) {
-            rollbackFile(s3, xml, dataSpace);
+            rollbackFile(s3, xml, dataSpace, operationTimestamp);
         }
     }
 
     @Override
-    public void rollbackObject(ArchivalObjectDto dto, String dataSpace) throws StorageException {
+    public void rollbackObject(ArchivalObjectDto dto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
         AmazonS3 s3 = connect();
-        rollbackFile(s3, dto, dataSpace);
+        rollbackFile(s3, dto, dataSpace, operationTimestamp);
     }
 
     @Override
-    public void forgetObject(String objectIdAtStorage, String dataSpace, Instant forgetAuditTimestamp) throws StorageException {
-        throw new UnsupportedOperationException("not implemented yet");
+    public void forgetObject(String objectIdAtStorage, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
+        String metadataId = toMetadataObjectId(objectIdAtStorage);
+        AmazonS3 s3 = connect();
+        boolean exists = s3.doesObjectExist(dataSpace, metadataId);
+        ObjectMetadata objectMetadata;
+        if (!exists) {
+            objectMetadata = new ObjectMetadata();
+            objectMetadata.setContentLength(0);
+        } else {
+            objectMetadata = s3.getObjectMetadata(dataSpace, metadataId);
+            String creationTimestamp = objectMetadata.getUserMetadata().get(CREATED_KEY);
+            if (creationTimestamp != null && Long.parseLong(creationTimestamp) > operationTimestamp.getEpochSecond()) {
+                log.info("skipped setting {} on {} as the object creation timestamp is newer then timestamp of the operation", ObjectState.FORGOT, objectIdAtStorage);
+                return;
+            }
+        }
+        objectMetadata.addUserMetadata(STATE_KEY, ObjectState.FORGOT.toString());
+        ObjectMetadata newMetadata = new ObjectMetadata();
+        newMetadata.setUserMetadata(objectMetadata.getUserMetadata());
+        s3.putObject(dataSpace, toMetadataObjectId(objectIdAtStorage), new NullInputStream(0), newMetadata);
+        s3.deleteObject(dataSpace, objectIdAtStorage);
     }
 
     @Override
@@ -350,7 +348,7 @@ public class CephS3StorageService implements StorageService {
                 counter.incrementAndGet();
                 continue;
             }
-            String dataspace = inputObject.getOwner().getDataSpace();
+            String dataspace = inputObject.getDataSpace();
             boolean objectMetadataExists = s3.doesObjectExist(dataspace, toMetadataObjectId(inputObject.getStorageId()));
             if (objectMetadataExists) {
                 ObjectMetadata objectMetadata = s3.getObjectMetadata(dataspace, toMetadataObjectId(inputObject.getStorageId()));
@@ -485,15 +483,55 @@ public class CephS3StorageService implements StorageService {
         }
     }
 
-    void rollbackFile(AmazonS3 s3, ArchivalObjectDto dto, String dataSpace) {
-        String id = dto.getStorageId();
-        storeMetadata(s3, id, dto.getChecksum(), ObjectState.ROLLED_BACK, dataSpace, dto.getCreated());
-        List<MultipartUpload> multipartUploads = s3.listMultipartUploads(new ListMultipartUploadsRequest(dataSpace).withPrefix(id)).getMultipartUploads();
-        if (multipartUploads.size() == 1)
-            s3.abortMultipartUpload(new AbortMultipartUploadRequest(dataSpace, id, multipartUploads.get(0).getUploadId()));
-        else if (multipartUploads.size() > 1)
-            throw new GeneralException("unexpected error during rollback of file: " + id + " : there are more than one upload in progress");
-        s3.deleteObject(dataSpace, id);
+    private boolean checkIfNewerObjectExits(AmazonS3 s3, String dataSpace, String objectIdAtStorage, Instant timestampToCompareWith) {
+        String metadataId = toMetadataObjectId(objectIdAtStorage);
+        boolean exists = s3.doesObjectExist(dataSpace, metadataId);
+        ObjectMetadata objectMetadata;
+        if (exists) {
+            objectMetadata = s3.getObjectMetadata(dataSpace, metadataId);
+            String creationTimestamp = objectMetadata.getUserMetadata().get(CREATED_KEY);
+            return creationTimestamp != null && Long.parseLong(creationTimestamp) > timestampToCompareWith.getEpochSecond();
+        }
+        return false;
+    }
+
+    void rollbackFile(AmazonS3 s3, ArchivalObjectDto dto, String dataSpace, @NonNull Instant operationTimestamp) {
+        boolean rolledBack = setState(s3, dataSpace, dto, ObjectState.ROLLED_BACK, operationTimestamp);
+        if (rolledBack) {
+            List<MultipartUpload> multipartUploads = s3.listMultipartUploads(new ListMultipartUploadsRequest(dataSpace).withPrefix(dto.getStorageId())).getMultipartUploads();
+            if (multipartUploads.size() == 1)
+                s3.abortMultipartUpload(new AbortMultipartUploadRequest(dataSpace, dto.getStorageId(), multipartUploads.get(0).getUploadId()));
+            else if (multipartUploads.size() > 1)
+                throw new GeneralException("unexpected error during rollback of file: " + dto.getStorageId() + " : there are more than one upload in progress");
+            s3.deleteObject(dataSpace, dto.getStorageId());
+        }
+    }
+
+    /**
+     * @return true if the state was set, false if not (operation skipped)
+     */
+    boolean setState(AmazonS3 s3, String dataSpace, ArchivalObjectDto object, ObjectState state, Instant operationTimestamp) {
+        String metadataId = toMetadataObjectId(object.getStorageId());
+        boolean exists = s3.doesObjectExist(dataSpace, metadataId);
+        ObjectMetadata objectMetadata;
+        if (!exists) {
+            objectMetadata = new ObjectMetadata();
+            objectMetadata.addUserMetadata(object.getChecksum().getType().toString(), object.getChecksum().getValue());
+            objectMetadata.addUserMetadata(CREATED_KEY, Long.toString(object.getCreated().getEpochSecond()));
+            objectMetadata.setContentLength(0);
+        } else {
+            objectMetadata = s3.getObjectMetadata(dataSpace, metadataId);
+            String creationTimestamp = objectMetadata.getUserMetadata().get(CREATED_KEY);
+            if (creationTimestamp != null && Long.parseLong(creationTimestamp) > operationTimestamp.getEpochSecond()) {
+                log.info("skipped setting {} on {} as the object creation timestamp is newer then timestamp of the operation", state, object.getStorageId());
+                return false;
+            }
+        }
+        objectMetadata.addUserMetadata(STATE_KEY, state.toString());
+        ObjectMetadata newMetadata = new ObjectMetadata();
+        newMetadata.setUserMetadata(objectMetadata.getUserMetadata());
+        s3.putObject(dataSpace, toMetadataObjectId(object.getStorageId()), new NullInputStream(0), newMetadata);
+        return true;
     }
 
     AmazonS3 connect() {

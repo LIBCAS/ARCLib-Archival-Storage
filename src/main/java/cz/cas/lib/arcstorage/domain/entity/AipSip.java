@@ -5,13 +5,13 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
 import cz.cas.lib.arcstorage.dto.Checksum;
 import cz.cas.lib.arcstorage.dto.ObjectState;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -102,6 +102,6 @@ public class AipSip extends ArchivalObject {
 
     @Override
     public ArchivalObjectDto toDto() {
-        return new ArchivalObjectDto(id, id, getChecksum(), getOwner(), null, getState(), getCreated(), ObjectType.SIP);
+        return new ArchivalObjectDto(id, id, getChecksum(), getOwner().getDataSpace(), null, getState(), getCreated(), ObjectType.SIP);
     }
 }

@@ -29,7 +29,7 @@ Objects which metadata were not consistent:
 </#list>
 </p>
 <p>
-Objects which metadata were successfully recovered from other storage:
+Objects which metadata were successfully recovered from database:
 <br>
 <#list recoveredMetadata as rm>${rm}<#sep>
 <br>

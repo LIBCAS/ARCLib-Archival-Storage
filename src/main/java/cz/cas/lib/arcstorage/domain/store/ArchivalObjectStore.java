@@ -19,9 +19,10 @@ public class ArchivalObjectStore extends DomainStore<ArchivalObject, QArchivalOb
     }
 
     public List<ArchivalObject> findProcessingObjects() {
+        QArchivalObject q = qObject();
         List<ArchivalObject> fetch = query()
-                .select(qObject())
-                .where(qObject().state.in(ObjectState.PROCESSING, ObjectState.PRE_PROCESSING))
+                .select(q)
+                .where(q.state.in(ObjectState.PROCESSING, ObjectState.PRE_PROCESSING))
                 .fetch();
         detachAll();
         return fetch;

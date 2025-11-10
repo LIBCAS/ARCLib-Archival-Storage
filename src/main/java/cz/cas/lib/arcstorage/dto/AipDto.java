@@ -1,7 +1,8 @@
 package cz.cas.lib.arcstorage.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import cz.cas.lib.arcstorage.domain.entity.ObjectType;
-import cz.cas.lib.arcstorage.domain.entity.User;
+import cz.cas.lib.arcstorage.jms.ArchivalObjectJmsDto;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -23,7 +24,7 @@ import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
  * </p>
  */
 @NoArgsConstructor
-public class AipDto {
+public class AipDto implements ArchivalObjectJmsDto {
 
     /**
      * DTO for SIP object related to this AIP.
@@ -41,10 +42,10 @@ public class AipDto {
     /**
      * Constructor used when transferring this DTO from service layer to storage layer. One XML with version 1 and null id is added.
      */
-    public AipDto(String ownerId, String sipId, InputStream sipStream, Checksum sipChecksum, InputStream aipXmlStream, Checksum xmlChecksum) {
+    public AipDto(String dataSpace, String sipId, InputStream sipStream, Checksum sipChecksum, InputStream aipXmlStream, Checksum xmlChecksum) {
         Instant now = Instant.now();
-        sip = new ArchivalObjectDto(sipId, sipId, sipChecksum, new User(ownerId), sipStream, ObjectState.PRE_PROCESSING, now, ObjectType.SIP);
-        xmls.add(new ArchivalObjectDto(toXmlId(sipId, 1), null, xmlChecksum, new User(ownerId), aipXmlStream, ObjectState.PRE_PROCESSING, now, ObjectType.XML));
+        sip = new ArchivalObjectDto(sipId, sipId, sipChecksum, dataSpace, sipStream, ObjectState.PRE_PROCESSING, now, ObjectType.SIP);
+        xmls.add(new ArchivalObjectDto(toXmlId(sipId, 1), null, xmlChecksum, dataSpace, aipXmlStream, ObjectState.PRE_PROCESSING, now, ObjectType.XML));
     }
 
     /**
@@ -67,6 +68,7 @@ public class AipDto {
     /**
      * Used when the aip has single XML i.e. it is just under process related to creation.
      */
+    @JsonIgnore
     public ArchivalObjectDto getXml() {
         return xmls.get(0);
     }

@@ -3,12 +3,11 @@ package cz.cas.lib.arcstorage.domain.views;
 import cz.cas.lib.arcstorage.domain.entity.AipXml;
 import cz.cas.lib.arcstorage.domain.entity.ObjectType;
 import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
-import lombok.Getter;
-import org.hibernate.annotations.Immutable;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import lombok.Getter;
+import org.hibernate.annotations.Immutable;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 
@@ -27,7 +26,7 @@ public class AipXmlLightweightView extends ArchivalObjectLightweightView {
     private String arcstorageAipSipId;
 
     public ArchivalObjectDto toDto() {
-        return new ArchivalObjectDto(toXmlId(arcstorageAipSipId, version), id, checksum, owner, null, state, created, ObjectType.XML);
+        return new ArchivalObjectDto(toXmlId(arcstorageAipSipId, version), id, checksum, owner.getDataSpace(), null, state, created, ObjectType.XML);
     }
 }
 

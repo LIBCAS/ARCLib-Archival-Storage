@@ -1,11 +1,11 @@
 package cz.cas.lib.arcstorage.api;
 
 import cz.cas.lib.arcstorage.api.multipart.TmpFolderSizeLimitReachedException;
-import cz.cas.lib.arcstorage.storagesync.backup.BackupProcessException;
 import cz.cas.lib.arcstorage.exception.BadRequestException;
 import cz.cas.lib.arcstorage.exception.ConflictObject;
 import cz.cas.lib.arcstorage.exception.ForbiddenByConfigException;
 import cz.cas.lib.arcstorage.exception.MissingObject;
+import cz.cas.lib.arcstorage.jms.JmsQueueNotEmptyException;
 import cz.cas.lib.arcstorage.service.exception.BadXmlVersionProvidedException;
 import cz.cas.lib.arcstorage.service.exception.InvalidChecksumException;
 import cz.cas.lib.arcstorage.service.exception.ReadOnlyStateException;
@@ -16,9 +16,8 @@ import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageReachable
 import cz.cas.lib.arcstorage.service.exception.storage.ObjectCouldNotBeRetrievedException;
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
+import cz.cas.lib.arcstorage.storagesync.backup.BackupProcessException;
 import cz.cas.lib.arcstorage.storagesync.newstorage.exception.CantCreateDataspaceException;
-import cz.cas.lib.arcstorage.storagesync.newstorage.exception.StorageStillProcessObjectsException;
-import cz.cas.lib.arcstorage.storagesync.newstorage.exception.SynchronizationInProgressException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -84,7 +83,6 @@ public class ResourceExceptionHandler {
 
     @ExceptionHandler({
             ForbiddenByConfigException.class,
-            SynchronizationInProgressException.class,
             StateException.class,
             ReadOnlyStateRequiredException.class,
             UnsupportedOperationException.class})
@@ -92,7 +90,7 @@ public class ResourceExceptionHandler {
         return errorResponse(e, HttpStatus.FORBIDDEN);
     }
 
-    @ExceptionHandler(StorageStillProcessObjectsException.class)
+    @ExceptionHandler(JmsQueueNotEmptyException.class)
     public ResponseEntity locked(Exception e) {
         return errorResponse(e, HttpStatus.LOCKED);
     }
@@ -115,7 +113,7 @@ public class ResourceExceptionHandler {
     }
 
     private ResponseEntity errorResponse(Throwable throwable, HttpStatus status) {
-            log.error("error caught: " + throwable.toString(), throwable);
+        log.error("error caught: " + throwable.toString(), throwable);
         return ResponseEntity.status(status).body(throwable.toString());
     }
 }

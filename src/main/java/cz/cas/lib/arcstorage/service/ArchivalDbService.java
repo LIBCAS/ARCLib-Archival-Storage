@@ -26,7 +26,6 @@ import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.storagesync.AuditedOperation;
 import cz.cas.lib.arcstorage.storagesync.ObjectAudit;
 import cz.cas.lib.arcstorage.storagesync.ObjectAuditStore;
-import cz.cas.lib.arcstorage.util.ApplicationContextUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,12 +33,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -102,8 +100,6 @@ public class ArchivalDbService {
             log.debug("Creation of AIP with id " + sip + " has been registered.");
             if (sip.getXmls().size() == 0)
                 sip.addXml(xml);
-            ApplicationContextUtils.getProcessingObjects().put(sipId, Pair.of(new AtomicBoolean(false), new ReentrantLock()));
-            ApplicationContextUtils.getProcessingObjects().put(xml.getId(), Pair.of(new AtomicBoolean(false), new ReentrantLock()));
             return Pair.of(sip, archivalRetry);
         });
     }
@@ -166,6 +162,7 @@ public class ArchivalDbService {
         } else {
             //successor of successfully archived previous version
             aipXml = new AipXml(UUID.randomUUID().toString(), xmlChecksum, new User(userDetails.getId()), new AipSip(sipId), version, ObjectState.PRE_PROCESSING);
+            aipXml.setCreated(Instant.now());
         }
         return transactionTemplate.execute(status -> {
             if (systemStateService.get().isReadOnly())
@@ -174,7 +171,6 @@ public class ArchivalDbService {
             if (archivalRetry) {
                 objectAuditStore.save(new ObjectAudit(xml, new User(userDetails.getId()), AuditedOperation.ARCHIVAL_RETRY));
             }
-            ApplicationContextUtils.getProcessingObjects().put(aipXml.getId(), Pair.of(new AtomicBoolean(false), new ReentrantLock()));
             return Pair.of(xml, archivalRetry);
         });
     }
@@ -189,7 +185,7 @@ public class ArchivalDbService {
      * @throws FailedStateException
      * @throws ReadOnlyStateException
      */
-    public ArchivalObject deleteObject(String id) throws StillProcessingStateException, RollbackStateException, FailedStateException, ReadOnlyStateException {
+    public Pair<ArchivalObject, ObjectAudit> deleteObject(String id) throws StillProcessingStateException, RollbackStateException, FailedStateException, ReadOnlyStateException {
         ArchivalObject obj = archivalObjectStore.find(id);
         notNull(obj, () -> {
             log.warn("Could not find object: " + id);
@@ -208,13 +204,14 @@ public class ArchivalDbService {
             case ROLLED_BACK:
                 throw new RollbackStateException(obj);
         }
+
         obj.setState(ObjectState.DELETED);
         return transactionTemplate.execute(status -> {
             if (systemStateService.get().isReadOnly())
                 throw new ReadOnlyStateException();
             archivalObjectStore.save(obj);
-            objectAuditStore.save(new ObjectAudit(obj, new User(userDetails.getId()), AuditedOperation.DELETION));
-            return obj;
+            ObjectAudit audit = objectAuditStore.save(new ObjectAudit(obj, new User(userDetails.getId()), AuditedOperation.DELETION));
+            return Pair.of(obj, audit);
         });
     }
 
@@ -225,14 +222,14 @@ public class ArchivalDbService {
      * @return
      * @throws ReadOnlyStateException
      */
-    public ArchivalObject rollbackObject(ArchivalObject obj) throws ReadOnlyStateException {
+    public Pair<ArchivalObject, ObjectAudit> rollbackObject(ArchivalObject obj) throws ReadOnlyStateException {
         obj.setState(ObjectState.ROLLED_BACK);
         return transactionTemplate.execute(status -> {
             if (systemStateService.get().isReadOnly())
                 throw new ReadOnlyStateException();
             archivalObjectStore.save(obj);
-            objectAuditStore.save(new ObjectAudit(obj, new User(userDetails.getId()), AuditedOperation.ROLLBACK));
-            return obj;
+            ObjectAudit audit = objectAuditStore.save(new ObjectAudit(obj, new User(userDetails.getId()), AuditedOperation.ROLLBACK));
+            return Pair.of(obj, audit);
         });
     }
 
@@ -247,7 +244,7 @@ public class ArchivalDbService {
      * @throws FailedStateException
      * @throws ReadOnlyStateException
      */
-    public ArchivalObject removeObject(String id) throws DeletedStateException, RollbackStateException, StillProcessingStateException, FailedStateException, ReadOnlyStateException {
+    public Pair<ArchivalObject, ObjectAudit> removeObject(String id) throws DeletedStateException, RollbackStateException, StillProcessingStateException, FailedStateException, ReadOnlyStateException {
         ArchivalObject obj = archivalObjectStore.find(id);
         notNull(obj, () -> new MissingObject(ArchivalObjectDto.class, id));
         if (obj instanceof AipXml) {
@@ -271,8 +268,8 @@ public class ArchivalDbService {
             if (systemStateService.get().isReadOnly())
                 throw new ReadOnlyStateException();
             archivalObjectStore.save(obj);
-            objectAuditStore.save(new ObjectAudit(obj, new User(userDetails.getId()), AuditedOperation.REMOVAL));
-            return obj;
+            ObjectAudit audit = objectAuditStore.save(new ObjectAudit(obj, new User(userDetails.getId()), AuditedOperation.REMOVAL));
+            return Pair.of(obj, audit);
         });
     }
 
@@ -287,7 +284,7 @@ public class ArchivalDbService {
      * @throws FailedStateException
      * @throws ReadOnlyStateException
      */
-    public ArchivalObject renewObject(String id) throws DeletedStateException, RollbackStateException, StillProcessingStateException, FailedStateException, ReadOnlyStateException {
+    public Pair<ArchivalObject, ObjectAudit> renewObject(String id) throws DeletedStateException, RollbackStateException, StillProcessingStateException, FailedStateException, ReadOnlyStateException {
         ArchivalObject obj = archivalObjectStore.find(id);
         notNull(obj, () -> {
             log.warn("Could not find object: " + id);
@@ -314,8 +311,8 @@ public class ArchivalDbService {
             if (systemStateService.get().isReadOnly())
                 throw new ReadOnlyStateException();
             archivalObjectStore.save(obj);
-            objectAuditStore.save(new ObjectAudit(obj, new User(userDetails.getId()), AuditedOperation.RENEWAL));
-            return obj;
+            ObjectAudit audit = objectAuditStore.save(new ObjectAudit(obj, new User(userDetails.getId()), AuditedOperation.RENEWAL));
+            return Pair.of(obj, audit);
         });
     }
 
@@ -470,14 +467,17 @@ public class ArchivalDbService {
     }
 
     /**
-     * COMPLETELY deletes the object from DB
+     * COMPLETELY deletes objects from DB
+     *
+     * @return timestamp marked in audit
      */
-    public void forgetObject(ArchivalObject archivalObject) {
-        transactionTemplate.executeWithoutResult(status -> {
+    public Instant forgetObjects(List<ArchivalObject> archivalObjects) {
+        return transactionTemplate.execute(status -> {
             if (systemStateService.get().isReadOnly())
                 throw new ReadOnlyStateException();
-            archivalObjectStore.delete(archivalObject);
-            objectAuditStore.save(new ObjectAudit(archivalObject, new User(userDetails.getId()), AuditedOperation.FORGET));
+            archivalObjects.forEach(o -> archivalObjectStore.delete(o));
+            Set<ObjectAudit> audits = archivalObjects.stream().map(o -> new ObjectAudit(o, new User(userDetails.getId()), AuditedOperation.FORGET)).collect(Collectors.toSet());
+            return objectAuditStore.save(audits).iterator().next().getCreated();
         });
     }
 
@@ -507,16 +507,11 @@ public class ArchivalDbService {
         entity.setChecksum(o.getChecksum());
         entity.setState(o.getState());
         entity.setCreated(o.getCreated());
-        entity.setOwner(o.getOwner());
         return entity;
     }
 
     private void setObjectsStateInternal(ObjectState state, String... dbIds) {
         archivalObjectStore.setObjectsState(state, asList(dbIds));
-        if (state != ObjectState.PROCESSING && state != ObjectState.PRE_PROCESSING)
-            for (String id : dbIds) {
-                ApplicationContextUtils.getProcessingObjects().remove(id);
-            }
         log.debug("State of objects with ids " + Arrays.toString(dbIds) + " has changed to " + state + ".");
     }
 
@@ -553,7 +548,7 @@ public class ArchivalDbService {
     @Autowired
     public void setTransactionTemplate(PlatformTransactionManager transactionManager, @Value("${arcstorage.stateChangeTransactionTimeout}") int timeout) {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
-        transactionTemplate.setPropagationBehaviorName("PROPAGATION_REQUIRES_NEW");
+        transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         transactionTemplate.setTimeout(timeout);
         transactionTemplate.afterPropertiesSet();
     }
@@ -561,10 +556,6 @@ public class ArchivalDbService {
     @Autowired
     public void setUserStore(UserStore userStore) {
         this.userStore = userStore;
-    }
-
-    public void setTransactionTemplateTimeout(int timeout) {
-        transactionTemplate.setTimeout(timeout);
     }
 
     @Autowired

@@ -1,17 +1,21 @@
 package cz.cas.lib.arcstorage.service;
 
 import cz.cas.lib.arcstorage.domain.entity.ArchivalObject;
+import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.domain.entity.SystemState;
+import cz.cas.lib.arcstorage.domain.store.StorageStore;
 import cz.cas.lib.arcstorage.dto.ObjectState;
+import cz.cas.lib.arcstorage.exception.MissingObject;
+import cz.cas.lib.arcstorage.jms.JmsHealthCheckException;
+import cz.cas.lib.arcstorage.jms.JmsQueueNotEmptyException;
 import cz.cas.lib.arcstorage.service.exception.ReadOnlyStateException;
 import cz.cas.lib.arcstorage.service.exception.ReadOnlyStateRequiredException;
+import cz.cas.lib.arcstorage.service.exception.state.StateException;
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
-import cz.cas.lib.arcstorage.storagesync.newstorage.StorageSyncStatus;
-import cz.cas.lib.arcstorage.storagesync.newstorage.StorageSyncStatusStore;
-import cz.cas.lib.arcstorage.storagesync.newstorage.exception.SynchronizationInProgressException;
+import cz.cas.lib.arcstorage.storagesync.CommonSyncService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,20 +25,24 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 
 import static cz.cas.lib.arcstorage.util.Utils.asList;
+import static cz.cas.lib.arcstorage.util.Utils.notNull;
 
 @Service
 @Slf4j
 public class SystemAdministrationService {
 
-    private StorageSyncStatusStore storageSyncStatusStore;
     private StorageProvider storageProvider;
-    private ArchivalAsyncService async;
+    private StorageStore storageStore;
     private ArchivalDbService archivalDbService;
     private Path tmpFolder;
     private SystemStateService systemStateService;
+    private CommonSyncService commonSyncService;
+    private ArchivalService archivalService;
 
     /**
      * Cleans up the storage.
@@ -48,19 +56,19 @@ public class SystemAdministrationService {
      * @return list of objects for clean up
      * @throws SomeLogicalStoragesNotReachableException if any storage is unreachable before the process starts
      * @throws NoLogicalStorageAttachedException        if no logical storage is attached
-     * @throws SynchronizationInProgressException       if some storage is synchronizing at the moment
      */
     public List<ArchivalObject> cleanup(boolean cleanAlsoProcessing) throws SomeLogicalStoragesNotReachableException,
-            NoLogicalStorageAttachedException, ReadOnlyStateException, IOException, SynchronizationInProgressException {
-        StorageSyncStatus storageSyncStatus = storageSyncStatusStore.anySynchronizing();
-        if (storageSyncStatus != null)
-            throw new SynchronizationInProgressException(storageSyncStatus);
+            NoLogicalStorageAttachedException, ReadOnlyStateException, IOException, JmsHealthCheckException {
         log.info("cleanup started, cleaning also processing=" + cleanAlsoProcessing);
-        List<StorageService> storageServices = storageProvider.createAdaptersForWriteOperation(false);
+        Instant now = Instant.now();
         List<ArchivalObject> objectsForCleanup = archivalDbService.findObjectsForCleanup(cleanAlsoProcessing);
         if (cleanAlsoProcessing)
             FileUtils.cleanDirectory(tmpFolder.toFile());
-        async.cleanUp(objectsForCleanup, storageServices);
+        if (objectsForCleanup.isEmpty()) {
+            log.info("no objects for cleanup found");
+        } else {
+            archivalService.cleanUp(objectsForCleanup, now);
+        }
         return objectsForCleanup;
     }
 
@@ -72,17 +80,15 @@ public class SystemAdministrationService {
      *
      * @throws SomeLogicalStoragesNotReachableException if any storage is unreachable before the process starts
      * @throws NoLogicalStorageAttachedException        if no logical storage is attached
-     * @throws SynchronizationInProgressException       if some storage is synchronizing at the moment
      */
-    public void cleanupOne(String objId) throws SomeLogicalStoragesNotReachableException,
-            NoLogicalStorageAttachedException, ReadOnlyStateException, IOException, SynchronizationInProgressException {
-        StorageSyncStatus storageSyncStatus = storageSyncStatusStore.anySynchronizing();
-        if (storageSyncStatus != null)
-            throw new SynchronizationInProgressException(storageSyncStatus);
+    public void cleanupOne(String objId) throws ReadOnlyStateException, JmsHealthCheckException, StateException {
         log.info("cleaning up object: " + objId);
-        List<StorageService> storageServices = storageProvider.createAdaptersForWriteOperation(false);
+        Instant now = Instant.now();
         ArchivalObject objectForCleanup = archivalDbService.getObject(objId);
-        async.cleanUp(asList(objectForCleanup), storageServices);
+        if (!ArchivalService.CLEANUP_ALLOWED_STATES.contains(objectForCleanup.getState())) {
+            throw new StateException(objectForCleanup);
+        }
+        archivalService.cleanUp(asList(objectForCleanup), now);
     }
 
     public void recoverDb(String storageId, boolean override) throws StorageException {
@@ -93,10 +99,18 @@ public class SystemAdministrationService {
         archivalDbService.recoverDbDataFromStorage(adapter, override);
     }
 
+    public void switchPrimaryStorage(String id) throws SomeLogicalStoragesNotReachableException, InterruptedException, JmsQueueNotEmptyException {
+        SystemState systemState = systemStateService.get();
+        if (systemState.getPrimaryStorage() != null && Objects.equals(id, systemState.getPrimaryStorage().getId())) {
+            return;
+        }
+        Storage targetStorage = storageStore.find(id);
+        notNull(targetStorage, () -> new MissingObject(Storage.class, id));
 
-    @Autowired
-    public void setAsync(ArchivalAsyncService async) {
-        this.async = async;
+        commonSyncService.createStorageServiceInReadonlyVacuum(systemState, targetStorage);
+        systemState.setPrimaryStorage(targetStorage);
+        systemState.setReadOnly(false);
+        systemStateService.save(systemState);
     }
 
     @Autowired
@@ -110,11 +124,6 @@ public class SystemAdministrationService {
     }
 
     @Autowired
-    public void setStorageSyncStatusStore(StorageSyncStatusStore storageSyncStatusStore) {
-        this.storageSyncStatusStore = storageSyncStatusStore;
-    }
-
-    @Autowired
     public void setArchivalDbService(ArchivalDbService archivalDbService) {
         this.archivalDbService = archivalDbService;
     }
@@ -122,5 +131,20 @@ public class SystemAdministrationService {
     @Autowired
     public void setSystemStateService(SystemStateService systemStateService) {
         this.systemStateService = systemStateService;
+    }
+
+    @Autowired
+    public void setStorageStore(StorageStore storageStore) {
+        this.storageStore = storageStore;
+    }
+
+    @Autowired
+    public void setCommonSyncService(CommonSyncService commonSyncService) {
+        this.commonSyncService = commonSyncService;
+    }
+
+    @Autowired
+    public void setArchivalService(ArchivalService archivalService) {
+        this.archivalService = archivalService;
     }
 }

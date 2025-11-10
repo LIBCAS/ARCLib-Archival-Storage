@@ -7,10 +7,12 @@ import cz.cas.lib.arcstorage.dto.ObjectRetrievalResource;
 import cz.cas.lib.arcstorage.exception.BadRequestException;
 import cz.cas.lib.arcstorage.security.Roles;
 import cz.cas.lib.arcstorage.service.AipService;
+import cz.cas.lib.arcstorage.service.FileLocationResolver;
 import cz.cas.lib.arcstorage.service.exception.state.*;
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageReachableException;
 import cz.cas.lib.arcstorage.service.exception.storage.ObjectCouldNotBeRetrievedException;
+import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -18,19 +20,17 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import jakarta.annotation.security.RolesAllowed;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
-import jakarta.annotation.security.RolesAllowed;
-import jakarta.servlet.http.HttpServletResponse;
-import jakarta.validation.Valid;
 import java.io.*;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.zip.ZipEntry;
@@ -45,10 +45,10 @@ import static cz.cas.lib.arcstorage.util.Utils.checkUUID;
 public class ObjectReadApi {
 
     private AipService aipService;
-    private Path tmpFolder;
+    private FileLocationResolver fileLocationResolver;
 
     @Operation(summary = "Return specified AIP as a ZIP package")
-    @RequestMapping(value = "/{aipId}", method = RequestMethod.GET)
+    @GetMapping("/{aipId}")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "AIP successfully returned", content = @Content(mediaType = "application/zip", schema = @Schema(type = "string", format = "binary"))),
             @ApiResponse(responseCode = "403", description = "operation forbidden with respect to the current AIP state"),
@@ -63,11 +63,11 @@ public class ObjectReadApi {
             HttpServletResponse response)
             throws IOException, RollbackStateException, DeletedStateException, StillProcessingStateException,
             FailedStateException, ObjectCouldNotBeRetrievedException, BadRequestException, RemovedStateException,
-            NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
+            NoLogicalStorageReachableException, NoLogicalStorageAttachedException, SomeLogicalStoragesNotReachableException {
 
         BiFunction<AipRetrievalResource, ZipOutputStream, Void> fn = (aipRetrievalResource, outputStream) -> {
             try {
-                Path aipDataInTmpDir = tmpFolder.resolve(aipRetrievalResource.getId());
+                Path aipDataInTmpDir = fileLocationResolver.getFileTmpPath(aipRetrievalResource.getId());
                 aipService.exportAipReducedByRegexes(aipId, aipDataInTmpDir, outputStream, null);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
@@ -78,9 +78,36 @@ public class ObjectReadApi {
         exportAipData(aipId, all, response, fn);
     }
 
+    @Operation(summary = "Return data (zip part) of specified AIP without rezipping the data thus keeping original checksum")
+    @GetMapping("/{aipId}/data")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "AIP data successfully returned", content = @Content(mediaType = "application/zip", schema = @Schema(type = "string", format = "binary"))),
+            @ApiResponse(responseCode = "403", description = "operation forbidden with respect to the current AIP state"),
+            @ApiResponse(responseCode = "400", description = "bad request, e.g. the specified id is not a valid UUID"),
+            @ApiResponse(responseCode = "503", description = "all attached logical storages are currently unreachable"),
+            @ApiResponse(responseCode = "500", description = "file is corrupted at all storages, no logical storage attached, or other internal server error")
+    })
+    @RolesAllowed({Roles.READ, Roles.READ_WRITE})
+    public void getAipDataAsIs(
+            @Parameter(description = "AIP ID", required = true) @PathVariable("aipId") String aipId,
+            HttpServletResponse response)
+            throws IOException, RollbackStateException, DeletedStateException, StillProcessingStateException,
+            FailedStateException, ObjectCouldNotBeRetrievedException, BadRequestException, RemovedStateException,
+            NoLogicalStorageReachableException, NoLogicalStorageAttachedException, SomeLogicalStoragesNotReachableException {
+
+        checkUUID(aipId);
+        response.setContentType("application/zip");
+        response.setStatus(200);
+        response.addHeader("Content-Disposition", "attachment; filename=" + aipId + ".zip");
+
+        try (AipRetrievalResource aip = aipService.getAip(aipId, false)) {
+            IOUtils.copyLarge(aip.getSip(), response.getOutputStream());
+        }
+    }
+
     @Operation(summary = "Return specified files of AIP packed in ZIP", description = "DOES NOT validate the AIP.. " +
             "does not return any AIP XML, requires some local storage to be reachable")
-    @RequestMapping(value = "/{aipId}/files-specified", method = RequestMethod.POST)
+    @PostMapping("/{aipId}/files-specified")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "AIP successfully returned", content = @Content(mediaType = "application/zip", schema = @Schema(type = "string", format = "binary"))),
             @ApiResponse(responseCode = "403", description = "operation forbidden with respect to the current AIP state"),
@@ -95,7 +122,7 @@ public class ObjectReadApi {
             HttpServletResponse response)
             throws IOException, RollbackStateException, DeletedStateException, StillProcessingStateException,
             FailedStateException, BadRequestException,
-            NoLogicalStorageReachableException, NoLogicalStorageAttachedException, StorageException {
+            NoLogicalStorageReachableException, NoLogicalStorageAttachedException, StorageException, SomeLogicalStoragesNotReachableException {
         checkUUID(aipId);
 
         response.setContentType("application/zip");
@@ -106,7 +133,7 @@ public class ObjectReadApi {
 
     @Operation(summary = "Return specified files of AIP packed in ZIP", description = "DOES NOT validate the AIP, " +
             "does not return any AIP XML, requires some local storage to be reachable")
-    @RequestMapping(value = "/{aipId}/files-reduced", method = RequestMethod.POST)
+    @PostMapping("/{aipId}/files-reduced")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "AIP successfully returned", content = @Content(mediaType = "application/zip", schema = @Schema(type = "string", format = "binary"))),
             @ApiResponse(responseCode = "403", description = "operation forbidden with respect to the current AIP state"),
@@ -121,7 +148,7 @@ public class ObjectReadApi {
             HttpServletResponse response)
             throws IOException, RollbackStateException, DeletedStateException, StillProcessingStateException,
             FailedStateException, BadRequestException,
-            NoLogicalStorageReachableException, NoLogicalStorageAttachedException, StorageException {
+            NoLogicalStorageReachableException, NoLogicalStorageAttachedException, StorageException, SomeLogicalStoragesNotReachableException {
         checkUUID(aipId);
 
         response.setContentType("application/zip");
@@ -132,7 +159,7 @@ public class ObjectReadApi {
 
     @Operation(summary = "Return AIP with specified files packed in ZIP", description = "validates the AIP and if it is invalid" +
             "tries to recover it from other storage.. does not return only files but also AIP XML(s)")
-    @RequestMapping(value = "/{aipId}/aip-with-files-specified", method = RequestMethod.POST)
+    @PostMapping("/{aipId}/aip-with-files-specified")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "AIP successfully returned", content = @Content(mediaType = "application/zip", schema = @Schema(type = "string", format = "binary"))),
             @ApiResponse(responseCode = "403", description = "operation forbidden with respect to the current AIP state"),
@@ -148,11 +175,11 @@ public class ObjectReadApi {
             HttpServletResponse response)
             throws IOException, RollbackStateException, DeletedStateException, StillProcessingStateException,
             FailedStateException, BadRequestException,
-            NoLogicalStorageReachableException, NoLogicalStorageAttachedException, ObjectCouldNotBeRetrievedException, RemovedStateException {
+            NoLogicalStorageReachableException, NoLogicalStorageAttachedException, ObjectCouldNotBeRetrievedException, RemovedStateException, SomeLogicalStoragesNotReachableException {
 
         BiFunction<AipRetrievalResource, ZipOutputStream, Void> fn = (aipRetrievalResource, outputStream) -> {
             try {
-                Path aipDataInTmpDir = tmpFolder.resolve(aipRetrievalResource.getId());
+                Path aipDataInTmpDir = fileLocationResolver.getFileTmpPath(aipRetrievalResource.getId());
                 aipService.exportAipReducedByFileList(aipId, aipDataInTmpDir, outputStream, filePaths);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
@@ -165,7 +192,7 @@ public class ObjectReadApi {
 
     @Operation(summary = "Return AIP with specified files packed in ZIP", description = "validates the AIP and if it is invalid" +
             "tries to recover it from other storage.. does not return only files but also AIP XML(s)")
-    @RequestMapping(value = "/{aipId}/aip-with-files-reduced", method = RequestMethod.POST)
+    @PostMapping("/{aipId}/aip-with-files-reduced")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "AIP successfully returned", content = @Content(mediaType = "application/zip", schema = @Schema(type = "string", format = "binary"))),
             @ApiResponse(responseCode = "403", description = "operation forbidden with respect to the current AIP state"),
@@ -181,11 +208,11 @@ public class ObjectReadApi {
             HttpServletResponse response)
             throws IOException, RollbackStateException, DeletedStateException, StillProcessingStateException,
             FailedStateException, BadRequestException,
-            NoLogicalStorageReachableException, NoLogicalStorageAttachedException, ObjectCouldNotBeRetrievedException, RemovedStateException {
+            NoLogicalStorageReachableException, NoLogicalStorageAttachedException, ObjectCouldNotBeRetrievedException, RemovedStateException, SomeLogicalStoragesNotReachableException {
 
         BiFunction<AipRetrievalResource, ZipOutputStream, Void> fn = (aipRetrievalResource, outputStream) -> {
             try {
-                Path aipDataInTmpDir = tmpFolder.resolve(aipRetrievalResource.getId());
+                Path aipDataInTmpDir = fileLocationResolver.getFileTmpPath(aipRetrievalResource.getId());
                 aipService.exportAipReducedByRegexes(aipId, aipDataInTmpDir, outputStream, dataReduction);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
@@ -197,7 +224,7 @@ public class ObjectReadApi {
     }
 
     @Operation(summary = "Return specified AIP XML")
-    @RequestMapping(value = "/{aipId}/xml", method = RequestMethod.GET)
+    @GetMapping("/{aipId}/xml")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "AIP XML successfully returned", content = @Content(mediaType = "application/xml", schema = @Schema(type = "string", format = "binary"))),
             @ApiResponse(responseCode = "403", description = "operation forbidden with respect to the current AIP state"),
@@ -211,7 +238,7 @@ public class ObjectReadApi {
             @Parameter(description = "version number of XML, if not set the latest version is returned") @RequestParam(value = "v", defaultValue = "") Integer version,
             HttpServletResponse response) throws StillProcessingStateException,
             RollbackStateException, IOException, FailedStateException, ObjectCouldNotBeRetrievedException,
-            BadRequestException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
+            BadRequestException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException, SomeLogicalStoragesNotReachableException {
         checkUUID(aipId);
         Pair<Integer, ObjectRetrievalResource> retrievedXml = aipService.getXml(aipId, version);
         response.setContentType("application/xml");
@@ -220,12 +247,12 @@ public class ObjectReadApi {
         try (InputStream is = new BufferedInputStream(retrievedXml.getRight().getInputStream())) {
             IOUtils.copyLarge(is, response.getOutputStream());
         } finally {
-            tmpFolder.resolve(retrievedXml.getRight().getId()).toFile().delete();
+            fileLocationResolver.getFileTmpPath(retrievedXml.getRight().getId()).toFile().delete();
         }
     }
 
     @Operation(summary = "Retrieves content of object.", description = "Supported only for AIP data and AIP XML objects. For non-admin users, the content is retrieved only if the object belongs to the users's dataspace.")
-    @RequestMapping(value = "/object/{id}", method = RequestMethod.GET)
+    @GetMapping("/object/{id}")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "content successfully returned", content = @Content(mediaType = "*/*", schema = @Schema(type = "string", format = "binary"))),
             @ApiResponse(responseCode = "403", description = "operation forbidden with respect to the current object state"),
@@ -238,7 +265,7 @@ public class ObjectReadApi {
             @Parameter(description = "DB ID", required = true) @PathVariable("id") String id,
             HttpServletResponse response) throws StillProcessingStateException,
             RollbackStateException, IOException, FailedStateException, ObjectCouldNotBeRetrievedException,
-            BadRequestException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
+            BadRequestException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException, SomeLogicalStoragesNotReachableException {
         checkUUID(id);
         Pair<ArchivalObjectDto, ObjectRetrievalResource> retrievedObject = aipService.getObject(id);
         String suffix;
@@ -260,11 +287,11 @@ public class ObjectReadApi {
         try (InputStream is = new BufferedInputStream(retrievedObject.getRight().getInputStream())) {
             IOUtils.copyLarge(is, response.getOutputStream());
         } finally {
-            tmpFolder.resolve(retrievedObject.getRight().getId()).toFile().delete();
+            fileLocationResolver.getFileTmpPath(retrievedObject.getRight().getId()).toFile().delete();
         }
     }
 
-    private void exportAipData(String aipId, boolean allXmls, HttpServletResponse response, BiFunction<AipRetrievalResource, ZipOutputStream, Void> aipDataExportFunction) throws BadRequestException, NoLogicalStorageAttachedException, ObjectCouldNotBeRetrievedException, NoLogicalStorageReachableException, RollbackStateException, RemovedStateException, StillProcessingStateException, DeletedStateException, FailedStateException, IOException {
+    private void exportAipData(String aipId, boolean allXmls, HttpServletResponse response, BiFunction<AipRetrievalResource, ZipOutputStream, Void> aipDataExportFunction) throws BadRequestException, NoLogicalStorageAttachedException, ObjectCouldNotBeRetrievedException, NoLogicalStorageReachableException, RollbackStateException, RemovedStateException, StillProcessingStateException, DeletedStateException, FailedStateException, IOException, SomeLogicalStoragesNotReachableException {
         checkUUID(aipId);
 
         AipRetrievalResource aipRetrievalResource = aipService.getAip(aipId, allXmls);
@@ -288,9 +315,9 @@ public class ObjectReadApi {
         } finally {
             aipRetrievalResource.close();
             String tmpFileId = aipRetrievalResource.getId();
-            tmpFolder.resolve(tmpFileId).toFile().delete();
+            fileLocationResolver.getFileTmpPath(tmpFileId).toFile().delete();
             for (Integer v : aipRetrievalResource.getXmls().keySet()) {
-                tmpFolder.resolve(toXmlId(tmpFileId, v)).toFile().delete();
+                fileLocationResolver.getFileTmpPath(toXmlId(tmpFileId, v)).toFile().delete();
             }
         }
     }
@@ -301,7 +328,7 @@ public class ObjectReadApi {
     }
 
     @Autowired
-    public void setTmpFolder(@Value("${spring.servlet.multipart.location}") String path) {
-        this.tmpFolder = Paths.get(path);
+    public void setFileLocationResolver(FileLocationResolver fileLocationResolver) {
+        this.fileLocationResolver = fileLocationResolver;
     }
 }

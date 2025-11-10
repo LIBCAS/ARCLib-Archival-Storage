@@ -213,4 +213,30 @@
         </createIndex>
     </changeSet>
 
+    <changeSet id="arcstorage:7" author="tomasek">
+        <addColumn tableName="arcstorage_system_state">
+            <column name="primary_storage_id" type="varchar(255)">
+                <constraints deleteCascade="false" foreignKeyName="arcstorage_system_state_primary_storage_fk"
+                             referencedTableName="arcstorage_storage" referencedColumnNames="id"/>
+            </column>
+        </addColumn>
+        <addColumn tableName="arcstorage_storage">
+            <column name="detached_by_admin" type="datetime"/>
+            <column name="detached_by_error" type="datetime"/>
+        </addColumn>
+        <renameColumn tableName="arcstorage_storage_sync_status" oldColumnName="total_in_this_phase"
+                      newColumnName="total"/>
+        <renameColumn tableName="arcstorage_storage_sync_status" oldColumnName="done_in_this_phase"
+                      newColumnName="done"/>
+        <dropColumn tableName="arcstorage_storage" columnName="synchronizing"/>
+        <dropColumn tableName="arcstorage_storage_sync_status" columnName="stuck_at"/>
+        <dropColumn tableName="arcstorage_storage_sync_status" columnName="phase"/>
+    </changeSet>
+
+    <changeSet id="arcstorage:8" author="tomasek">
+        <addNotNullConstraint tableName="arcstorage_object" columnName="created"/>
+        <addNotNullConstraint tableName="arcstorage_aip_sip" columnName="created"/>
+        <addNotNullConstraint tableName="arcstorage_aip_xml" columnName="created"/>
+    </changeSet>
+
 </databaseChangeLog>

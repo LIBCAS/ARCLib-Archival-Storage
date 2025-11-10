@@ -31,7 +31,8 @@ public class ObjectConsistencyVerificationResultDto {
      */
     private boolean contentConsistent;
     /**
-     * whether the metadata of object stored at storage matches the object metadata stored in database
+     * whether the metadata of object stored at storage matches the object metadata stored in database.. this may be set to true only
+     * if {@link ObjectState#metadataMustBeStoredAtLogicalStorage()} is true
      */
     private boolean metadataConsistent;
     /**
@@ -49,6 +50,20 @@ public class ObjectConsistencyVerificationResultDto {
 
     public boolean considerCleanup() {
         return state.isFail() || (state.isProcessing() && created.isBefore(Instant.now().minus(1, ChronoUnit.DAYS)));
+    }
+
+    @Override
+    public String toString() {
+        return "ObjectConsistencyVerificationResultDto{" +
+                "databaseId='" + databaseId + '\'' +
+                ", storageId='" + storageId + '\'' +
+                ", state=" + state +
+                ", contentConsistent=" + contentConsistent +
+                ", metadataConsistent=" + metadataConsistent +
+                ", storageChecksum=" + storageChecksum +
+                ", databaseChecksum=" + databaseChecksum +
+                ", created=" + created +
+                '}';
     }
 }
 

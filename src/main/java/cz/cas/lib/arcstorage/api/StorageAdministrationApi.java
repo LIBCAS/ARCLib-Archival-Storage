@@ -1,6 +1,7 @@
 package cz.cas.lib.arcstorage.api;
 
 import cz.cas.lib.arcstorage.domain.entity.Storage;
+import cz.cas.lib.arcstorage.domain.entity.SystemState;
 import cz.cas.lib.arcstorage.domain.store.StorageStore;
 import cz.cas.lib.arcstorage.domain.store.Transactional;
 import cz.cas.lib.arcstorage.dto.StorageBasicDto;
@@ -10,26 +11,25 @@ import cz.cas.lib.arcstorage.exception.BadRequestException;
 import cz.cas.lib.arcstorage.exception.ConflictObject;
 import cz.cas.lib.arcstorage.exception.ForbiddenByConfigException;
 import cz.cas.lib.arcstorage.exception.MissingObject;
+import cz.cas.lib.arcstorage.jms.JmsHealthCheckException;
+import cz.cas.lib.arcstorage.jms.JmsQueueNotEmptyException;
 import cz.cas.lib.arcstorage.security.Roles;
 import cz.cas.lib.arcstorage.service.StorageAdministrationService;
 import cz.cas.lib.arcstorage.service.StorageProvider;
 import cz.cas.lib.arcstorage.service.SystemStateService;
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
-import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storagesync.newstorage.StorageSyncStatus;
 import cz.cas.lib.arcstorage.storagesync.newstorage.StorageSyncStatusStore;
 import cz.cas.lib.arcstorage.storagesync.newstorage.exception.CantCreateDataspaceException;
-import cz.cas.lib.arcstorage.storagesync.newstorage.exception.StorageStillProcessObjectsException;
-import cz.cas.lib.arcstorage.storagesync.newstorage.exception.SynchronizationInProgressException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import jakarta.annotation.security.RolesAllowed;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-import jakarta.annotation.security.RolesAllowed;
-import jakarta.validation.Valid;
 import java.util.Collection;
 
 import static cz.cas.lib.arcstorage.util.Utils.checkUUID;
@@ -42,24 +42,24 @@ public class StorageAdministrationApi {
 
     private StorageStore storageStore;
     private SystemStateService systemStateService;
-    private StorageAdministrationService storageAdministrationService;
     private StorageSyncStatusStore storageSyncStatusStore;
     private StorageProvider storageProvider;
+    private StorageAdministrationService storageAdministrationService;
 
     @Operation(summary = "Returns all attached logical storages.")
-    @RequestMapping(method = RequestMethod.GET)
+    @GetMapping
     public Collection<Storage> getAll() {
         return storageStore.findAll();
     }
 
     @Operation(summary = "Returns simple DTOs of all attached logical storages.")
-    @RequestMapping(value = "/basic", method = RequestMethod.GET)
+    @GetMapping("/basic")
     public Collection<StorageBasicDto> getAllAsDtos() {
         return storageStore.getAllAsDtos();
     }
 
     @Operation(summary = "Returns logical storage with specified ID.")
-    @RequestMapping(value = "/{id}", method = RequestMethod.GET)
+    @GetMapping("/{id}")
     public Storage getOne(
             @Parameter(description = "id of the logical storage", required = true) @PathVariable("id") String id) {
         Storage storage = storageStore.find(id);
@@ -68,7 +68,7 @@ public class StorageAdministrationApi {
     }
 
     @Operation(summary = "Returns state of logical storage.", description = "Data returned depends on the logical storage. E.g. self-healing data are returned only if self-healing is supported by the storage.")
-    @RequestMapping(value = "/{id}/state", method = RequestMethod.GET)
+    @GetMapping("/{id}/state")
     public StorageStateDto getStorageState(
             @Parameter(description = "id of the logical storage", required = true) @PathVariable("id") String id) throws BadRequestException {
         checkUUID(id);
@@ -76,46 +76,31 @@ public class StorageAdministrationApi {
     }
 
     @Operation(summary = "Check reachability of all storages")
-    @RequestMapping(value = "/check_reachability", method = RequestMethod.POST)
+    @PostMapping("/check_reachability")
     public void checkReachability() {
-        storageProvider.checkReachabilityOfAllStorages();
+        storageProvider.checkReachabilityOfAllStorages(false);
     }
 
     @Operation(summary = "Attaches new logical storage and starts synchronization.", description = "After the initial checks are done, process continues asynchronously. See documentation for example JSON configurations")
-    @RequestMapping(method = RequestMethod.POST)
+    @PostMapping
     @ApiResponses(value = {
             @ApiResponse(responseCode = "400", description = "invalid configuration"),
             @ApiResponse(responseCode = "503", description = "storage to be synchronized is not reachable"),
             @ApiResponse(responseCode = "566", description = "synchronization initialization timeout because there are still processing objects at the archival storage"),
             @ApiResponse(responseCode = "567", description = "cant create some dataspace at the storage"),
             @ApiResponse(responseCode = "409", description = "storage already exists")})
-    public Storage attachStorage(
+    public Storage attachNewStorage(
             @Parameter(description = "logical storage entity", required = true) @RequestBody @Valid Storage storage)
-            throws SomeLogicalStoragesNotReachableException, SynchronizationInProgressException, InterruptedException,
-            IOStorageException, StorageStillProcessObjectsException, CantCreateDataspaceException, BadRequestException {
+            throws SomeLogicalStoragesNotReachableException, InterruptedException, CantCreateDataspaceException, JmsQueueNotEmptyException, JmsHealthCheckException {
 //        if (storage.getHost() != null && !storage.getHost().equals("localhost"))
 //            checkIpv4(storage.getHost());
         if (storage.getId() != null && storageStore.find(storage.getId()) != null)
             throw new ConflictObject(Storage.class, storage.getId());
-        return storageAdministrationService.attachStorage(storage);
-    }
-
-    @Operation(summary = "Continues with failed (stopped) synchronization.", description = "After the initial checks are done, system asynchronously continues from the last successfully synced object/operation.")
-    @RequestMapping(value = "/sync/{id}", method = RequestMethod.POST)
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "403", description = "synchronization is already in progress or not authorized"),
-            @ApiResponse(responseCode = "503", description = "storage to be synchronized is not reachable")
-    })
-    public void continueSync(
-            @Parameter(description = "id of the synchronization status entity", required = true) @PathVariable("id") String id)
-            throws SomeLogicalStoragesNotReachableException, SynchronizationInProgressException, InterruptedException {
-        StorageSyncStatus storageSyncStatus = storageSyncStatusStore.find(id);
-        notNull(storageSyncStatus, () -> new MissingObject(StorageSyncStatus.class, id));
-        storageAdministrationService.synchronizeStorage(storageSyncStatus, false);
+        return storageAdministrationService.attachNewStorage(storage);
     }
 
     @Operation(summary = "Retrieves sync status entity for the storage.")
-    @RequestMapping(value = "/sync/{id}", method = RequestMethod.GET)
+    @GetMapping("/sync/{id}")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "404", description = "no sync status for this storage")
     })
@@ -128,7 +113,7 @@ public class StorageAdministrationApi {
 
     @Operation(summary = "Updates a logical storage.", description = "Only name, priority and note flags are updatable, others are ignored.")
     @Transactional
-    @RequestMapping(value = "/update", method = RequestMethod.POST)
+    @PostMapping("/update")
     public Storage update(
             @Parameter(description = "update DTO of the logical storage entity", required = true)
             @RequestBody @Valid StorageUpdateDto storageUpdateDto) {
@@ -143,19 +128,44 @@ public class StorageAdministrationApi {
 
     @Operation(summary = "Removes a logical storage.")
     @Transactional
-    @RequestMapping(value = "/{id}", method = RequestMethod.DELETE)
+    @DeleteMapping("/{id}")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "403", description = "not authorized or can't be deleted because count of logical storage would be less than the configured minimum")
     })
     public void delete(
             @Parameter(description = "id of the logical storage", required = true) @PathVariable("id") String id) throws ForbiddenByConfigException {
-        int minStorageCount = systemStateService.get().getMinStorageCount();
         Storage storage = storageStore.find(id);
         notNull(storage, () -> new MissingObject(Storage.class, id));
-        if (!(storageStore.getCount() > minStorageCount))
+
+        SystemState systemState = systemStateService.get();
+
+        int minStorageCount = systemState.getMinStorageCount();
+        if (!(storageStore.getCount() > minStorageCount)) {
             throw new ForbiddenByConfigException("cant delete storage - actual number of storages (" + minStorageCount +
                     ") is the configured minimum");
-        storageStore.delete(storage);
+        }
+
+        if (systemState.getPrimaryStorage().equals(storage)) {
+            throw new ForbiddenByConfigException("cant delete primary storage");
+        }
+
+        storageAdministrationService.deleteStorage(storage);
+    }
+
+    @Operation(summary = "Detaches a logical storage.")
+    @Transactional
+    @PostMapping("/{id}/detach")
+    public void detach(
+            @Parameter(description = "id of the logical storage", required = true) @PathVariable("id") String id) {
+        storageAdministrationService.detachStorage(id, null);
+    }
+
+    @Operation(summary = "Attaches existing detached logical storage.")
+    @Transactional
+    @PostMapping("/{id}/attach")
+    public void attach(
+            @Parameter(description = "id of the logical storage", required = true) @PathVariable("id") String id) {
+        storageAdministrationService.attachStorage(id);
     }
 
     @Autowired
@@ -169,11 +179,6 @@ public class StorageAdministrationApi {
     }
 
     @Autowired
-    public void setStorageAdministrationService(StorageAdministrationService storageAdministrationService) {
-        this.storageAdministrationService = storageAdministrationService;
-    }
-
-    @Autowired
     public void setStorageSyncStatusStore(StorageSyncStatusStore storageSyncStatusStore) {
         this.storageSyncStatusStore = storageSyncStatusStore;
     }
@@ -181,5 +186,10 @@ public class StorageAdministrationApi {
     @Autowired
     public void setStorageProvider(StorageProvider storageProvider) {
         this.storageProvider = storageProvider;
+    }
+
+    @Autowired
+    public void setStorageAdministrationService(StorageAdministrationService storageAdministrationService) {
+        this.storageAdministrationService = storageAdministrationService;
     }
 }

@@ -1,30 +1,28 @@
 package cz.cas.lib.arcstorage.api;
 
+import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.domain.entity.User;
 import cz.cas.lib.arcstorage.domain.store.Transactional;
 import cz.cas.lib.arcstorage.exception.BadRequestException;
 import cz.cas.lib.arcstorage.exception.ConflictObject;
+import cz.cas.lib.arcstorage.jms.JmsHealthCheckException;
+import cz.cas.lib.arcstorage.jms.JmsSender;
 import cz.cas.lib.arcstorage.security.Role;
 import cz.cas.lib.arcstorage.security.Roles;
 import cz.cas.lib.arcstorage.security.user.UserStore;
 import cz.cas.lib.arcstorage.service.StorageProvider;
 import cz.cas.lib.arcstorage.service.exception.ReadOnlyStateException;
-import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
-import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
-import cz.cas.lib.arcstorage.storage.StorageService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.annotation.security.RolesAllowed;
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
-
-import jakarta.annotation.security.RolesAllowed;
-import jakarta.validation.Valid;
-import java.util.List;
 
 import static cz.cas.lib.arcstorage.util.Utils.isNull;
 
@@ -37,6 +35,7 @@ public class UserApi {
     private UserStore userStore;
     private PasswordEncoder passwordEncoder;
     private StorageProvider storageProvider;
+    private JmsSender jmsSender;
 
     @Operation(summary = "Register user.", description = "DataSpace should be simple string, no dashes, slashes, " +
             "uppercase letters, spaces or underscores. If the user has READ/READ-WRITE role and the dataSpace is new," +
@@ -46,7 +45,7 @@ public class UserApi {
             @ApiResponse(responseCode = "400", description = "Wrong JSON | username/password/role missing | role!=ADMIN and dataSpace missing | " +
                     "role==ADMIN and dataSpace not null")
     })
-    @RequestMapping(value = "/register", method = RequestMethod.POST)
+    @PostMapping(value = "/register")
     @Transactional
     @RolesAllowed(Roles.ADMIN)
     public User registerUser(@Parameter(description = "User to be registered", required = true)
@@ -75,24 +74,16 @@ public class UserApi {
             @ApiResponse(responseCode = "503", description = "some logical storage not reachable or system is in readonly state"),
             @ApiResponse(responseCode = "500", description = "no logical storage attached or internal server error"),
     })
-    @RequestMapping(value = "/activate/{dataSpace}", method = RequestMethod.POST)
+    @PostMapping("/activate/{dataSpace}")
     @Transactional
     @RolesAllowed(Roles.ADMIN)
     public void activateDataSpace(
             @Parameter(description = "dataSpace", required = true) @PathVariable("dataSpace") String dataSpace)
-            throws NoLogicalStorageAttachedException, SomeLogicalStoragesNotReachableException, ReadOnlyStateException {
-        List<StorageService> reachableAdapters = storageProvider.createAdaptersForWriteOperation();
-        reachableAdapters.forEach(
-                service -> {
-                    try {
-                        log.debug("Creating new data space: " + dataSpace + " at storage: " + service.getStorage().getName() + ".");
-                        service.createNewDataSpace(dataSpace);
-                        log.info("Date space: " + dataSpace + " successfully created at storage: " + service.getStorage().getName() + ".");
-                    } catch (Exception e) {
-                        throw new RuntimeException("unable to create dataSpace: " + e.getMessage(), e);
-                    }
-                }
-        );
+            throws ReadOnlyStateException, JmsHealthCheckException {
+        jmsSender.healthCheck();
+        for (Storage s : storageProvider.getAllStorages()) {
+            jmsSender.activateDataspace(s.getId(), dataSpace);
+        }
     }
 
     @Autowired
@@ -108,5 +99,10 @@ public class UserApi {
     @Autowired
     public void setPasswordEncoder(PasswordEncoder passwordEncoder) {
         this.passwordEncoder = passwordEncoder;
+    }
+
+    @Autowired
+    public void setJmsSender(JmsSender jmsSender) {
+        this.jmsSender = jmsSender;
     }
 }

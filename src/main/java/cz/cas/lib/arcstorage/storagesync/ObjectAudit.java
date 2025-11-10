@@ -3,14 +3,12 @@ package cz.cas.lib.arcstorage.storagesync;
 import cz.cas.lib.arcstorage.domain.entity.ArchivalObject;
 import cz.cas.lib.arcstorage.domain.entity.DomainObject;
 import cz.cas.lib.arcstorage.domain.entity.User;
-import cz.cas.lib.arcstorage.domain.store.InstantGenerator;
 import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.GenerationTime;
-import org.hibernate.annotations.GeneratorType;
+import org.hibernate.annotations.CreationTimestamp;
 
-import jakarta.persistence.*;
 import java.time.Instant;
 
 /**
@@ -31,7 +29,7 @@ public class ObjectAudit extends DomainObject {
     private String idInStorage;
 
     @Column(updatable = false)
-    @GeneratorType(type = InstantGenerator.class, when = GenerationTime.INSERT)
+    @CreationTimestamp
     private Instant created;
 
     @ManyToOne

@@ -1,16 +1,14 @@
 package cz.cas.lib.arcstorage.storage;
 
-import cz.cas.lib.arcstorage.domain.entity.AipSip;
-import cz.cas.lib.arcstorage.domain.entity.AipXml;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.GeneralException;
-import cz.cas.lib.arcstorage.service.ArchivalService;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
+import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
 import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.storage.fs.ObjectMetadata;
-import cz.cas.lib.arcstorage.storagesync.ObjectAudit;
+import org.springframework.lang.NonNull;
 
 import java.io.BufferedInputStream;
 import java.io.IOException;
@@ -61,11 +59,10 @@ public interface StorageService {
     /**
      * Stores Aip objects into storage.
      * <p>
-     * If rollback is set to true by another thread, this method instance must stop computation/uploading as soon as possible.
-     * In this case, throwing exception is optional and is better to avoid, so that the log does not contain exceptions from all threads even if just the first one which set rollback to true is known to be the error one.
+     * If rollback is set to true by another thread, this method instance must stop computation/uploading as soon as possible and return without throwing exception.
      * </p>
      * <p>
-     * If object can't be stored, checksum can't be computed or does not match, this method instance must set rollback to true and throw exception, so that other threads can follow the routine described above.
+     * If object can't be stored, checksum can't be computed or does not match, this method instance must set rollback to true and throw exception.
      * </p>
      * <p>
      * If the object already exists it will be overwritten.
@@ -89,19 +86,15 @@ public interface StorageService {
      * @return {@link AipRetrievalResource} with opened object streams of SIP and XMLs, XMLs are grouped by the version
      * @throws StorageException in the case of error
      */
-    AipRetrievalResource getAip(String aipId, String dataSpace, Integer... xmlVersions) throws StorageException;
+    AipRetrievalResource getAip(String aipId, String dataSpace, Integer... xmlVersions) throws FileDoesNotExistException, StorageException;
 
     /**
      * Stores object into storage.
      * <p>
-     * If rollback is set to true by another thread, this method instance must stop computation as soon as possible.
-     * In this case, throwing exception is optional and is better to avoid, so that the log does not contain exceptions from all threads even if just the first one which set rollback to true is known to be the error one.
+     * If rollback is set to true by another thread, this method instance must stop computation as soon as possible and return without throwing exception.
      * </p>
      * <p>
-     * If object can't be stored, sipStorageChecksum can't be computed or does not match, this method instance must set rollback to true and throw exception, so that other threads can follow the routine described above.
-     * </p>
-     * <p>
-     * If the object already exists it will be overwritten.
+     * If object can't be stored, sipStorageChecksum can't be computed or does not match, this method instance must set rollback to true and throw exception.
      * </p>
      * <p>
      * The operation done by the storage depends on the {@link ArchivalObjectDto#state} value:
@@ -112,11 +105,27 @@ public interface StorageService {
      * </ul>
      * </p>
      *
-     * @param objectDto DTO with open and readable input stream of the object
-     * @param rollback  flag watched for rollback signal
+     * @param objectDto          DTO with open and readable input stream of the object
+     * @param operationTimestamp <p>
+     *                           As this method may be called to propagate historical operation, while the object might
+     *                           be meanwhile forgotten and created again, caller SHOULD supply operationTimestamp
+     *                           which defines the point in time when the state at storage should match the result of the operation.
+     *                           Storage service must compare the timestamp with the creation timestamp of the object
+     *                           marked at storage. If the operation timestamp is higher the object should be stored,
+     *                           otherwise it should be left untouched.
+     *                           </p>
+     *                           <p>
+     *                           If you are SURE that there is no need to worry about overwriting newer object
+     *                           you can set <i>operationTimestamp</i> to null. Typical use case is immediate propagation
+     *                           of new store request, or propagation from queue where this operation has the high priority.
+     *                           </p>
+     *                           <p>
+     *                           If there is no metadata at storage it will be created.
+     *                           </p>
+     * @param rollback           flag watched for rollback signal
      * @throws StorageException in the case of error
      */
-    void storeObject(ArchivalObjectDto objectDto, AtomicBoolean rollback, String dataSpace) throws StorageException;
+    void storeObject(ArchivalObjectDto objectDto, AtomicBoolean rollback, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException;
 
     /**
      * Stores only metadata of the object.
@@ -130,36 +139,67 @@ public interface StorageService {
      *
      * @param id of the object
      * @return {@link ObjectRetrievalResource} with opened stream of object
-     * @throws StorageException in the case of error
+     * @throws StorageException          in the case of error
+     * @throws FileDoesNotExistException if the requested object is not found
      */
-    ObjectRetrievalResource getObject(String id, String dataSpace) throws StorageException;
+    ObjectRetrievalResource getObject(String id, String dataSpace) throws FileDoesNotExistException, StorageException;
 
     /**
      * Deletes SIP object from storage. Must not fail if SIP is already physically deleted.
      *
-     * @param objectDto               of the SIP
-     * @param createMetaFileIfMissing if true and .meta file is missing then it is created, otherwise exception is thrown
+     * @param objectDto          of the SIP
+     * @param operationTimestamp <p>
+     *                           As this method may be called to propagate historical operation, while the object might
+     *                           be meanwhile forgotten and created again, caller must supply operationTimestamp
+     *                           which defines the point in time when the state at storage should match the result of the operation.
+     *                           Storage service must compare the timestamp with the creation timestamp of the object
+     *                           marked at storage. If the operation timestamp is higher the sip should be deleted,
+     *                           otherwise it should be left untouched.
+     *                           </p>
+     *                           <p>
+     *                           If there is no metadata at storage it will be created.
+     *                           </p>
      * @throws StorageException in the case of error
      */
-    void delete(ArchivalObjectDto objectDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException;
+    void delete(ArchivalObjectDto objectDto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException;
 
     /**
      * Logically removes SIP. Must not fail if SIP is already removed.
      *
-     * @param objectDto               of the SIP
-     * @param createMetaFileIfMissing if true and .meta file is missing then it is created, otherwise exception is thrown
+     * @param objectDto          of the SIP
+     * @param operationTimestamp <p>
+     *                           As this method may be called to propagate historical operation, while the object might
+     *                           be meanwhile forgotten and created again, caller must supply operationTimestamp
+     *                           which defines the point in time when the state at storage should match the result of the operation.
+     *                           Storage service must compare the timestamp with the creation timestamp of the object
+     *                           marked at storage. If the operation timestamp is higher the sip should be removed,
+     *                           otherwise it should be left untouched.
+     *                           </p>
+     *                           <p>
+     *                           If there is no metadata at storage it will be created.
+     *                           </p>
      * @throws StorageException in the case of error
      */
-    void remove(ArchivalObjectDto objectDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException;
+    void remove(ArchivalObjectDto objectDto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException;
 
     /**
      * Renews logically removed SIP. Must not fail if SIP is already renewed, i.e. in ARCHIVED state.
      *
-     * @param objectDto               of the SIP
-     * @param createMetaFileIfMissing if true and .meta file is missing then it is created, otherwise exception is thrown
+     * @param objectDto          of the SIP
+     * @param operationTimestamp <p>
+     *                           As this method may be called to propagate historical operation, while the object might
+     *                           be meanwhile forgotten and created again, caller must supply operationTimestamp
+     *                           which defines the point in time when the state at storage should match the result of the operation.
+     *                           Storage service must compare the timestamp with the creation timestamp of the object
+     *                           marked at storage. If the operation timestamp is higher the sip should be renewed,
+     *                           otherwise it should be left untouched.
+     *                           </p>
+     *                           <p>
+     *                           If there is no metadata at storage it will be created.
+     *                           </p>
      * @throws StorageException in the case of error
      */
-    void renew(ArchivalObjectDto objectDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException;
+    void renew(ArchivalObjectDto objectDto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException;
 
     /**
      * Rollbacks AIP and all its XML object from storage. Used in case of cleaning process after storage/application failure.
@@ -167,10 +207,21 @@ public interface StorageService {
      * In any case (object not found / already rolled back / object which was never actually stored / inconsistent ...) this method has to set ROLLED_BACK state in metadata and delete the object (if exists).
      * </p>
      *
-     * @param aipDto dto, input streams may be null
+     * @param aipDto             dto, input streams may be null
+     * @param operationTimestamp <p>
+     *                           As this method may be called to propagate historical operation, while the object might
+     *                           be meanwhile forgotten and created again, caller must supply operationTimestamp
+     *                           which defines the point in time when the state at storage should match the result of the operation.
+     *                           Storage service must compare the timestamp with the creation timestamp of the object
+     *                           marked at storage. If the operation timestamp is higher the aip should be rolled back,
+     *                           otherwise it should be left untouched.
+     *                           </p>
+     *                           <p>
+     *                           If there is no metadata at storage aip should be rolled back.
+     *                           </p>
      * @throws StorageException in the case of error
      */
-    void rollbackAip(AipDto aipDto, String dataSpace) throws StorageException;
+    void rollbackAip(AipDto aipDto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException;
 
     /**
      * Rolls back object from storage. Used in case of cleaning process after storage/application failure.
@@ -178,10 +229,21 @@ public interface StorageService {
      * In any case (object not found / already rolled back / object which was never actually stored / inconsistent ...) this method has to set ROLLED_BACK state in metadata and delete the object (if exists).
      * </p>
      *
-     * @param objectDto dto, input stream may be null
+     * @param objectDto          dto, input stream may be null
+     * @param operationTimestamp <p>
+     *                           As this method may be called to propagate historical operation, while the object might
+     *                           be meanwhile forgotten and created again, caller must supply operationTimestamp
+     *                           which defines the point in time when the state at storage should match the result of the operation.
+     *                           Storage service must compare the timestamp with the creation timestamp of the object
+     *                           marked at storage. If the operation timestamp is higher the object should be rolled back,
+     *                           otherwise it should be left untouched.
+     *                           </p>
+     *                           <p>
+     *                           If there is no metadata at storage object should be rolled back.
+     *                           </p>
      * @throws StorageException in the case of error
      */
-    void rollbackObject(ArchivalObjectDto objectDto, String dataSpace) throws StorageException;
+    void rollbackObject(ArchivalObjectDto objectDto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException;
 
     /**
      * Forgets object at storage - completely deletes the object and leaves only metadata files at the storage.
@@ -191,23 +253,21 @@ public interface StorageService {
      * at the storage. Other metadata are optionally present.
      * </p>
      *
-     * @param objectIdAtStorage    id of the object
-     * @param objectAuditTimestamp <p>Should be set to null during standard forget calls made by {@link ArchivalService}
-     *                             in which case this call deletes data and marks forget state no matter what state was marked
-     *                             before. Exception is thrown if no state was marked before (meta object does not exist).</p>
-     *                             <p>During calls which are propagating some historical modification from audit the
-     *                             {@link ObjectAudit#created} should be filled. Storage service should compare the timestamp
-     *                             with the creation timestamp marked with the object in metaobject. If the audit timestamp is higher
-     *                             the object should be forgotten, otherwise it should be left untouched. If there is no metaobject
-     *                             at all, then the object should be also forgotten.
-     *                             <p>The reason for this design is that after the object is forgotten, other object may be persisted
-     *                             with the same name as the object which was previously forgotten and must not forgot the new object based
-     *                             on audit of forgot operation of the old one. This can typically happen with {@link AipXml} which name at
-     *                             storage is determined from the related {@link AipSip} and XML version. If one XML version is forgotten then
-     *                             the next one will have the same version number and thus the same place at the storage.
+     * @param objectIdAtStorage  id of the object
+     * @param operationTimestamp <p>
+     *                           As this method may be called to propagate historical operation, while the object might
+     *                           be meanwhile forgotten and created again, caller must supply operationTimestamp
+     *                           which defines the point in time when the state at storage should match the result of the operation.
+     *                           Storage service must compare the timestamp with the creation timestamp of the object
+     *                           marked at storage. If the operation timestamp is higher the object should be forgotten,
+     *                           otherwise it should be left untouched.
+     *                           </p>
+     *                           <p>
+     *                           If there is no metadata at storage object should be forgotten.
+     *                           </p>
      * @throws StorageException in the case of error
      */
-    void forgetObject(String objectIdAtStorage, String dataSpace, Instant objectAuditTimestamp) throws StorageException;
+    void forgetObject(String objectIdAtStorage, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException;
 
     /**
      * Retrieves information about AIP such as its state etc. and also info about SIP and XMLs checksums.
@@ -271,7 +331,7 @@ public interface StorageService {
      */
     default boolean verifyChecksum(InputStream objectStream, Checksum expectedChecksum, AtomicBoolean rollback, Storage storage) throws IOStorageException, FileCorruptedAfterStoreException {
         try {
-            Checksum checksum = null;
+            Checksum checksum;
             checksum = computeChecksumRollbackAware(objectStream, expectedChecksum.getType(), rollback);
             if (checksum == null)
                 return false;

@@ -6,6 +6,7 @@ import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.StorageUtils;
 import cz.cas.lib.arcstorage.storage.exception.*;
+import cz.cas.lib.arcstorage.util.Utils;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.schmizz.sshj.SSHClient;
@@ -13,17 +14,19 @@ import net.schmizz.sshj.common.SSHException;
 import net.schmizz.sshj.sftp.SFTPClient;
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier;
 import net.schmizz.sshj.xfer.FilePermission;
-import net.schmizz.sshj.xfer.InMemoryDestFile;
 import net.schmizz.sshj.xfer.InMemorySourceFile;
 import org.apache.commons.io.IOUtils;
 import org.apache.log4j.Logger;
+import org.springframework.lang.NonNull;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -38,25 +41,32 @@ import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 @Slf4j
 public class RemoteFsProcessor implements StorageService {
 
-    @Getter
-    private Storage storage;
-    private String separator;
-    private String sshKeyFilePath;
-    private String sshUserName;
-    private String rootDirPath;
-    private int connectionTimeout;
+    private static final String OPTIMIZED_CHECKSUM_CMD_FILEPATH_PLACEHOLDER = "$filePath";
 
-    public RemoteFsProcessor(Storage storage, String rootDirPath, String sshKeyFilePath, String sshUserName, int connectionTimeout) {
+    @Getter
+    private final Storage storage;
+    @Getter
+    private final String separator;
+    private final String sshKeyFilePath;
+    private final String sshUserName;
+    private final String rootDirPath;
+    private final int connectionTimeout;
+    /**
+     * e.g. {
+     * "MD5":"md5sum $filePath | awk '{print $1}'",
+     * "SHA512":"sha512sum $filePath | awk '{print $1}'"
+     * }
+     */
+    private final Map<ChecksumType, String> optimizedChecksumComputationCommands;
+
+    public RemoteFsProcessor(Storage storage, String rootDirPath, String sshKeyFilePath, String sshUserName, int connectionTimeout, Map<ChecksumType, String> optimizedChecksumComputationCommands) {
         this.storage = storage;
         this.separator = rootDirPath.startsWith("/") ? "/" : "\\";
         this.sshKeyFilePath = sshKeyFilePath;
         this.sshUserName = sshUserName;
         this.connectionTimeout = connectionTimeout;
         this.rootDirPath = rootDirPath;
-    }
-
-    public String getSeparator() {
-        return separator;
+        this.optimizedChecksumComputationCommands = optimizedChecksumComputationCommands == null ? Map.of() : optimizedChecksumComputationCommands;
     }
 
     @Override
@@ -81,8 +91,8 @@ public class RemoteFsProcessor implements StorageService {
             connect(ssh);
             listenForRollbackToKillSession(ssh, rollback);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
-                storeFile(sftp, folder, aip.getXml().getStorageId(), aip.getXml().getInputStream(), aip.getXml().getChecksum(), rollback, aip.getXml().getCreated());
-                storeFile(sftp, folder, aip.getSip().getStorageId(), aip.getSip().getInputStream(), aip.getSip().getChecksum(), rollback, aip.getSip().getCreated());
+                storeFile(ssh, sftp, folder, aip.getXml().getStorageId(), aip.getXml().getInputStream(), aip.getXml().getChecksum(), rollback, aip.getXml().getCreated());
+                storeFile(ssh, sftp, folder, aip.getSip().getStorageId(), aip.getSip().getInputStream(), aip.getSip().getChecksum(), rollback, aip.getSip().getCreated());
             }
         } catch (IOException e) {
             rollback.set(true);
@@ -94,7 +104,7 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public AipRetrievalResource getAip(String aipId, String dataSpace, Integer... xmlVersions) throws FileDoesNotExistException, StorageException {
+    public AipRetrievalResource getAip(String aipId, String dataSpace, Integer... xmlVersions) throws StorageException {
         SSHClient ssh = null;
         try {
             ssh = new SSHClient();
@@ -126,43 +136,45 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public void storeObject(ArchivalObjectDto objectDto, AtomicBoolean rollback, String dataSpace) throws StorageException {
-        try (SSHClient ssh = new SSHClient()) {
-            connect(ssh);
-            listenForRollbackToKillSession(ssh, rollback);
-            String objId = objectDto.getStorageId();
-            String folderPath = getFolderPath(objId, dataSpace);
-            try (SFTPClient sftp = ssh.newSFTPClient()) {
-                switch (objectDto.getState()) {
-                    case DELETION_FAILURE:
-                        writeObjectMetadata(sftp, folderPath, new ObjectMetadata(objId, ObjectState.DELETED, objectDto.getCreated(), objectDto.getChecksum()));
-                        break;
-                    case ARCHIVAL_FAILURE:
-                    case ROLLBACK_FAILURE:
-                        writeObjectMetadata(sftp, folderPath, new ObjectMetadata(objId, ObjectState.ROLLED_BACK, objectDto.getCreated(), objectDto.getChecksum()));
-                        break;
-                    case ROLLED_BACK:
-                    case DELETED:
-                        writeObjectMetadata(sftp, folderPath, new ObjectMetadata(objId, objectDto.getState(), objectDto.getCreated(), objectDto.getChecksum()));
-                        break;
-                    case REMOVED:
-                        storeFile(sftp, folderPath, objId, objectDto.getInputStream(), objectDto.getChecksum(), rollback, objectDto.getCreated());
-                        remove(objectDto, dataSpace, false);
-                        break;
-                    case ARCHIVED:
-                    case PROCESSING:
-                        storeFile(sftp, folderPath, objId, objectDto.getInputStream(), objectDto.getChecksum(), rollback, objectDto.getCreated());
-                        break;
-                    default:
-                        throw new IllegalStateException(objectDto.toString());
+    public void storeObject(ArchivalObjectDto objectDto, AtomicBoolean rollback, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
+        switch (objectDto.getState()) {
+            case DELETION_FAILURE:
+            case DELETED:
+                delete(objectDto, dataSpace, operationTimestamp);
+                break;
+            case ARCHIVAL_FAILURE:
+            case ROLLBACK_FAILURE:
+            case ROLLED_BACK:
+                rollbackObject(objectDto, dataSpace, operationTimestamp);
+                break;
+            case ARCHIVED:
+            case PROCESSING:
+            case REMOVED:
+                try (SSHClient ssh = new SSHClient()) {
+                    connect(ssh);
+                    listenForRollbackToKillSession(ssh, rollback);
+                    String objId = objectDto.getStorageId();
+                    String folder = getFolderPath(objId, dataSpace);
+                    try (SFTPClient sftp = ssh.newSFTPClient()) {
+                        boolean newerObjectExists = checkIfNewerObjectExits(sftp, folder, objectDto.getStorageId(), operationTimestamp);
+                        if (newerObjectExists) {
+                            return;
+                        }
+                        storeFile(ssh, sftp, folder, objectDto.getStorageId(), objectDto.getInputStream(), objectDto.getChecksum(), rollback, objectDto.getCreated());
+                        if (objectDto.getState() == ObjectState.REMOVED) {
+                            setState(sftp, folder, objectDto, ObjectState.REMOVED, operationTimestamp);
+                        }
+                    }
+                } catch (IOException e) {
+                    rollback.set(true);
+                    throw new SshException(e, storage);
+                } catch (Exception e) {
+                    rollback.set(true);
+                    throw e;
                 }
-            }
-        } catch (IOException e) {
-            rollback.set(true);
-            throw new SshException(e, storage);
-        } catch (Exception e) {
-            rollback.set(true);
-            throw e;
+                break;
+            default:
+                throw new IllegalStateException(objectDto.toString());
         }
     }
 
@@ -180,7 +192,7 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public ObjectRetrievalResource getObject(String id, String dataSpace) throws FileDoesNotExistException, StorageException {
+    public ObjectRetrievalResource getObject(String id, String dataSpace) throws StorageException {
         String objectFilePath = getFolderPath(id, dataSpace) + separator + id;
         SSHClient ssh = null;
         try {
@@ -210,65 +222,15 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public void delete(ArchivalObjectDto sipDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException {
-        if (createMetaFileIfMissing) {
-            throw new UnsupportedOperationException("not implemented yet");
-        }
+    public void delete(ArchivalObjectDto sipDto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
         String sipFolder = getFolderPath(sipDto.getStorageId(), dataSpace);
         String sipFilePath = sipFolder + separator + sipDto.getStorageId();
         try (SSHClient ssh = new SSHClient()) {
             connect(ssh);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
-                setState(sftp, sipFolder, sipDto, ObjectState.DELETED, createMetaFileIfMissing);
-                deleteIfExistsSftp(sftp, sipFilePath);
-            }
-        } catch (IOException e) {
-            throw new SshException(e, storage);
-        }
-    }
-
-    @Override
-    public void remove(ArchivalObjectDto sipDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException {
-        if (createMetaFileIfMissing) {
-            throw new UnsupportedOperationException("not implemented yet");
-        }
-        String sipFolder = getFolderPath(sipDto.getStorageId(), dataSpace);
-        try (SSHClient ssh = new SSHClient()) {
-            connect(ssh);
-            try (SFTPClient sftp = ssh.newSFTPClient()) {
-                setState(sftp, sipFolder, sipDto, ObjectState.REMOVED, createMetaFileIfMissing);
-            }
-        } catch (IOException e) {
-            throw new SshException(e, storage);
-        }
-    }
-
-    @Override
-    public void renew(ArchivalObjectDto sipDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException {
-        if (createMetaFileIfMissing) {
-            throw new UnsupportedOperationException("not implemented yet");
-        }
-        String sipFolder = getFolderPath(sipDto.getStorageId(), dataSpace);
-        try (SSHClient ssh = new SSHClient()) {
-            connect(ssh);
-            try (SFTPClient sftp = ssh.newSFTPClient()) {
-                setState(sftp, sipFolder, sipDto, ObjectState.ARCHIVED, createMetaFileIfMissing);
-            }
-        } catch (IOException e) {
-            throw new SshException(e, storage);
-        }
-    }
-
-    @Override
-    public void rollbackAip(AipDto aipDto, String dataSpace) throws StorageException {
-        String sipId = aipDto.getSip().getStorageId();
-        String folder = getFolderPath(sipId, dataSpace);
-        try (SSHClient ssh = new SSHClient()) {
-            connect(ssh);
-            try (SFTPClient sftp = ssh.newSFTPClient()) {
-                rollbackFile(sftp, folder, aipDto.getSip());
-                for (ArchivalObjectDto xml : aipDto.getXmls()) {
-                    rollbackFile(sftp, folder, xml);
+                boolean deleted = setState(sftp, sipFolder, sipDto, ObjectState.DELETED, operationTimestamp);
+                if (deleted) {
+                    deleteIfExistsSftp(sftp, sipFilePath);
                 }
             }
         } catch (IOException e) {
@@ -277,12 +239,12 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public void rollbackObject(ArchivalObjectDto dto, String dataSpace) throws StorageException {
-        String folder = getFolderPath(dto.getStorageId(), dataSpace);
+    public void remove(ArchivalObjectDto sipDto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
+        String sipFolder = getFolderPath(sipDto.getStorageId(), dataSpace);
         try (SSHClient ssh = new SSHClient()) {
             connect(ssh);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
-                rollbackFile(sftp, folder, dto);
+                setState(sftp, sipFolder, sipDto, ObjectState.REMOVED, operationTimestamp);
             }
         } catch (IOException e) {
             throw new SshException(e, storage);
@@ -290,8 +252,70 @@ public class RemoteFsProcessor implements StorageService {
     }
 
     @Override
-    public void forgetObject(String objectIdAtStorage, String dataSpace, Instant forgetAuditTimestamp) throws StorageException {
-        throw new UnsupportedOperationException("not implemented yet");
+    public void renew(ArchivalObjectDto sipDto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
+        String sipFolder = getFolderPath(sipDto.getStorageId(), dataSpace);
+        try (SSHClient ssh = new SSHClient()) {
+            connect(ssh);
+            try (SFTPClient sftp = ssh.newSFTPClient()) {
+                setState(sftp, sipFolder, sipDto, ObjectState.ARCHIVED, operationTimestamp);
+            }
+        } catch (IOException e) {
+            throw new SshException(e, storage);
+        }
+    }
+
+    @Override
+    public void rollbackAip(AipDto aipDto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
+        String sipId = aipDto.getSip().getStorageId();
+        String folder = getFolderPath(sipId, dataSpace);
+        try (SSHClient ssh = new SSHClient()) {
+            connect(ssh);
+            try (SFTPClient sftp = ssh.newSFTPClient()) {
+                rollbackFile(sftp, folder, aipDto.getSip(), operationTimestamp);
+                for (ArchivalObjectDto xml : aipDto.getXmls()) {
+                    rollbackFile(sftp, folder, xml, operationTimestamp);
+                }
+            }
+        } catch (IOException e) {
+            throw new SshException(e, storage);
+        }
+    }
+
+    @Override
+    public void rollbackObject(ArchivalObjectDto dto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
+        String folder = getFolderPath(dto.getStorageId(), dataSpace);
+        try (SSHClient ssh = new SSHClient()) {
+            connect(ssh);
+            try (SFTPClient sftp = ssh.newSFTPClient()) {
+                rollbackFile(sftp, folder, dto, operationTimestamp);
+            }
+        } catch (IOException e) {
+            throw new SshException(e, storage);
+        }
+    }
+
+    @Override
+    public void forgetObject(String objectIdAtStorage, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
+        String folder = getFolderPath(objectIdAtStorage, dataSpace);
+        try (SSHClient ssh = new SSHClient()) {
+            connect(ssh);
+            try (SFTPClient sftp = ssh.newSFTPClient()) {
+                ObjectMetadata objectMetadata = readObjectMetadata(sftp, folder, objectIdAtStorage);
+                if (objectMetadata == null) {
+                    objectMetadata = new ObjectMetadata(objectIdAtStorage, ObjectState.FORGOT, null, null);
+                } else {
+                    if (objectMetadata.getCreated() != null && objectMetadata.getCreated().truncatedTo(ChronoUnit.MILLIS).isAfter(operationTimestamp.truncatedTo(ChronoUnit.MILLIS))) {
+                        log.info("skipped setting {} on {} as the object creation timestamp is newer then timestamp of the operation", ObjectState.FORGOT, objectIdAtStorage);
+                        return;
+                    }
+                }
+                objectMetadata.setState(ObjectState.FORGOT);
+                writeObjectMetadata(sftp, folder, objectMetadata);
+                deleteIfExistsSftp(sftp, folder + separator + objectIdAtStorage);
+            }
+        } catch (IOException e) {
+            throw new SshException(e, storage);
+        }
     }
 
     @Override
@@ -329,7 +353,7 @@ public class RemoteFsProcessor implements StorageService {
         throw new UnsupportedOperationException();
     }
 
-    private ObjectConsistencyVerificationResultDto fillObjectStateInfo(ObjectConsistencyVerificationResultDto info, ArchivalObjectDto object, String dataSpace) throws FileDoesNotExistException, IOStorageException, SshException, CantParseMetadataFile {
+    private ObjectConsistencyVerificationResultDto fillObjectStateInfo(ObjectConsistencyVerificationResultDto info, ArchivalObjectDto object, String dataSpace) throws FileDoesNotExistException, IOStorageException, SshException, CantParseMetadataFile, CmdProcessException {
         info.setStorageId(object.getStorageId());
         info.setState(object.getState());
         info.setDatabaseChecksum(object.getChecksum());
@@ -347,12 +371,12 @@ public class RemoteFsProcessor implements StorageService {
                 if (metadataAtStorage == null)
                     throw new FileDoesNotExistException(metadataFilePath(folder, object.getStorageId()), storage);
                 boolean stateMetadataConsistent = metadataAtStorage.getState() == object.getState();
-                boolean timestampMetadataConsistent = object.getCreated().getEpochSecond() == (metadataAtStorage.getCreated().getEpochSecond());
+                boolean timestampMetadataConsistent = Objects.equals(object.getCreated().truncatedTo(ChronoUnit.MILLIS), metadataAtStorage.getCreated().truncatedTo(ChronoUnit.MILLIS));
                 boolean checksumMetadataConsistent = object.getChecksum().equals(metadataAtStorage.getChecksum());
                 info.setMetadataConsistent(stateMetadataConsistent && checksumMetadataConsistent && timestampMetadataConsistent);
                 if (object.getState().contentMustBeStoredAtLogicalStorage()) {
                     checkFileExists(ssh, sftp, folder + separator + object.getStorageId());
-                    Checksum storageFileChecksum = StorageUtils.computeChecksum(getFile(ssh, sftp, folder + separator + object.getStorageId()), object.getChecksum().getType());
+                    Checksum storageFileChecksum = computeChecksum(ssh, sftp, folder + separator + object.getStorageId(), object.getChecksum().getType());
                     info.setStorageChecksum(storageFileChecksum);
                     info.setContentConsistent(object.getChecksum().equals(storageFileChecksum));
                 }
@@ -386,7 +410,7 @@ public class RemoteFsProcessor implements StorageService {
         new Thread(() -> {
             try (PipedOutputStream out = new PipedOutputStream(in)) {
                 wait.set(false);
-                sftp.get(pathToFile, new OutputStreamSource(out));
+                sftp.get(pathToFile, new SshjOutputStreamSource(out));
             } catch (IOException e) {
                 IOUtils.closeQuietly(ssh);
                 throw new UncheckedIOException(e);
@@ -420,7 +444,7 @@ public class RemoteFsProcessor implements StorageService {
                     counter.incrementAndGet();
                     continue;
                 }
-                String folder = getFolderPath(inputObject.getStorageId(), inputObject.getOwner().getDataSpace());
+                String folder = getFolderPath(inputObject.getStorageId(), inputObject.getDataSpace());
                 ObjectMetadata metadataAtStorage = readObjectMetadata(sftp, folder, inputObject.getStorageId());
                 if (metadataAtStorage == null || metadataAtStorage.getState() != inputObject.getState())
                     return inputObject;
@@ -454,28 +478,16 @@ public class RemoteFsProcessor implements StorageService {
      * In case of any exception, rollback flag is set to true.
      * </p>
      */
-    void storeFile(SFTPClient sftp, String folder, String id, InputStream stream, Checksum checksum, AtomicBoolean rollback, Instant created) throws FileCorruptedAfterStoreException, IOStorageException {
+    void storeFile(SSHClient ssh, SFTPClient sftp, String folder, String id, InputStream stream, Checksum checksum, AtomicBoolean rollback, Instant created) throws FileCorruptedAfterStoreException, IOStorageException, FileDoesNotExistException, CmdProcessException, SshException {
         try {
             if (rollback.get())
                 return;
             writeObjectMetadata(sftp, folder, new ObjectMetadata(id, ObjectState.PROCESSING, created, checksum));
             sftp.put(new InputStreamSource(stream, id), folder);
-            PipedInputStream in = new PipedInputStream();
-            PipedOutputStream out = new PipedOutputStream(in);
-            new Thread(() -> {
-                try {
-                    sftp.get(folder + separator + id, new OutputStreamSource(out));
-                } catch (IOException e) {
-                    rollback.set(true);
-                    throw new GeneralException(new IOStorageException(e, storage));
-                } catch (Exception e) {
-                    rollback.set(true);
-                    throw new GeneralException(e);
-                }
-            }).start();
-            boolean rollbackInterruption = !verifyChecksum(in, checksum, rollback, storage);
-            if (rollbackInterruption)
+            boolean rollbackInterruption = !verifyChecksum(ssh, sftp, folder + separator + id, checksum, rollback);
+            if (rollbackInterruption) {
                 return;
+            }
             writeObjectMetadata(sftp, folder, new ObjectMetadata(id, ObjectState.ARCHIVED, created, checksum));
         } catch (IOException e) {
             rollback.set(true);
@@ -559,17 +571,22 @@ public class RemoteFsProcessor implements StorageService {
         return content;
     }
 
-    private void setState(SFTPClient sftp, String folder, ArchivalObjectDto object, ObjectState state, boolean createMetaFileIfMissing) throws CantParseMetadataFile, IOStorageException, FileDoesNotExistException {
+    /**
+     * @return true if the state was set, false if not (operation skipped)
+     */
+    private boolean setState(SFTPClient sftp, String folder, ArchivalObjectDto object, ObjectState state, @NonNull Instant operationTimestamp) throws CantParseMetadataFile, IOStorageException {
         ObjectMetadata objectMetadata = readObjectMetadata(sftp, folder, object.getStorageId());
         if (objectMetadata == null) {
-            if (createMetaFileIfMissing) {
-                objectMetadata = new ObjectMetadata(object.getStorageId(), state, object.getCreated(), object.getChecksum());
-            } else {
-                throw new FileDoesNotExistException(metadataFilePath(folder, object.getStorageId()), storage);
+            objectMetadata = new ObjectMetadata(object.getStorageId(), state, object.getCreated(), object.getChecksum());
+        } else {
+            if (objectMetadata.getCreated() != null && objectMetadata.getCreated().truncatedTo(ChronoUnit.MILLIS).isAfter(operationTimestamp.truncatedTo(ChronoUnit.MILLIS))) {
+                log.info("skipped setting {} on {} as the object creation timestamp is newer then timestamp of the operation", state, object.getStorageId());
+                return false;
             }
         }
         objectMetadata.setState(state);
         writeObjectMetadata(sftp, folder, objectMetadata);
+        return true;
     }
 
     /**
@@ -586,7 +603,7 @@ public class RemoteFsProcessor implements StorageService {
         try {
             if (sftp.statExistence(filePath) == null)
                 return null;
-            sftp.get(filePath, new OutputStreamSource(bos));
+            sftp.get(filePath, new SshjOutputStreamSource(bos));
         } catch (IOException e) {
             throw new IOStorageException(e, storage);
         }
@@ -612,9 +629,21 @@ public class RemoteFsProcessor implements StorageService {
         }
     }
 
-    void rollbackFile(SFTPClient sftp, String folder, ArchivalObjectDto dto) throws IOException, CantParseMetadataFile, IOStorageException, FileDoesNotExistException {
-        setState(sftp, folder, dto, ObjectState.ROLLED_BACK, true);
-        deleteIfExistsSftp(sftp, folder + separator + dto.getStorageId());
+    private boolean checkIfNewerObjectExits(SFTPClient sftp, String folder, String objectIdAtStorage, Instant timestampToCompareWith) throws CantParseMetadataFile, IOStorageException {
+        ObjectMetadata objectMetadata = readObjectMetadata(sftp, folder, objectIdAtStorage);
+        if (objectMetadata != null) {
+            if (objectMetadata.getCreated() != null && objectMetadata.getCreated().truncatedTo(ChronoUnit.MILLIS).isAfter(timestampToCompareWith.truncatedTo(ChronoUnit.MILLIS))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void rollbackFile(SFTPClient sftp, String folder, ArchivalObjectDto dto, @NonNull Instant operationTimestamp) throws IOException, CantParseMetadataFile, IOStorageException {
+        boolean rolledBack = setState(sftp, folder, dto, ObjectState.ROLLED_BACK, operationTimestamp);
+        if (rolledBack) {
+            deleteIfExistsSftp(sftp, folder + separator + dto.getStorageId());
+        }
     }
 
     private String metadataFilePath(String folder, String fileId) {
@@ -643,34 +672,53 @@ public class RemoteFsProcessor implements StorageService {
         }
     }
 
-    public static class OutputStreamSource extends InMemoryDestFile {
-
-        private final OutputStream outputStream;
-
-        public OutputStreamSource(OutputStream os) {
-            this.outputStream = os;
-        }
-
-
-        public OutputStream getOutputStream() throws IOException {
-            return outputStream;
-        }
-
-        @Override
-        public long getLength() {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public OutputStream getOutputStream(boolean append) throws IOException {
-            return outputStream;
-        }
-    }
-
     private void connect(SSHClient ssh) throws IOException {
         ssh.addHostKeyVerifier(new PromiscuousVerifier());
         ssh.setConnectTimeout(connectionTimeout);
         ssh.connect(storage.getHost(), storage.getPort());
         ssh.authPublickey(sshUserName, sshKeyFilePath);
+    }
+
+    private Checksum computeChecksum(SSHClient ssh, SFTPClient sftp, String pathToFile, ChecksumType checksumType) throws FileDoesNotExistException, IOException, IOStorageException, CmdProcessException, SshException {
+        String cliCmd = this.optimizedChecksumComputationCommands.get(checksumType);
+        if (cliCmd == null) {
+            return StorageUtils.computeChecksum(getFile(ssh, sftp, pathToFile), checksumType);
+        }
+        cliCmd = cliCmd.replace(OPTIMIZED_CHECKSUM_CMD_FILEPATH_PLACEHOLDER, pathToFile);
+        List<String> strings = Utils.fetchDataFromRemote(ssh, cliCmd, storage);
+        return new Checksum(checksumType, strings.get(0));
+    }
+
+    /**
+     * same as {@link StorageService#verifyChecksum(InputStream, Checksum, AtomicBoolean, Storage)} just with the option of optimized computation
+     */
+    private boolean verifyChecksum(SSHClient ssh, SFTPClient sftp, String pathToFile, Checksum expectedChecksum, AtomicBoolean rollback) throws IOStorageException, FileCorruptedAfterStoreException, IOException, FileDoesNotExistException, CmdProcessException, SshException {
+        if (optimizedChecksumComputationCommands.containsKey(expectedChecksum.getType())) {
+            Checksum checksumAtStorage = computeChecksum(ssh, sftp, pathToFile, expectedChecksum.getType());
+            if (rollback.get()) {
+                return false;
+            } else {
+                if (!checksumAtStorage.getValue().equalsIgnoreCase(expectedChecksum.getValue())) {
+                    rollback.set(true);
+                    throw new FileCorruptedAfterStoreException(checksumAtStorage, expectedChecksum, storage);
+                }
+                return true;
+            }
+        } else {
+            PipedInputStream in = new PipedInputStream();
+            PipedOutputStream out = new PipedOutputStream(in);
+            new Thread(() -> {
+                try {
+                    sftp.get(pathToFile, new SshjOutputStreamSource(out));
+                } catch (IOException e) {
+                    rollback.set(true);
+                    throw new GeneralException(new IOStorageException(e, storage));
+                } catch (Exception e) {
+                    rollback.set(true);
+                    throw new GeneralException(e);
+                }
+            }).start();
+            return verifyChecksum(in, expectedChecksum, rollback, storage);
+        }
     }
 }

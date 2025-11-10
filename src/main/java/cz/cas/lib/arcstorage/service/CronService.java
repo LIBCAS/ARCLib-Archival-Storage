@@ -4,12 +4,13 @@ import cz.cas.lib.arcstorage.domain.entity.AipSip;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.domain.entity.SystemState;
 import cz.cas.lib.arcstorage.domain.store.AipSipStore;
+import cz.cas.lib.arcstorage.dto.AipConsistencyVerificationResultDto;
 import cz.cas.lib.arcstorage.dto.StorageStateDto;
+import cz.cas.lib.arcstorage.jms.JmsQueueManager;
 import cz.cas.lib.arcstorage.mail.ArcstorageMailCenter;
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageReachableException;
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
-import cz.cas.lib.arcstorage.storagesync.newstorage.exception.SynchronizationInProgressException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -38,6 +39,7 @@ public class CronService implements SchedulingConfigurer {
     private TransactionTemplate transactionTemplate;
     private StorageAdministrationService storageAdministrationService;
     private ArcstorageMailCenter arcstorageMailCenter;
+    private JmsQueueManager queueManager;
 
     @Override
     public void configureTasks(ScheduledTaskRegistrar taskRegistrar) {
@@ -53,16 +55,24 @@ public class CronService implements SchedulingConfigurer {
         taskRegistrar.addTriggerTask(this::systemStateCheck, new CronTrigger(storageStateCheckCron));
     }
 
-    private void aipsVerification() throws NoLogicalStorageAttachedException, NoLogicalStorageReachableException, SomeLogicalStoragesNotReachableException, SynchronizationInProgressException {
+    private void aipsVerification() throws NoLogicalStorageAttachedException, NoLogicalStorageReachableException, SomeLogicalStoragesNotReachableException {
         SystemState systemState = systemStateService.get();
         Instant lastVerifiedObjectCreation = systemState.getLastVerifiedObjectCreation();
         List<AipSip> aipsToCheck = aipSipStore.findAfter(lastVerifiedObjectCreation, consistencyCheckCount);
-        if (aipsToCheck.size() == 0) {
-            aipsToCheck = aipSipStore.findAfter(null, consistencyCheckCount);
-            if (aipsToCheck.size() == 0)
-                return;
+        if (aipsToCheck.size() < consistencyCheckCount) {
+            aipsToCheck.addAll(aipSipStore.findAfter(null, consistencyCheckCount - aipsToCheck.size()));
         }
-        aipService.verifyAipsAtStorage(aipsToCheck, null);
+        if (aipsToCheck.isEmpty())
+            return;
+        if (!queueManager.checkAllQueuesEmpty()) {
+            log.info("skipping scheduled AIP verification since some queues are not empty");
+            return;
+        }
+        List<AipConsistencyVerificationResultDto> res = aipService.verifyAipsAtStorage(aipsToCheck, null);
+        if (res == null) {
+            return;
+        }
+        log.debug("Consistency check of {} AIPs completed", res.size());
         AipSip lastCheckedAip = aipsToCheck.get(aipsToCheck.size() - 1);
         transactionTemplate.execute(s -> {
             SystemState currentState = systemStateService.get();
@@ -124,5 +134,10 @@ public class CronService implements SchedulingConfigurer {
     @Autowired
     public void setConsistencyCheckCount(@Value("${arcstorage.consistencyCheck.count:#{null}}") Integer consistencyCheckCount) {
         this.consistencyCheckCount = consistencyCheckCount;
+    }
+
+    @Autowired
+    public void setQueueManager(JmsQueueManager queueManager) {
+        this.queueManager = queueManager;
     }
 }

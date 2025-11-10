@@ -1,126 +1,105 @@
 package cz.cas.lib.arcstorage.storagesync;
 
-import cz.cas.lib.arcstorage.domain.views.ArchivalObjectLightweightView;
-import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
-import cz.cas.lib.arcstorage.dto.ObjectRetrievalResource;
-import cz.cas.lib.arcstorage.exception.ForbiddenByConfigException;
-import cz.cas.lib.arcstorage.service.ArchivalService;
-import cz.cas.lib.arcstorage.service.exception.state.FailedStateException;
-import cz.cas.lib.arcstorage.service.exception.state.RollbackStateException;
-import cz.cas.lib.arcstorage.service.exception.state.StillProcessingStateException;
-import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
-import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageReachableException;
-import cz.cas.lib.arcstorage.service.exception.storage.ObjectCouldNotBeRetrievedException;
+import cz.cas.lib.arcstorage.domain.entity.Storage;
+import cz.cas.lib.arcstorage.domain.entity.SystemState;
+import cz.cas.lib.arcstorage.jms.JmsQueueManager;
+import cz.cas.lib.arcstorage.jms.JmsQueueNotEmptyException;
+import cz.cas.lib.arcstorage.service.StorageProvider;
+import cz.cas.lib.arcstorage.service.SystemStateService;
+import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.StorageService;
-import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.io.BufferedInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.concurrent.atomic.AtomicBoolean;
-
 @Service
 @Slf4j
 public class CommonSyncService {
 
-    private ArchivalService archivalService;
-    private Path tmpFolder;
-    private boolean forgetFeatureAllowed;
-
-    public void copyObject(ArchivalObjectDto object, StorageService targetStorage) throws StorageException, NoLogicalStorageAttachedException, ObjectCouldNotBeRetrievedException, NoLogicalStorageReachableException, RollbackStateException, StillProcessingStateException, FailedStateException {
-        switch (object.getState()) {
-            case DELETED:
-            case DELETION_FAILURE:
-            case ROLLED_BACK:
-            case ROLLBACK_FAILURE:
-            case ARCHIVAL_FAILURE:
-                log.trace("copying metadata of object " + object);
-                targetStorage.storeObject(object, new AtomicBoolean(false), object.getOwner().getDataSpace());
-                break;
-            case ARCHIVED:
-            case REMOVED:
-                log.trace("copying " + object);
-                String objectRetrievalResourceId = null;
-                try (ObjectRetrievalResource objectRetrievalResource = archivalService.getObject(object);
-                     InputStream is = new BufferedInputStream(objectRetrievalResource.getInputStream())) {
-                    objectRetrievalResourceId = objectRetrievalResource.getId();
-                    object.setInputStream(is);
-                    targetStorage.storeObject(object, new AtomicBoolean(false), object.getOwner().getDataSpace());
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                } finally {
-                    if (objectRetrievalResourceId != null) {
-                        tmpFolder.resolve(objectRetrievalResourceId).toFile().delete();
-                    }
-                }
-                break;
-            case PRE_PROCESSING:
-            case PROCESSING:
-            case FORGOT: //forgotten objects are not event present in DB, this should not occur
-            default:
-                throw new IllegalArgumentException("can't copy object " + object.getStorageId() + " because it is in " + object.getState() + " state");
-        }
-    }
+    private StorageProvider storageProvider;
+    private JmsQueueManager jmsQueueManager;
+    private int transactionTimeoutSeconds;
+    private int synchronizationInitTimeoutSeconds;
+    private SystemStateService systemStateService;
 
     /**
-     * @param objectAudit             operation to propagate
-     * @param objectInDb              object in DB
-     * @param targetStorage           storage to which operations are propagated
-     * @param createMetaFileIfMissing if false and metadata file is missing at the storage then the underlying storage
-     *                                operation should rather fail then create a new one
+     * <ol>
+     *     <li>sets storage to readonly mode</li>
+     *     <li>waits until all queues are empty or wait timeout expires</li>
+     *     <li>writes storage service for provided storage</li>
+     * </ol>
+     * <ul>
+     *     <li>in case of success returns storage service nad leaves system in readonly mode, caller is responsible for followup actions</li>
+     *     <li>in case of failure exception is thrown and storage is set to readwrite mode</li>
+     *     <li>wait timeout is considered a failure - system is still processing objects</li>
+     * </ul>
+     *
+     * @param systemState
+     * @param storage
+     * @return
+     * @throws SomeLogicalStoragesNotReachableException
+     * @throws InterruptedException
+     * @throws JmsQueueNotEmptyException
      */
-    public void propagateModification(ObjectAudit objectAudit, ArchivalObjectLightweightView objectInDb, StorageService targetStorage, boolean createMetaFileIfMissing) throws StorageException, NoLogicalStorageAttachedException, ObjectCouldNotBeRetrievedException, NoLogicalStorageReachableException, RollbackStateException, StillProcessingStateException, FailedStateException, ForbiddenByConfigException {
-        log.trace("propagating " + objectAudit);
-        switch (objectAudit.getOperation()) {
-            case REMOVAL:
-                targetStorage.remove(objectInDb.toDto(), objectAudit.getUser().getDataSpace(), createMetaFileIfMissing);
-                break;
-            case RENEWAL:
-                targetStorage.renew(objectInDb.toDto(), objectAudit.getUser().getDataSpace(), createMetaFileIfMissing);
-                break;
-            case DELETION:
-                targetStorage.delete(objectInDb.toDto(), objectAudit.getUser().getDataSpace(), createMetaFileIfMissing);
-                break;
-            case ROLLBACK:
-                targetStorage.rollbackObject(objectInDb.toDto(), objectAudit.getUser().getDataSpace());
-                break;
-            case ARCHIVED:
-            case ARCHIVAL_RETRY:
-                if (!objectInDb.getState().isProcessing()) {
-                    copyObject(objectInDb.toDto(), targetStorage);
-                }
-                break;
-            case FORGET:
-                if (!forgetFeatureAllowed) {
-                    throw new ForbiddenByConfigException("forget feature not allowed");
-                }
-                //objectInDb is always null as forgotten data are not present in DB
-                targetStorage.forgetObject(objectAudit.getIdInStorage(), objectAudit.getUser().getDataSpace(), objectAudit.getCreated());
-                break;
-            default:
-                throw new IllegalArgumentException("unknown operation: " + objectAudit.getOperation());
+    public StorageService createStorageServiceInReadonlyVacuum(SystemState systemState, Storage storage) throws SomeLogicalStoragesNotReachableException, InterruptedException, JmsQueueNotEmptyException {
+        StorageService destinationStorageService;
+        try {
+            //not checking reachability since that may end up upserting the storage in DB which is not intended since the storage is not inserted yet
+            destinationStorageService = storageProvider.createAdapter(storage, false);
+        } catch (Exception e) {
+            log.error("Could not create storage service for  " + storage);
+            throw e;
         }
+        storage.setReachable(destinationStorageService.testConnection());
+        if (!storage.isReachable()) {
+            log.error("Storage " + storage + " not reachable.");
+            throw new SomeLogicalStoragesNotReachableException(destinationStorageService.getStorage());
+        }
+        log.debug(storage + " reachable, waiting for processing objects to finish");
+        systemStateService.setReadOnly(systemState, null);
+
+        Thread.sleep(transactionTimeoutSeconds * 1000L);
+        boolean allQueuesEmpty = jmsQueueManager.checkAllQueuesEmpty();
+        int waitedSeconds = transactionTimeoutSeconds;
+        while (!allQueuesEmpty) {
+            log.debug("cant continue because queues are not empty - some objects are still processing: " +
+                    "Archival storage will wait max. " + synchronizationInitTimeoutSeconds +
+                    " seconds for processing objects to finish. Already waited " + waitedSeconds + " seconds");
+            if (waitedSeconds > synchronizationInitTimeoutSeconds) {
+                log.error("waited too long for processing objects to finish");
+                systemStateService.setReadWrite(systemState);
+                throw new JmsQueueNotEmptyException("can't continue since some JMS queue is not empty");
+            }
+            Thread.sleep(1000);
+            waitedSeconds++;
+            allQueuesEmpty = jmsQueueManager.checkAllQueuesEmpty();
+        }
+        return destinationStorageService;
     }
 
     @Autowired
-    public void setArchivalService(ArchivalService archivalService) {
-        this.archivalService = archivalService;
+    public void setStorageProvider(StorageProvider storageProvider) {
+        this.storageProvider = storageProvider;
     }
 
     @Autowired
-    public void setTmpFolder(@Value("${spring.servlet.multipart.location}") String path) {
-        this.tmpFolder = Paths.get(path);
+    public void setJmsQueueManager(JmsQueueManager jmsQueueManager) {
+        this.jmsQueueManager = jmsQueueManager;
     }
 
     @Autowired
-    public void setForgetFeatureAllowed(@Value("${arcstorage.optionalFeatures.forgetObject}") boolean forgetFeatureAllowed) {
-        this.forgetFeatureAllowed = forgetFeatureAllowed;
+    public void setTransactionTimeoutSeconds(@Value("${arcstorage.stateChangeTransactionTimeout}") int transactionTimeoutSeconds) {
+        this.transactionTimeoutSeconds = transactionTimeoutSeconds;
+    }
+
+    @Autowired
+    public void setSynchronizationInitTimeoutSeconds(@Value("${arcstorage.synchronizationInitTimeout}") int synchronizationInitTimeoutSeconds) {
+        this.synchronizationInitTimeoutSeconds = synchronizationInitTimeoutSeconds;
+    }
+
+    @Autowired
+    public void setSystemStateService(SystemStateService systemStateService) {
+        this.systemStateService = systemStateService;
     }
 }

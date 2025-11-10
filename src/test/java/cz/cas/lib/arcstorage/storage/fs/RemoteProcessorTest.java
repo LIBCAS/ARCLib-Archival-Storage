@@ -2,7 +2,6 @@ package cz.cas.lib.arcstorage.storage.fs;
 
 import cz.cas.lib.arcstorage.domain.entity.ObjectType;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
-import cz.cas.lib.arcstorage.domain.entity.User;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.storage.StorageServiceTest;
 import cz.cas.lib.arcstorage.storage.exception.CantParseMetadataFile;
@@ -21,6 +20,7 @@ import org.junit.Test;
 import java.io.*;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
@@ -39,6 +39,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
     private static String S = "/";
     private static String sshKeyPath;
     private static String sshUser;
+    private static SSHClient ssh;
     private static SFTPClient sftp;
     private static Properties props;
     private static String dataSpace;
@@ -58,7 +59,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
         sshKeyPath = props.getProperty("test.sftp.ssh.keyPath");
         //create connection held for the whole time
         //public methods of the services uses own connection, this is used only for private methods
-        SSHClient ssh = new SSHClient();
+        ssh = new SSHClient();
         ssh.addHostKeyVerifier(new PromiscuousVerifier());
         ssh.connect(storage.getHost(), storage.getPort());
         ssh.authPublickey(sshUser, sshKeyPath);
@@ -74,7 +75,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
 
     @Before
     public void before() throws IOException {
-        service = new RemoteFsProcessor(storage, props.getProperty("test.sftp.folderpath"), sshKeyPath, sshUser, 10000);
+        service = new RemoteFsProcessor(storage, props.getProperty("test.sftp.folderpath"), sshKeyPath, sshUser, 10000, Map.of(ChecksumType.MD5, "md5sum $filePath | awk '{print $1}'"));
     }
 
     @Override
@@ -88,7 +89,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
         String fileId = testName.getMethodName();
         String folder = getFolderPath(fileId);
 
-        service.storeFile(sftp, folder, fileId, getSipStream(), SIP_CHECKSUM, new AtomicBoolean(false), Instant.now());
+        service.storeFile(ssh, sftp, folder, fileId, getSipStream(), SIP_CHECKSUM, new AtomicBoolean(false), Instant.now());
         assertThat(getFileContent(folder + S + fileId), is(SIP_CONTENT));
         ObjectMetadata objectMetadata = readObjectMetadata(sftp, folder, fileId);
         assertThat(objectMetadata.getChecksum(), is(SIP_CHECKSUM));
@@ -100,7 +101,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
         String fileId = testName.getMethodName();
         String folder = getFolderPath(fileId);
         File file = new File(LARGE_SIP_PATH);
-        service.storeFile(sftp, folder, fileId, new FileInputStream(file), LARGE_SIP_CHECKSUM, new AtomicBoolean(false), Instant.now());
+        service.storeFile(ssh, sftp, folder, fileId, new FileInputStream(file), LARGE_SIP_CHECKSUM, new AtomicBoolean(false), Instant.now());
         assertThat(isInState(folder, fileId, ObjectState.ARCHIVED), is(true));
         ObjectRetrievalResource object = service.getObject(fileId, dataSpace);
         assertThat(object.getInputStream(), not(nullValue()));
@@ -125,7 +126,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
         }).start();
 
         try (BufferedInputStream bos = new BufferedInputStream(new FileInputStream(file))) {
-            service.storeFile(sftp, folder, fileId, bos, LARGE_SIP_CHECKSUM, rollback, Instant.now());
+            service.storeFile(ssh, sftp, folder, fileId, bos, LARGE_SIP_CHECKSUM, rollback, Instant.now());
         }
         assertThat(isInState(folder, fileId, ObjectState.PROCESSING), is(true));
     }
@@ -138,13 +139,13 @@ public class RemoteProcessorTest extends StorageServiceTest {
         RemoteFsProcessor service = new TestServiceSettingRollback(storage);
         AtomicBoolean rollback = new AtomicBoolean(false);
 
-        assertThrown(() -> service.storeFile(sftp, folder, fileId, getSipStream(), SIP_CHECKSUM, rollback, Instant.now()))
+        assertThrown(() -> service.storeFile(ssh, sftp, folder, fileId, getSipStream(), SIP_CHECKSUM, rollback, Instant.now()))
                 .isInstanceOf(FileCorruptedAfterStoreException.class);
         assertThat(rollback.get(), is(true));
 
         rollback.set(false);
 
-        assertThrown(() -> service.storeFile(sftp, folder, fileId, getSipStream(), null, rollback, Instant.now()))
+        assertThrown(() -> service.storeFile(ssh, sftp, folder, fileId, getSipStream(), null, rollback, Instant.now()))
                 .isInstanceOf(Throwable.class);
         assertThat(rollback.get(), is(true));
     }
@@ -155,7 +156,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
         String sipId = testName.getMethodName();
         String xmlId = toXmlId(sipId, 1);
         String path = getFolderPath(sipId);
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, dataSpace);
 
@@ -173,7 +174,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
         String sipId = testName.getMethodName();
         AtomicBoolean rollback = new AtomicBoolean(false);
         String xmlId = toXmlId(sipId, 99);
-        service.storeObject(new ArchivalObjectDto(xmlId, "databaseId", XML_CHECKSUM, new User("ownerId"), getXmlStream(), ObjectState.PROCESSING, Instant.now(), ObjectType.XML), rollback, dataSpace);
+        service.storeObject(new ArchivalObjectDto(xmlId, "databaseId", XML_CHECKSUM, getDataSpace(), getXmlStream(), ObjectState.PROCESSING, Instant.now(), ObjectType.XML), rollback, dataSpace, Instant.now());
         String path = getFolderPath(xmlId) + S + xmlId;
         assertThat(isInState(getFolderPath(xmlId), xmlId, ObjectState.ARCHIVED), is(true));
         assertThat(getFileContent(path), is(XML_CONTENT));
@@ -184,12 +185,12 @@ public class RemoteProcessorTest extends StorageServiceTest {
     @Override
     public void removeSipMultipleTimesOk() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, dataSpace);
 
-        service.remove(aip.getSip(), dataSpace, false);
-        service.remove(aip.getSip(), dataSpace, false);
+        service.remove(aip.getSip(), dataSpace, Instant.now());
+        service.remove(aip.getSip(), dataSpace, Instant.now());
 
         String path = getFolderPath(sipId) + S + sipId;
         assertThat(getFileContent(path), is(SIP_CONTENT));
@@ -200,13 +201,13 @@ public class RemoteProcessorTest extends StorageServiceTest {
     @Override
     public void renewSipMultipleTimesOk() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, dataSpace);
 
-        service.remove(aip.getSip(), dataSpace, false);
-        service.renew(aip.getSip(), dataSpace, false);
-        service.renew(aip.getSip(), dataSpace, false);
+        service.remove(aip.getSip(), dataSpace, Instant.now());
+        service.renew(aip.getSip(), dataSpace, Instant.now());
+        service.renew(aip.getSip(), dataSpace, Instant.now());
 
         String path = getFolderPath(sipId) + S + sipId;
         assertThat(getFileContent(path), is(SIP_CONTENT));
@@ -218,12 +219,12 @@ public class RemoteProcessorTest extends StorageServiceTest {
     public void deleteSipMultipleTimesOk() throws Exception {
         String sipId = testName.getMethodName();
         String xmlId = toXmlId(sipId, 1);
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, dataSpace);
 
-        service.delete(aip.getSip(), dataSpace, false);
-        service.delete(aip.getSip(), dataSpace, false);
+        service.delete(aip.getSip(), dataSpace, Instant.now());
+        service.delete(aip.getSip(), dataSpace, Instant.now());
 
         String path = getFolderPath(sipId);
 
@@ -256,11 +257,12 @@ public class RemoteProcessorTest extends StorageServiceTest {
         String path = getFolderPath(fileId);
 
         try (BufferedInputStream bos = new BufferedInputStream(new FileInputStream(file))) {
-            service.storeFile(sftp, getFolderPath(fileId), fileId, bos, LARGE_SIP_CHECKSUM, rollback, Instant.now());
-        } catch (Exception e) {}
+            service.storeFile(ssh, sftp, getFolderPath(fileId), fileId, bos, LARGE_SIP_CHECKSUM, rollback, Instant.now());
+        } catch (Exception e) {
+        }
 
         ArchivalObjectDto dto = new ArchivalObjectDto(fileId, null, LARGE_SIP_CHECKSUM, null, null, ObjectState.PROCESSING, Instant.now(), ObjectType.SIP);
-        service.rollbackFile(sftp, path, dto);
+        service.rollbackFile(sftp, path, dto, Instant.now());
 
         assertThat(sftp.statExistence(path + S + fileId), nullValue());
         assertThat(isInState(path, fileId, ObjectState.ROLLED_BACK), is(true));
@@ -272,10 +274,10 @@ public class RemoteProcessorTest extends StorageServiceTest {
         String fileId = testName.getMethodName();
         String path = getFolderPath(fileId);
 
-        service.storeFile(sftp, path, fileId, getSipStream(), SIP_CHECKSUM, new AtomicBoolean(false), Instant.now());
+        service.storeFile(ssh, sftp, path, fileId, getSipStream(), SIP_CHECKSUM, new AtomicBoolean(false), Instant.now());
         ArchivalObjectDto dto = new ArchivalObjectDto(fileId, null, SIP_CHECKSUM, null, null, ObjectState.ARCHIVED, Instant.now(), ObjectType.SIP);
-        service.rollbackFile(sftp, path, dto);
-        service.rollbackFile(sftp, path, dto);
+        service.rollbackFile(sftp, path, dto, Instant.now());
+        service.rollbackFile(sftp, path, dto, Instant.now());
 
         assertThat(sftp.statExistence(path + S + fileId), nullValue());
         assertThat(isInState(path, fileId, ObjectState.ROLLED_BACK), is(true));
@@ -288,7 +290,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
         String path = getFolderPath(fileId);
 
         ArchivalObjectDto dto = new ArchivalObjectDto(fileId, null, XML_CHECKSUM, null, null, ObjectState.ARCHIVED, Instant.now(), ObjectType.XML);
-        service.rollbackFile(sftp, path, dto);
+        service.rollbackFile(sftp, path, dto, Instant.now());
         assertThat(isInState(path, fileId, ObjectState.ROLLED_BACK), is(true));
     }
 
@@ -297,11 +299,11 @@ public class RemoteProcessorTest extends StorageServiceTest {
     public void rollbackAipOk() throws Exception {
         String sipId = testName.getMethodName();
         String xmlId = toXmlId(sipId, 1);
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, dataSpace);
 
-        service.rollbackAip(aip, dataSpace);
+        service.rollbackAip(aip, dataSpace, Instant.now());
 
         String path = getFolderPath(sipId);
         assertThat(sftp.statExistence(path + S + sipId), nullValue());
@@ -316,10 +318,10 @@ public class RemoteProcessorTest extends StorageServiceTest {
     public void rollbackXmlOk() throws Exception {
         String sipId = testName.getMethodName();
         String xmlId = toXmlId(sipId, 1);
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, dataSpace);
-        service.rollbackObject(aip.getXml(), dataSpace);
+        service.rollbackObject(aip.getXml(), dataSpace, Instant.now());
 
         String path = getFolderPath(sipId);
 
@@ -332,7 +334,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
 
     @Test
     public void testConnection() {
-        RemoteFsProcessor badService = new RemoteFsProcessor(storage, "/blah", sshKeyPath, "invaliduser", 10000);
+        RemoteFsProcessor badService = new RemoteFsProcessor(storage, "/blah", sshKeyPath, "invaliduser", 10000, null);
         assertThat(service.testConnection(), is(true));
         assertThat(badService.testConnection(), is(false));
     }
@@ -349,7 +351,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
             throw new FileNotFoundException(pathToFile);
         new Thread(() -> {
             try {
-                sftp.get(pathToFile, new RemoteFsProcessor.OutputStreamSource(out));
+                sftp.get(pathToFile, new SshjOutputStreamSource(out));
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -363,7 +365,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
 
     private static final class TestServiceSettingRollback extends RemoteFsProcessor {
         public TestServiceSettingRollback(Storage storage) {
-            super(storage, props.getProperty("test.sftp.folderpath"), sshKeyPath, sshUser, 10000);
+            super(storage, props.getProperty("test.sftp.folderpath"), sshKeyPath, sshUser, 10000, null);
         }
 
         @Override
@@ -375,7 +377,7 @@ public class RemoteProcessorTest extends StorageServiceTest {
     private ObjectMetadata readObjectMetadata(SFTPClient sftp, String folder, String fileId) throws IOStorageException, CantParseMetadataFile {
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         try {
-            sftp.get(folder + getService().getSeparator() + fileId + ".meta", new RemoteFsProcessor.OutputStreamSource(bos));
+            sftp.get(folder + getService().getSeparator() + fileId + ".meta", new SshjOutputStreamSource(bos));
         } catch (IOException e) {
             throw new IOStorageException(e, storage);
         }

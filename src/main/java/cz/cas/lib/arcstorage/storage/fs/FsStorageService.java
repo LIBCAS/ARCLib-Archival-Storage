@@ -53,15 +53,14 @@ public class FsStorageService implements FsAdapter {
     private String sshUserName;
     private String rootDirPath;
 
-    public FsStorageService(Storage storage, String rootDirPath, String sshKeyFilePath, String sshUserName, int connectionTimeout) {
+    public FsStorageService(Storage storage, String rootDirPath, String sshKeyFilePath, String sshUserName, int connectionTimeout, Map<ChecksumType, String> optimizedChecksumComputationCommands) {
         this.storage = storage;
         this.sshKeyFilePath = sshKeyFilePath;
         this.sshUserName = sshUserName;
-        String separator = rootDirPath.startsWith("/") ? "/" : "\\";
         if (isLocalhost(storage))
             this.fsProcessor = new LocalFsProcessor(storage, rootDirPath);
         else
-            this.fsProcessor = new RemoteFsProcessor(storage, rootDirPath, sshKeyFilePath, sshUserName, connectionTimeout);
+            this.fsProcessor = new RemoteFsProcessor(storage, rootDirPath, sshKeyFilePath, sshUserName, connectionTimeout, optimizedChecksumComputationCommands);
         this.rootDirPath = rootDirPath;
     }
 

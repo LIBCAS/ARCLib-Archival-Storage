@@ -1,10 +1,8 @@
 package cz.cas.lib.arcstorage.storage;
 
 import cz.cas.lib.arcstorage.domain.entity.ObjectType;
-import cz.cas.lib.arcstorage.domain.entity.User;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.GeneralException;
-import cz.cas.lib.arcstorage.security.Role;
 import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
 import org.apache.commons.io.IOUtils;
 import org.junit.Rule;
@@ -45,7 +43,6 @@ public abstract class StorageServiceTest {
     public static final Checksum XML_CHECKSUM_2 = new Checksum(ChecksumType.MD5, "ee26908bf9629eeb4b37dac350f4754a");
     public static final String LARGE_SIP_PATH = "src/test/resources/8MiB+file";
     public static final Checksum LARGE_SIP_CHECKSUM = new Checksum(ChecksumType.MD5, "A95E65A3DE9704CB0C5B5C68AE41AE6F");
-    public static final User USER = new User("ownerId", "username", "passwd", "dataSpace", Role.ROLE_READ_WRITE, "mail");
 
     @Rule
     public TestName testName = new TestName();
@@ -105,37 +102,33 @@ public abstract class StorageServiceTest {
     @Test
     public void rollbackArchiveRollback() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
-        aip.getSip().setOwner(USER);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         aip.getXmls().forEach(x -> {
             x.setState(ObjectState.ROLLED_BACK);
-            x.setOwner(USER);
         });
         AtomicBoolean rollback = new AtomicBoolean(false);
         getService().storeAip(aip, rollback, getDataSpace());
-        getService().rollbackAip(aip, getDataSpace());
+        getService().rollbackAip(aip, getDataSpace(), Instant.now());
         aip.getSip().setState(ObjectState.ROLLED_BACK);
 
         getService().verifyStateOfObjects(asList(aip.getXmls(), aip.getSip()), new AtomicLong(0));
-        aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
-        aip.getSip().setOwner(USER);
+        aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         aip.getXmls().forEach(x -> {
             x.setState(ObjectState.ROLLED_BACK);
-            x.setOwner(USER);
         });
         getService().storeAip(aip, rollback, getDataSpace());
         aip.getSip().setState(ObjectState.ARCHIVED);
         aip.getXmls().forEach(x -> x.setState(ObjectState.ARCHIVED));
         getService().verifyStateOfObjects(asList(aip.getXmls(), aip.getSip()), new AtomicLong(0));
-        getService().rollbackAip(aip, getDataSpace());
+        getService().rollbackAip(aip, getDataSpace(), Instant.now());
         aip.getSip().setState(ObjectState.ROLLED_BACK);
         aip.getXmls().forEach(x -> x.setState(ObjectState.ROLLED_BACK));
         getService().verifyStateOfObjects(asList(aip.getXmls(), aip.getSip()), new AtomicLong(0));
 
-        getService().storeObject(aip.getXml(), rollback, getDataSpace());
+        getService().storeObject(aip.getXml(), rollback, getDataSpace(), Instant.now());
         aip.getXml().setState(ObjectState.ARCHIVED);
         getService().verifyStateOfObjects(asList(aip.getXml()), new AtomicLong(0));
-        getService().rollbackObject(aip.getXml(), getDataSpace());
+        getService().rollbackObject(aip.getXml(), getDataSpace(), Instant.now());
         aip.getXml().setState(ObjectState.ROLLED_BACK);
         getService().verifyStateOfObjects(asList(aip.getXml()), new AtomicLong(0));
     }
@@ -143,10 +136,10 @@ public abstract class StorageServiceTest {
     @Test
     public void getAipWithMoreXmlsOk() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         getService().storeAip(aip, rollback, getDataSpace());
-        getService().storeObject(new ArchivalObjectDto(toXmlId(sipId, 2), "databaseId", XML_CHECKSUM_2, new User("ownerId"), getXml2Stream(), ObjectState.PROCESSING, Instant.now(), ObjectType.XML), rollback, getDataSpace());
+        getService().storeObject(new ArchivalObjectDto(toXmlId(sipId, 2), "databaseId", XML_CHECKSUM_2, getDataSpace(), getXml2Stream(), ObjectState.PROCESSING, Instant.now(), ObjectType.XML), rollback, getDataSpace(), Instant.now());
 
         AipRetrievalResource aip1 = getService().getAip(sipId, getDataSpace(), 2, 1);
         assertThat(streamToString(aip1.getSip()), is(SIP_CONTENT));
@@ -157,10 +150,10 @@ public abstract class StorageServiceTest {
     @Test
     public void getAipWithSpecificXmlOk() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         getService().storeAip(aip, rollback, getDataSpace());
-        getService().storeObject(new ArchivalObjectDto(toXmlId(sipId, 99), "dbId", XML_CHECKSUM_2, new User("ownerId"), getXml2Stream(), ObjectState.PROCESSING, Instant.now(), ObjectType.XML), rollback, getDataSpace());
+        getService().storeObject(new ArchivalObjectDto(toXmlId(sipId, 99), "dbId", XML_CHECKSUM_2, getDataSpace(), getXml2Stream(), ObjectState.PROCESSING, Instant.now(), ObjectType.XML), rollback, getDataSpace(), Instant.now());
 
         AipRetrievalResource aip1 = getService().getAip(sipId, getDataSpace(), 99);
         assertThat(streamToString(aip1.getSip()), is(SIP_CONTENT));
@@ -176,7 +169,7 @@ public abstract class StorageServiceTest {
     @Test
     public void getAipMissingXml() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         getService().storeAip(aip, rollback, getDataSpace());
         assertThrown(() -> getService().getAip(sipId, getDataSpace(), 2)).isInstanceOf(FileDoesNotExistException.class);
@@ -185,7 +178,7 @@ public abstract class StorageServiceTest {
     @Test
     public void getXmlOk() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         getService().storeAip(aip, rollback, getDataSpace());
 
@@ -202,7 +195,7 @@ public abstract class StorageServiceTest {
     @Test
     public void storeAipSetsRollback() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), null, getXmlStream(), null);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), null, getXmlStream(), null);
         AtomicBoolean rollback = new AtomicBoolean(false);
         assertThrown(() -> getService().storeAip(aip, rollback, getDataSpace())).isInstanceOf(GeneralException.class);
         assertThat(rollback.get(), is(true));
@@ -211,11 +204,11 @@ public abstract class StorageServiceTest {
     @Test
     public void getAipInfoOk() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         getService().storeAip(aip, rollback, getDataSpace());
-        ArchivalObjectDto xml2 = new ArchivalObjectDto(toXmlId(sipId, 2), "xmlId", new Checksum(ChecksumType.MD5, "ee26908bf9629eeb4b37dac350f4754a"), new User("ownerId"), new ByteArrayInputStream("blob".getBytes()), ObjectState.ROLLED_BACK, Instant.now(), ObjectType.XML);
-        getService().storeObject(xml2, rollback, getDataSpace());
+        ArchivalObjectDto xml2 = new ArchivalObjectDto(toXmlId(sipId, 2), "xmlId", new Checksum(ChecksumType.MD5, "ee26908bf9629eeb4b37dac350f4754a"), getDataSpace(), new ByteArrayInputStream("blob".getBytes()), ObjectState.ROLLED_BACK, Instant.now(), ObjectType.XML);
+        getService().storeObject(xml2, rollback, getDataSpace(), Instant.now());
         aip.getSip().setState(ObjectState.REMOVED);
         aip.getXml().setState(ObjectState.ARCHIVED);
 
@@ -269,7 +262,7 @@ public abstract class StorageServiceTest {
     @Test
     public void getAipInfoMissingXml() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         getService().storeAip(aip, rollback, getDataSpace());
         ArchivalObjectDto nonExistentXml = new ArchivalObjectDto(toXmlId(sipId, 99), null, XML_CHECKSUM, null, null, ObjectState.ARCHIVED, Instant.now(), ObjectType.XML);
@@ -281,10 +274,10 @@ public abstract class StorageServiceTest {
     @Test
     public void getAipInfoDeletedSip() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         getService().storeAip(aip, rollback, getDataSpace());
-        getService().delete(aip.getSip(), getDataSpace(), false);
+        getService().delete(aip.getSip(), getDataSpace(), Instant.now());
         aip.getSip().setState(ObjectState.DELETED);
         aip.getXml().setState(ObjectState.ARCHIVED);
 
@@ -316,15 +309,13 @@ public abstract class StorageServiceTest {
     public void verifyStateOfObjects() throws Exception {
         AtomicBoolean rollback = new AtomicBoolean(false);
         AtomicLong counter = new AtomicLong(0);
-        User u = new User("ownerId");
-        u.setDataSpace(getDataSpace());
 
         String object1Id = testName.getMethodName() + 1;
         String object2Id = testName.getMethodName() + 2;
-        ArchivalObjectDto object1 = new ArchivalObjectDto(object1Id, object1Id, XML_CHECKSUM, u, getXmlStream(), ObjectState.ARCHIVED, Instant.now(), ObjectType.XML);
-        ArchivalObjectDto object2 = new ArchivalObjectDto(object2Id, object1Id, XML_CHECKSUM, u, getXmlStream(), ObjectState.DELETED, Instant.now().plusSeconds(1), ObjectType.XML);
-        getService().storeObject(object1, rollback, getDataSpace());
-        getService().storeObject(object2, rollback, getDataSpace());
+        ArchivalObjectDto object1 = new ArchivalObjectDto(object1Id, object1Id, XML_CHECKSUM, getDataSpace(), getXmlStream(), ObjectState.ARCHIVED, Instant.now(), ObjectType.XML);
+        ArchivalObjectDto object2 = new ArchivalObjectDto(object2Id, object1Id, XML_CHECKSUM, getDataSpace(), getXmlStream(), ObjectState.DELETED, Instant.now().plusSeconds(1), ObjectType.XML);
+        getService().storeObject(object1, rollback, getDataSpace(), Instant.now());
+        getService().storeObject(object2, rollback, getDataSpace(), Instant.now());
 
         ArchivalObjectDto failingDto = getService().verifyStateOfObjects(asList(object1, object2), counter);
         assertThat(failingDto, nullValue());

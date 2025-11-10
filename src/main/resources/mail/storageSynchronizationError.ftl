@@ -2,8 +2,7 @@
 <meta http-equiv="Content-type" content="text/html; charset=UTF-8">
 
 <h3>Storage Synchronization Error</h3>
-<p>Error has occurred during: ${phase} phase</p>
-<p>${done} of total ${total} operations were successfully processed in this phase</p>
+<p>until now ${done} of total ${total} operations were successfully processed</p>
 <p>Storage: ${storage}</p>
 <p><b>Exception:</b></p>
 <p>${exceptionMessage}</p>

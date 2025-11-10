@@ -1,4 +1,4 @@
-package cz.cas.lib.arcstorage.api;
+package cz.cas.lib.arcstorage.config;
 
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.ExternalDocumentation;
@@ -16,13 +16,13 @@ import java.util.List;
 @Configuration
 public class SwaggerConfig {
     @Bean
-    public OpenAPI springShopOpenAPI() {
+    public OpenAPI archivalStorageAPI() {
         return new OpenAPI()
                 .security(List.of(new SecurityRequirement().addList("basicAuth")))
                 .components(new Components().addSecuritySchemes("basicAuth", new SecurityScheme().type(
                         SecurityScheme.Type.HTTP).scheme("basic")))
                 .info(new Info().title("Archival Storage Gateway API")
-                        .version("v1.1")
+                        .version("v2.0")
                         .license(new License().name("GNU GPL v3"))
                         .contact(new Contact().name("inQool, a.s.").url("https://inqool.cz/").email("info@inqool.cz")))
                 .externalDocs(new ExternalDocumentation()

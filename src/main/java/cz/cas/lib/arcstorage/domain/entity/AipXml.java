@@ -4,15 +4,14 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
 import cz.cas.lib.arcstorage.dto.Checksum;
 import cz.cas.lib.arcstorage.dto.ObjectState;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import org.hibernate.annotations.BatchSize;
-
 import jakarta.persistence.Entity;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import org.hibernate.annotations.BatchSize;
 
 import static cz.cas.lib.arcstorage.storage.StorageUtils.toXmlId;
 
@@ -50,6 +49,6 @@ public class AipXml extends ArchivalObject {
 
     @Override
     public ArchivalObjectDto toDto() {
-        return new ArchivalObjectDto(toXmlId(sip.getId(), version), id, getChecksum(), getOwner(), null, getState(), getCreated(), ObjectType.XML);
+        return new ArchivalObjectDto(toXmlId(sip.getId(), version), id, getChecksum(), getOwner().getDataSpace(), null, getState(), getCreated(), ObjectType.XML);
     }
 }

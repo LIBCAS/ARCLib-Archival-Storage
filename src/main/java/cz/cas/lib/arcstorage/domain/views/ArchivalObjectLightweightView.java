@@ -3,15 +3,13 @@ package cz.cas.lib.arcstorage.domain.views;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import cz.cas.lib.arcstorage.domain.entity.DomainObject;
 import cz.cas.lib.arcstorage.domain.entity.User;
-import cz.cas.lib.arcstorage.domain.store.InstantGenerator;
 import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
 import cz.cas.lib.arcstorage.dto.Checksum;
 import cz.cas.lib.arcstorage.dto.ObjectState;
-import lombok.Getter;
-import org.hibernate.annotations.GenerationTime;
-import org.hibernate.annotations.GeneratorType;
-
 import jakarta.persistence.*;
+import lombok.Getter;
+import org.hibernate.annotations.CreationTimestamp;
+
 import java.time.Instant;
 
 @MappedSuperclass
@@ -26,7 +24,7 @@ public abstract class ArchivalObjectLightweightView extends DomainObject {
     })
     protected Checksum checksum;
 
-    @GeneratorType(type = InstantGenerator.class, when = GenerationTime.INSERT)
+    @CreationTimestamp
     protected Instant created;
 
     @Enumerated(EnumType.STRING)

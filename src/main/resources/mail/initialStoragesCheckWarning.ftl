@@ -3,10 +3,10 @@
 
 <h3>Initial Storages Check Warning</h3>
 <#if storagesCount < minStorages>
-<p>There are not enough logical storages attached. Minimum defined by configuration: ${minStorages} but only ${storagesCount} attached.</p>
+<p>There are not enough logical storages attached and reachable. Minimum defined by configuration: ${minStorages} but only ${storagesCount} attached and reachable.</p>
 </#if>
 <#if unreachableServices?has_content>
-<p>Following storages are not reachable: <#list unreachableServices as s>${s}<#sep>, </#list></p>
+<p>Following storages are not reachable or are detached: <#list unreachableServices as s>${s}<#sep>, </#list></p>
 </#if>
 
 <p>

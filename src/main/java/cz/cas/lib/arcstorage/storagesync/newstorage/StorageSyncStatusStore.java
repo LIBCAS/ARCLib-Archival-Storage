@@ -20,18 +20,6 @@ public class StorageSyncStatusStore extends DomainStore<StorageSyncStatus, QStor
         return fetch;
     }
 
-    public boolean anyInInitialOrFinishingPhase() {
-        StorageSyncStatus o = query().select(qObject()).where(qObject().phase.in(StorageSyncPhase.INIT, StorageSyncPhase.POST_SYNC_CHECK)).fetchFirst();
-        detachAll();
-        return o != null;
-    }
-
-    public StorageSyncStatus anySynchronizing() {
-        StorageSyncStatus s = query().select(qObject()).where(qObject().phase.ne(StorageSyncPhase.DONE)).fetchFirst();
-        detachAll();
-        return s;
-    }
-
     @Override
     @Transactional
     public void delete(StorageSyncStatus entity) {

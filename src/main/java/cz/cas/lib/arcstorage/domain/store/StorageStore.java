@@ -42,7 +42,7 @@ public class StorageStore extends DomainStore<Storage, QStorage> {
 
     public List<StorageBasicDto> getAllAsDtos() {
         Collection<Storage> storages = findAll();
-        return storages.stream().map(StorageBasicDto::transmute).collect(Collectors.toList());
+        return storages.stream().map(StorageBasicDto::of).collect(Collectors.toList());
     }
 
     public long getCount() {

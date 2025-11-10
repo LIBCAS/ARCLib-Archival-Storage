@@ -1,13 +1,12 @@
 package cz.cas.lib.arcstorage.domain.entity;
 
-import cz.cas.lib.arcstorage.domain.store.InstantGenerator;
-import lombok.Getter;
-import lombok.Setter;
-import org.hibernate.annotations.GenerationTime;
-import org.hibernate.annotations.GeneratorType;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.MappedSuperclass;
+import lombok.Getter;
+import lombok.Setter;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
 import java.time.Instant;
 
 /**
@@ -31,11 +30,12 @@ import java.time.Instant;
 @Setter
 @MappedSuperclass
 public abstract class DatedObject extends DomainObject {
+
     @Column(updatable = false)
-    @GeneratorType( type = InstantGenerator.class, when = GenerationTime.INSERT)
+    @CreationTimestamp
     protected Instant created;
 
-    @GeneratorType( type = InstantGenerator.class, when = GenerationTime.ALWAYS)
+    @UpdateTimestamp
     protected Instant updated;
 
     protected Instant deleted;

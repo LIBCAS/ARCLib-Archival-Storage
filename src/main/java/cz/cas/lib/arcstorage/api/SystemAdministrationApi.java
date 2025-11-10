@@ -2,26 +2,30 @@ package cz.cas.lib.arcstorage.api;
 
 import cz.cas.lib.arcstorage.domain.entity.SystemState;
 import cz.cas.lib.arcstorage.domain.store.Transactional;
+import cz.cas.lib.arcstorage.dto.SystemStateUpdateDto;
 import cz.cas.lib.arcstorage.exception.ForbiddenByConfigException;
+import cz.cas.lib.arcstorage.jms.JmsHealthCheckException;
+import cz.cas.lib.arcstorage.jms.JmsQueueNotEmptyException;
 import cz.cas.lib.arcstorage.security.Roles;
+import cz.cas.lib.arcstorage.service.IntervalJobService;
 import cz.cas.lib.arcstorage.service.SystemAdministrationService;
 import cz.cas.lib.arcstorage.service.SystemStateService;
+import cz.cas.lib.arcstorage.service.exception.state.StateException;
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.storagesync.backup.BackupExportService;
 import cz.cas.lib.arcstorage.storagesync.backup.BackupProcessException;
-import cz.cas.lib.arcstorage.storagesync.newstorage.exception.SynchronizationInProgressException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import jakarta.annotation.security.RolesAllowed;
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-import jakarta.annotation.security.RolesAllowed;
-import jakarta.validation.Valid;
 import java.io.IOException;
 import java.time.Instant;
 
@@ -34,35 +38,16 @@ public class SystemAdministrationApi {
     private SystemStateService systemStateService;
     private BackupExportService backupExportService;
     private SystemAdministrationService systemAdministrationService;
-
-    @Operation(summary = "Updates systemState of the Archival Storage.")
-    @RequestMapping(value = "/config", method = RequestMethod.POST)
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "400", description = "the config breaks the basic LTP policy (e.g. count of storages)"),
-            @ApiResponse(responseCode = "409", description = "provided config has different id than that stored in DB (only one config object is allowed)")
-    })
-    public SystemState save(
-            @Parameter(description = "systemState object", required = true) @RequestBody @Valid SystemState systemState
-    ) {
-        log.info("Saving new or updating an existing systemState of the Archival Storage.");
-        return systemStateService.save(systemState);
-    }
-
-    @Operation(summary = "Returns configuration")
-    @RequestMapping(value = "/config", method = RequestMethod.GET)
-    public SystemState get() {
-        return systemStateService.get();
-    }
+    private IntervalJobService intervalJobService;
 
     @Operation(summary = "Cleans storage. In order to succeed, all storages must be reachable.", description = "By default only failed package are cleaned (i.e. rolled back/deleted from all storages). " +
             "If 'all' is set to true, also currently processing/stucked packages and tmp folder is cleaned.")
-    @RequestMapping(value = "/cleanup", method = RequestMethod.POST)
+    @PostMapping("/cleanup")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "503", description = "some logical storage unreachable"),
-            @ApiResponse(responseCode = "403", description = "some logical storage is synchronizing")
     })
     public void cleanup(
-            @Parameter(description = "all") @RequestParam(value = "all", defaultValue = "false") boolean all) throws SomeLogicalStoragesNotReachableException, IOException, NoLogicalStorageAttachedException, SynchronizationInProgressException {
+            @Parameter(description = "all") @RequestParam(value = "all", defaultValue = "false") boolean all) throws SomeLogicalStoragesNotReachableException, IOException, NoLogicalStorageAttachedException, JmsHealthCheckException {
         systemAdministrationService.cleanup(all);
     }
 
@@ -70,18 +55,17 @@ public class SystemAdministrationApi {
             description = "Object must be in failed or processing state. If the object is in processing state, " +
                     "caller must ensure that the object is not actually processing but the state was left processing because" +
                     "some unexpected error has occurred (e.g. system crashed).")
-    @RequestMapping(value = "/cleanup/object/{objId}", method = RequestMethod.POST)
+    @PostMapping("/cleanup/object/{objId}")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "503", description = "some logical storage unreachable"),
-            @ApiResponse(responseCode = "403", description = "some logical storage is synchronizing")
     })
     public void cleanupOne(
-            @Parameter(description = "database id of the object") @PathVariable(value = "objId") String objId) throws SomeLogicalStoragesNotReachableException, IOException, NoLogicalStorageAttachedException, SynchronizationInProgressException {
+            @Parameter(description = "database id of the object") @PathVariable(value = "objId") String objId) throws JmsHealthCheckException, StateException {
         systemAdministrationService.cleanupOne(objId);
     }
 
     @Operation(summary = "Recovers database from the storage.", description = " Synchronous call. System has to be set to read-only mode. Currently the recovery is implemented only for local FS/ZFS. If the object metadata is present in DB and also at storage, the metadata are compared and if not equal, system logs (warn) the conflict and if override parameter is set to true, DB metadata are overridden by storage metadata. System also logs (error) all objects which are in DB but not at storage. ")
-    @RequestMapping(value = "/recover_db", method = RequestMethod.POST)
+    @PostMapping("/recover_db")
     @Transactional
     @ApiResponses(value = {
             @ApiResponse(responseCode = "403", description = "Not authorized or system is in read-write mode"),
@@ -94,7 +78,7 @@ public class SystemAdministrationApi {
     }
 
     @Operation(summary = "Exports all objects which have changed in the specified time range.", description = "Once the reachability of export location is verified, the response is returned and process continues asynchronously. If since/until is not filled, MIN/MAX is used.")
-    @RequestMapping(value = "/backup", method = RequestMethod.GET)
+    @GetMapping("/backup")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "500", description = "Export location unreachable or other internal error.")
     })
@@ -104,18 +88,65 @@ public class SystemAdministrationApi {
         backupExportService.exportDataForBackup(since, until);
     }
 
+    @Operation(summary = "Returns configuration")
+    @GetMapping("/config")
+    public SystemState get() {
+        return systemStateService.get();
+    }
+
+    @Operation(summary = "Switches primary storage.",
+            description = "In order to succeed, all storage queues must be empty.")
+    @PostMapping("/config/storage/{id}/primary")
+    public void switchPrimaryStorage(
+            @Parameter(description = "ID of new primary storage") @PathVariable(value = "id") String id) throws SomeLogicalStoragesNotReachableException, InterruptedException, JmsQueueNotEmptyException {
+        systemAdministrationService.switchPrimaryStorage(id);
+    }
+
+    @Operation(summary = "Sets system to read-only mode")
+    @PostMapping("/config/read_only")
+    public void setReadOnly() {
+        systemStateService.setReadOnly(systemStateService.get(), null);
+    }
+
+    @Operation(summary = "Sets system to read-write mode")
+    @PostMapping("/config/read_write")
+    public void setReadWrite() {
+        systemStateService.setReadWrite(systemStateService.get());
+    }
+
+    @Operation(summary = "Updates system properties")
+    @PostMapping("/config")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "400", description = "the config breaks the basic LTP policy (e.g. count of storages)"),
+    })
+    public SystemState update(@Parameter(description = "dto", required = true) @RequestBody @Valid SystemStateUpdateDto systemStateDto) {
+        SystemState stateInDb = systemStateService.get();
+        boolean reachabilityIntervalChanged = systemStateDto.getReachabilityCheckIntervalInMinutes() != stateInDb.getReachabilityCheckIntervalInMinutes();
+        stateInDb.setReachabilityCheckIntervalInMinutes(systemStateDto.getReachabilityCheckIntervalInMinutes());
+        stateInDb.setMinStorageCount(systemStateDto.getMinStorageCount());
+        systemStateService.save(stateInDb);
+        if (reachabilityIntervalChanged)
+            intervalJobService.scheduleReachabilityChecks(stateInDb.getReachabilityCheckIntervalInMinutes());
+        return stateInDb;
+    }
+
     @Autowired
     public void setBackupExportService(BackupExportService backupExportService) {
         this.backupExportService = backupExportService;
     }
 
     @Autowired
-    public void setsystemStateService(SystemStateService systemStateService) {
+    public void setSystemStateService(SystemStateService systemStateService) {
         this.systemStateService = systemStateService;
     }
 
     @Autowired
     public void setSystemAdministrationService(SystemAdministrationService systemAdministrationService) {
         this.systemAdministrationService = systemAdministrationService;
+    }
+
+    @Autowired
+    public void setIntervalJobService(IntervalJobService intervalJobService) {
+        this.intervalJobService = intervalJobService;
     }
 }

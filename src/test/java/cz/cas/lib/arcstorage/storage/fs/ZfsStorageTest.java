@@ -7,7 +7,10 @@ import cz.cas.lib.arcstorage.dto.StorageStateDto;
 import cz.cas.lib.arcstorage.dto.StorageType;
 import net.schmizz.sshj.sftp.SFTPClient;
 import org.apache.commons.io.IOUtils;
-import org.junit.*;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Rule;
+import org.junit.Test;
 import org.junit.rules.TestName;
 
 import java.io.ByteArrayInputStream;
@@ -63,7 +66,7 @@ public class ZfsStorageTest {
     public String streamToString(InputStream is) {
         try {
             return IOUtils.toString(is, StandardCharsets.UTF_8);
-        } catch(IOException e) {
+        } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
     }
@@ -82,7 +85,7 @@ public class ZfsStorageTest {
 
     @Before
     public void before() throws IOException {
-        service = new ZfsStorageService(storage, props.getProperty("test.sftp.folderpath"), props.getProperty("test.sftp.poolname"), KEY_PATH,USER, 10000);
+        service = new ZfsStorageService(storage, props.getProperty("test.sftp.folderpath"), props.getProperty("test.sftp.poolname"), KEY_PATH, USER, 10000, null);
     }
 
     @Test
@@ -102,11 +105,11 @@ public class ZfsStorageTest {
         for (String key : pool.keySet()) {
             assertThat(pool.get(key), not(isEmptyOrNullString()));
         }
-        assertThat(pool.get("NAME"),not(isEmptyOrNullString()));
-        assertThat(pool.get("HEALTH"),not(isEmptyOrNullString()));
-        assertThat(pool.get("SIZE"),not(isEmptyOrNullString()));
-        assertThat(pool.get("ALLOC"),not(isEmptyOrNullString()));
-        assertThat(pool.get("FREE"),not(isEmptyOrNullString()));
+        assertThat(pool.get("NAME"), not(isEmptyOrNullString()));
+        assertThat(pool.get("HEALTH"), not(isEmptyOrNullString()));
+        assertThat(pool.get("SIZE"), not(isEmptyOrNullString()));
+        assertThat(pool.get("ALLOC"), not(isEmptyOrNullString()));
+        assertThat(pool.get("FREE"), not(isEmptyOrNullString()));
         assertThat((Collection<String>) storageState.getStorageStateData().get("cmd: " + service.CMD_STATUS), hasSize(greaterThan(0)));
     }
 }

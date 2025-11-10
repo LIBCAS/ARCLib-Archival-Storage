@@ -7,7 +7,6 @@ import com.amazonaws.services.s3.model.Owner;
 import com.amazonaws.services.s3.model.S3Object;
 import cz.cas.lib.arcstorage.domain.entity.ObjectType;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
-import cz.cas.lib.arcstorage.domain.entity.User;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.storage.StorageServiceTest;
 import cz.cas.lib.arcstorage.storage.StorageUtils;
@@ -196,7 +195,7 @@ public class CephS3Test extends StorageServiceTest {
     public void storeAipOk() throws Exception {
         String sipId = testName.getMethodName();
         String xmlId = toXmlId(sipId, 1);
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, bucketName);
 
@@ -219,7 +218,7 @@ public class CephS3Test extends StorageServiceTest {
         String sipId = testName.getMethodName();
         AtomicBoolean rollback = new AtomicBoolean(false);
         String xmlId = toXmlId(sipId, 99);
-        service.storeObject(new ArchivalObjectDto(xmlId, "databaseId", SIP_CHECKSUM, new User("ownerId"), getXmlStream(), ObjectState.PROCESSING, Instant.now(), ObjectType.XML), rollback, bucketName);
+        service.storeObject(new ArchivalObjectDto(xmlId, "databaseId", SIP_CHECKSUM, getDataSpace(), getXmlStream(), ObjectState.PROCESSING, Instant.now(), ObjectType.XML), rollback, bucketName, Instant.now());
 
         AmazonS3 s3 = service.connect();
         S3Object xmlObj = s3.getObject(bucketName, xmlId);
@@ -235,12 +234,12 @@ public class CephS3Test extends StorageServiceTest {
     public void deleteSipMultipleTimesOk() throws Exception {
         String sipId = testName.getMethodName();
         String xmlId = toXmlId(sipId, 1);
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, bucketName);
 
-        service.delete(aip.getSip(), bucketName, false);
-        service.delete(aip.getSip(), bucketName, false);
+        service.delete(aip.getSip(), bucketName, Instant.now());
+        service.delete(aip.getSip(), bucketName, Instant.now());
 
         AmazonS3 s3 = service.connect();
         assertThrown(() -> s3.getObject(bucketName, sipId)).isInstanceOf(AmazonS3Exception.class).messageContains("NoSuchKey");
@@ -258,12 +257,12 @@ public class CephS3Test extends StorageServiceTest {
     @Override
     public void removeSipMultipleTimesOk() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, bucketName);
 
-        service.remove(aip.getSip(), bucketName, false);
-        service.remove(aip.getSip(), bucketName, false);
+        service.remove(aip.getSip(), bucketName, Instant.now());
+        service.remove(aip.getSip(), bucketName, Instant.now());
 
         AmazonS3 s3 = service.connect();
         S3Object sipObj = s3.getObject(bucketName, sipId);
@@ -276,13 +275,13 @@ public class CephS3Test extends StorageServiceTest {
     @Override
     public void renewSipMultipleTimesOk() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, bucketName);
 
-        service.remove(aip.getSip(), bucketName, false);
-        service.renew(aip.getSip(), bucketName, false);
-        service.renew(aip.getSip(), bucketName, false);
+        service.remove(aip.getSip(), bucketName, Instant.now());
+        service.renew(aip.getSip(), bucketName, Instant.now());
+        service.renew(aip.getSip(), bucketName, Instant.now());
 
         AmazonS3 s3 = service.connect();
         S3Object sipObj = s3.getObject(bucketName, sipId);
@@ -318,7 +317,7 @@ public class CephS3Test extends StorageServiceTest {
         assertThat(userMetadata.get(CephS3StorageService.STATE_KEY), is(ObjectState.PROCESSING.toString()));
         //actual test
         ArchivalObjectDto dto = new ArchivalObjectDto(fileId, null, LARGE_SIP_CHECKSUM, null, null, ObjectState.PROCESSING, creation, ObjectType.SIP);
-        service.rollbackFile(s3, dto, bucketName);
+        service.rollbackFile(s3, dto, bucketName, Instant.now());
 
         assertThrown(() -> s3.getObject(bucketName, fileId)).isInstanceOf(AmazonS3Exception.class).messageContains("NoSuchKey");
         userMetadata = s3.getObjectMetadata(bucketName, service.toMetadataObjectId(fileId)).getUserMetadata();
@@ -334,8 +333,8 @@ public class CephS3Test extends StorageServiceTest {
         Instant creation = Instant.now();
         service.storeFile(s3, fileId, getSipStream(), SIP_CHECKSUM, new AtomicBoolean(false), bucketName, creation);
         ArchivalObjectDto dto = new ArchivalObjectDto(fileId, null, SIP_CHECKSUM, null, null, ObjectState.ARCHIVED, creation, ObjectType.SIP);
-        service.rollbackFile(s3, dto, bucketName);
-        service.rollbackFile(s3, dto, bucketName);
+        service.rollbackFile(s3, dto, bucketName, Instant.now());
+        service.rollbackFile(s3, dto, bucketName, Instant.now());
 
         assertThrown(() -> s3.getObject(bucketName, fileId)).isInstanceOf(AmazonS3Exception.class).messageContains("NoSuchKey");
         Map<String, String> userMetadata = s3.getObjectMetadata(bucketName, service.toMetadataObjectId(fileId)).getUserMetadata();
@@ -348,7 +347,7 @@ public class CephS3Test extends StorageServiceTest {
         String fileId = testName.getMethodName();
         AmazonS3 s3 = service.connect();
         ArchivalObjectDto dto = new ArchivalObjectDto(fileId, null, new Checksum(ChecksumType.MD5, "hash"), null, null, ObjectState.ARCHIVED, Instant.now(), ObjectType.SIP);
-        service.rollbackFile(s3, dto, bucketName);
+        service.rollbackFile(s3, dto, bucketName, Instant.now());
         Map<String, String> userMetadata = s3.getObjectMetadata(bucketName, service.toMetadataObjectId(fileId)).getUserMetadata();
         assertThat(userMetadata.get(CephS3StorageService.STATE_KEY), is(ObjectState.ROLLED_BACK.toString()));
     }
@@ -358,10 +357,10 @@ public class CephS3Test extends StorageServiceTest {
     public void rollbackAipOk() throws Exception {
         String sipId = testName.getMethodName();
         String xmlId = toXmlId(sipId, 1);
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, bucketName);
-        service.rollbackAip(aip, bucketName);
+        service.rollbackAip(aip, bucketName, Instant.now());
 
         AmazonS3 s3 = service.connect();
         assertThrown(() -> s3.getObject(bucketName, sipId)).isInstanceOf(AmazonS3Exception.class).messageContains("NoSuchKey");
@@ -379,11 +378,11 @@ public class CephS3Test extends StorageServiceTest {
     public void rollbackXmlOk() throws Exception {
         String sipId = testName.getMethodName();
         String xmlId = toXmlId(sipId, 1);
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, bucketName);
         ArchivalObjectDto dto = new ArchivalObjectDto(xmlId, null, XML_CHECKSUM, null, null, ObjectState.ARCHIVED, Instant.now(), ObjectType.XML);
-        service.rollbackObject(aip.getXml(), bucketName);
+        service.rollbackObject(aip.getXml(), bucketName, Instant.now());
 
         AmazonS3 s3 = service.connect();
         S3Object sipObj = s3.getObject(bucketName, sipId);

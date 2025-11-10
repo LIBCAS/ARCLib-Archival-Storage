@@ -13,6 +13,7 @@ import cz.cas.lib.arcstorage.service.ArchivalDbService;
 import cz.cas.lib.arcstorage.service.StorageProvider;
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageReachableException;
+import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.ceph.CephS3StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
@@ -47,6 +48,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -167,9 +169,8 @@ public class AipApiTest implements ApiTest {
     }
 
     @Before
-    public void before() throws StorageException, IOException, NoLogicalStorageAttachedException, NoLogicalStorageReachableException {
+    public void before() throws StorageException, IOException, NoLogicalStorageAttachedException, NoLogicalStorageReachableException, SomeLogicalStoragesNotReachableException {
         Files.createDirectories(tmpFolder);
-        archivalDbService.setTransactionTemplateTimeout(5);
         transactionTemplate.execute(s -> {
             for (AipXml aipXml : xmlStore.findAll()) {
                 xmlStore.delete(aipXml);
@@ -571,8 +572,8 @@ public class AipApiTest implements ApiTest {
         doAnswer(invocation -> {
             Thread.sleep(500);
             throw new IllegalStateException("whatever exception");
-        }).when(cephS3StorageService).storeObject(any(), any(), any());
-        when(storageProvider.createAdaptersForWriteOperation()).thenReturn(asList(cephS3StorageService));
+        }).when(cephS3StorageService).storeObject(any(), any(), any(), Instant.now());
+        //when(storageProvider.createAdaptersForWriteOperation()).thenReturn(asList(cephS3StorageService));
 
         AipSip aipSip = sipStore.find(SIP_ID);
         int countOfXmlVersions = aipSip.getXmls().size();
@@ -729,8 +730,6 @@ public class AipApiTest implements ApiTest {
      */
     @Test
     public void transactionTimeoutsTest() throws Exception {
-        archivalDbService.setTransactionTemplateTimeout(0);
-
         //updatexml
         MockMultipartFile xmlFile = new MockMultipartFile(
                 "xml", "xml", "text/plain", XML2_CONTENT.getBytes());

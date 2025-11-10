@@ -7,6 +7,9 @@ import cz.cas.lib.arcstorage.domain.store.Transactional;
 import cz.cas.lib.arcstorage.dto.StorageType;
 import cz.cas.lib.arcstorage.security.Role;
 import cz.cas.lib.arcstorage.security.user.UserStore;
+import cz.cas.lib.arcstorage.service.SystemAdministrationService;
+import cz.cas.lib.arcstorage.storagesync.newstorage.StorageSyncStatus;
+import cz.cas.lib.arcstorage.storagesync.newstorage.StorageSyncStatusStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -16,6 +19,10 @@ import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 @Component
@@ -35,6 +42,10 @@ public class SamplesInitializer implements ApplicationListener<ApplicationReadyE
     private PasswordEncoder passwordEncoder;
     @Autowired
     private StorageStore storageStore;
+    @Autowired
+    private SystemAdministrationService systemAdministrationService;
+    @Autowired
+    private StorageSyncStatusStore storageSyncStatusStore;
 
     @Override
     @Transactional
@@ -53,6 +64,21 @@ public class SamplesInitializer implements ApplicationListener<ApplicationReadyE
             storage.setHost("localhost");
             storage.setConfig("{\"rootDirPath\":\"sample-storage-dir\"}");
             storageStore.save(storage);
+
+            StorageSyncStatus storageSyncStatus = new StorageSyncStatus(storage);
+            storageSyncStatusStore.save(storageSyncStatus);
+
+            try {
+                systemAdministrationService.switchPrimaryStorage(storage.getId());
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+
+            try {
+                Files.createDirectory(Path.of("sample-storage-dir"));
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
 
             log.info("samples initializer finished");
         } else {

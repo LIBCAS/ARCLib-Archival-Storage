@@ -18,6 +18,8 @@ import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.aop.framework.Advised;
 import org.springframework.aop.support.AopUtils;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -29,6 +31,14 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public class Utils {
+
+    public static void executeAfterTransactionCommits(Runnable task) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            public void afterCommit() {
+                task.run();
+            }
+        });
+    }
 
     public static <T, U> List<U> map(List<T> objects, Function<T, U> func) {
         if (objects != null) {

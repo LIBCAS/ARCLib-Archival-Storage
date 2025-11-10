@@ -22,6 +22,6 @@ public class ObjectInfoDto {
     private ObjectType type;
 
     public static ObjectInfoDto of(ArchivalObjectDto d) {
-        return new ObjectInfoDto(d.getDatabaseId(), d.getStorageId(), d.getCreated(), d.getChecksum(), d.getOwner().getDataSpace(), d.getState(), d.getObjectType());
+        return new ObjectInfoDto(d.getDatabaseId(), d.getStorageId(), d.getCreated(), d.getChecksum(), d.getDataSpace(), d.getState(), d.getObjectType());
     }
 }

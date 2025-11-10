@@ -29,7 +29,7 @@ public class StorageAdministrationApiTest extends DbTest implements ApiTest {
     private static final String STORAGE3_ID = "4f4e3c93-c22c-4ca0-9b50-6bcbe503ced7";
     private static final String BASE = "/api/administration";
     private static final String BASE_STORAGE = BASE + "/storage";
-    private static final SystemState CONFIG = new SystemState(2,false);
+    private static final SystemState CONFIG = new SystemState(2, false);
 
     private StorageAdministrationApi api;
 
@@ -68,7 +68,7 @@ public class StorageAdministrationApiTest extends DbTest implements ApiTest {
     }
 
     private void saveStorage(String id) {
-        Storage storage = new Storage("", "", 0, 0, StorageType.FS, "", "", true, false);
+        Storage storage = new Storage("", "", 0, 0, StorageType.FS, "", "", true, null, null);
         storage.setId(id);
         storageStore.save(storage);
     }

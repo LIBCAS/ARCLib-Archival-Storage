@@ -13,13 +13,10 @@ import java.util.concurrent.ScheduledExecutorService;
 public class ThreadPoolProducer {
 
     private ExecutorService executorService;
-    private ExecutorService batchOpsExecutorService;
     private ScheduledExecutorService scheduledExecutorService;
 
-    public ThreadPoolProducer(@Value("${arcstorage.threadPools.batchOps}") int batchOpsThreadCount,
-                              @Value("${arcstorage.threadPools.scheduled}") int scheduledThreadCount) {
+    public ThreadPoolProducer(@Value("${arcstorage.threadPools.scheduled}") int scheduledThreadCount) {
         executorService = Executors.newCachedThreadPool();
-        batchOpsExecutorService = Executors.newWorkStealingPool(batchOpsThreadCount);
         scheduledExecutorService = Executors.newScheduledThreadPool(scheduledThreadCount);
     }
 
@@ -27,11 +24,6 @@ public class ThreadPoolProducer {
     @Primary
     public ExecutorService executorService() {
         return executorService;
-    }
-
-    @Bean(name = "BatchOpsExecutorService")
-    public ExecutorService reservedExecutorService() {
-        return batchOpsExecutorService;
     }
 
     @Bean

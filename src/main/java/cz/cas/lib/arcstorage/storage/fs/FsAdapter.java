@@ -4,6 +4,7 @@ import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
+import org.springframework.lang.NonNull;
 
 import java.time.Instant;
 import java.util.List;
@@ -37,8 +38,8 @@ public interface FsAdapter extends StorageService {
     }
 
     @Override
-    default void storeObject(ArchivalObjectDto archivalObjectDto, AtomicBoolean rollback, String dataSpace) throws StorageException {
-        getFsProcessor().storeObject(archivalObjectDto, rollback, dataSpace);
+    default void storeObject(ArchivalObjectDto archivalObjectDto, AtomicBoolean rollback, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
+        getFsProcessor().storeObject(archivalObjectDto, rollback, dataSpace, operationTimestamp);
     }
 
     @Override
@@ -52,34 +53,34 @@ public interface FsAdapter extends StorageService {
     }
 
     @Override
-    default void delete(ArchivalObjectDto objectDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException {
-        getFsProcessor().delete(objectDto, dataSpace, createMetaFileIfMissing);
+    default void delete(ArchivalObjectDto objectDto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
+        getFsProcessor().delete(objectDto, dataSpace, operationTimestamp);
     }
 
     @Override
-    default void remove(ArchivalObjectDto objectDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException {
-        getFsProcessor().remove(objectDto, dataSpace, createMetaFileIfMissing);
+    default void remove(ArchivalObjectDto objectDto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
+        getFsProcessor().remove(objectDto, dataSpace, operationTimestamp);
     }
 
     @Override
-    default void renew(ArchivalObjectDto objectDto, String dataSpace, boolean createMetaFileIfMissing) throws StorageException {
-        getFsProcessor().renew(objectDto, dataSpace, createMetaFileIfMissing);
+    default void renew(ArchivalObjectDto objectDto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
+        getFsProcessor().renew(objectDto, dataSpace, operationTimestamp);
     }
 
     @Override
-    default void rollbackAip(AipDto aipDto, String dataSpace) throws StorageException {
-        getFsProcessor().rollbackAip(aipDto, dataSpace);
+    default void rollbackAip(AipDto aipDto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
+        getFsProcessor().rollbackAip(aipDto, dataSpace, operationTimestamp);
     }
 
     @Override
-    default void rollbackObject(ArchivalObjectDto dto, String dataSpace) throws StorageException {
-        getFsProcessor().rollbackObject(dto, dataSpace);
+    default void rollbackObject(ArchivalObjectDto dto, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
+        getFsProcessor().rollbackObject(dto, dataSpace, operationTimestamp);
     }
 
 
     @Override
-    default void forgetObject(String objectIdAtStorage, String dataSpace, Instant forgetAuditTimestamp) throws StorageException {
-        getFsProcessor().forgetObject(objectIdAtStorage, dataSpace, forgetAuditTimestamp);
+    default void forgetObject(String objectIdAtStorage, String dataSpace, @NonNull Instant operationTimestamp) throws StorageException {
+        getFsProcessor().forgetObject(objectIdAtStorage, dataSpace, operationTimestamp);
     }
 
     @Override

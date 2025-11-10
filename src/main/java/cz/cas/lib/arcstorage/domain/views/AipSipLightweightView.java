@@ -3,11 +3,10 @@ package cz.cas.lib.arcstorage.domain.views;
 import cz.cas.lib.arcstorage.domain.entity.AipSip;
 import cz.cas.lib.arcstorage.domain.entity.ObjectType;
 import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
-import lombok.Getter;
-import org.hibernate.annotations.Immutable;
-
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import lombok.Getter;
+import org.hibernate.annotations.Immutable;
 
 /**
  * view without {@link AipSip#xmls} eager relation
@@ -19,6 +18,6 @@ import jakarta.persistence.Table;
 public class AipSipLightweightView extends ArchivalObjectLightweightView {
 
     public ArchivalObjectDto toDto() {
-        return new ArchivalObjectDto(id, id, checksum, owner, null, state, created, ObjectType.SIP);
+        return new ArchivalObjectDto(id, id, checksum, owner.getDataSpace(), null, state, created, ObjectType.SIP);
     }
 }

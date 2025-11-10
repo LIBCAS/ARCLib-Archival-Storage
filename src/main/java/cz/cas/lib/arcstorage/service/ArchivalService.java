@@ -1,14 +1,15 @@
 package cz.cas.lib.arcstorage.service;
 
-import cz.cas.lib.arcstorage.domain.entity.AipSip;
-import cz.cas.lib.arcstorage.domain.entity.AipXml;
-import cz.cas.lib.arcstorage.domain.entity.ArchivalObject;
-import cz.cas.lib.arcstorage.domain.entity.Storage;
+import cz.cas.lib.arcstorage.domain.entity.*;
 import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
 import cz.cas.lib.arcstorage.dto.Checksum;
 import cz.cas.lib.arcstorage.dto.ObjectRetrievalResource;
 import cz.cas.lib.arcstorage.dto.ObjectState;
-import cz.cas.lib.arcstorage.exception.GeneralException;
+import cz.cas.lib.arcstorage.jms.JmsAction;
+import cz.cas.lib.arcstorage.jms.JmsHealthCheckException;
+import cz.cas.lib.arcstorage.jms.JmsQueueManager;
+import cz.cas.lib.arcstorage.jms.JmsSender;
+import cz.cas.lib.arcstorage.jms.context.StoragesContextRegistry;
 import cz.cas.lib.arcstorage.mail.ArcstorageMailCenter;
 import cz.cas.lib.arcstorage.service.exception.ReadOnlyStateException;
 import cz.cas.lib.arcstorage.service.exception.state.*;
@@ -18,41 +19,45 @@ import cz.cas.lib.arcstorage.service.exception.storage.ObjectCouldNotBeRetrieved
 import cz.cas.lib.arcstorage.service.exception.storage.SomeLogicalStoragesNotReachableException;
 import cz.cas.lib.arcstorage.storage.StorageService;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
-import cz.cas.lib.arcstorage.util.ApplicationContextUtils;
+import cz.cas.lib.arcstorage.storagesync.ObjectAudit;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
+import java.time.Instant;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.Lock;
 import java.util.stream.Collectors;
 
+import static cz.cas.lib.arcstorage.dto.ObjectState.*;
 import static cz.cas.lib.arcstorage.storage.StorageUtils.copyStreamAndComputeChecksum;
 import static cz.cas.lib.arcstorage.util.Utils.servicesToEntities;
 
 /**
  * Service which provides methods for operations upon objects as general.
  * While the methods may internally perform different logic for {@link AipXml}, {@link AipSip} and {@link ArchivalObject}, the method
- * signatures remain transparent, hiding the differences of objects.
+ * signatures remain general, hiding the differences of objects.
  */
 @Service
 @Slf4j
 public class ArchivalService {
 
-    private Path tmpFolder;
     private StorageProvider storageProvider;
     private ArcstorageMailCenter arcstorageMailCenter;
     private ArchivalDbService archivalDbService;
-    private ArchivalAsyncService async;
+    private FileLocationResolver fileLocationResolver;
+    private JmsQueueManager queueManager;
+    private StoragesContextRegistry storagesContextRegistry;
+    private JmsSender jmsSender;
+
+    public static final Set<ObjectState> CLEANUP_ALLOWED_STATES = Set.of(ARCHIVAL_FAILURE,
+            DELETION_FAILURE,
+            ROLLBACK_FAILURE,
+            PROCESSING,
+            PRE_PROCESSING);
 
     /**
      * Retrieves object if the object is in the allowed state or throws corresponding exception.
@@ -68,7 +73,7 @@ public class ArchivalService {
      */
     public ObjectRetrievalResource getObject(ArchivalObjectDto objectDto) throws
             FailedStateException, RollbackStateException, StillProcessingStateException,
-            ObjectCouldNotBeRetrievedException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
+            ObjectCouldNotBeRetrievedException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException, SomeLogicalStoragesNotReachableException {
         log.debug("Retrieving object with storage id " + objectDto.getStorageId() + ".");
 
         switch (objectDto.getState()) {
@@ -106,12 +111,19 @@ public class ArchivalService {
      * @throws NoLogicalStorageAttachedException
      */
     public void removeObject(String id) throws StillProcessingStateException, DeletedStateException,
-            RollbackStateException, FailedStateException, SomeLogicalStoragesNotReachableException,
-            NoLogicalStorageAttachedException, ReadOnlyStateException, StorageException {
+            RollbackStateException, FailedStateException, ReadOnlyStateException, JmsHealthCheckException {
         log.debug("Removing object with id: {}", id);
-        List<StorageService> reachableAdapters = storageProvider.createAdaptersForModifyOperation();
-        ArchivalObject obj = archivalDbService.removeObject(id);
-        async.removeObject(obj.toDto(), reachableAdapters, obj.getOwner().getDataSpace());
+        jmsSender.healthCheck();
+        Pair<ArchivalObject, ObjectAudit> res = archivalDbService.removeObject(id);
+
+        try {
+            Set<Storage> allStorages = storageProvider.getAllStorages();
+            for (Storage a : allStorages) {
+                jmsSender.modifyObject(a.getId(), res.getLeft().toDto(), res.getRight().getCreated(), JmsAction.REMOVE);
+            }
+        } catch (Exception e) {
+            log.error("removal of object {} failed", id, e);
+        }
     }
 
     /**
@@ -128,16 +140,23 @@ public class ArchivalService {
      * @throws ReadOnlyStateException
      */
     public void renewObject(String id) throws StillProcessingStateException, DeletedStateException,
-            RollbackStateException, StorageException, FailedStateException, SomeLogicalStoragesNotReachableException,
-            NoLogicalStorageAttachedException, ReadOnlyStateException {
+            RollbackStateException, FailedStateException, ReadOnlyStateException, JmsHealthCheckException {
         log.debug("Renewing object with id " + id + ".");
-        List<StorageService> reachableAdapters = storageProvider.createAdaptersForModifyOperation();
-        ArchivalObject archivalObject = archivalDbService.renewObject(id);
-        async.renewObject(archivalObject.toDto(), reachableAdapters, archivalObject.getOwner().getDataSpace());
+        jmsSender.healthCheck();
+        Pair<ArchivalObject, ObjectAudit> res = archivalDbService.renewObject(id);
+
+        try {
+            Set<Storage> allStorages = storageProvider.getAllStorages();
+            for (Storage a : allStorages) {
+                jmsSender.modifyObject(a.getId(), res.getLeft().toDto(), res.getRight().getCreated(), JmsAction.RENEW);
+            }
+        } catch (Exception e) {
+            log.error("renewal of object {} failed", id, e);
+        }
     }
 
     /**
-     * Physically removes object from storage. Data in transaction database are not removed.
+     * Physically removes object from storage. Data in database are not removed.
      *
      * @param id id of the object to delete
      * @throws RollbackStateException
@@ -148,12 +167,26 @@ public class ArchivalService {
      * @throws ReadOnlyStateException
      */
     public void deleteObject(String id) throws StillProcessingStateException, RollbackStateException,
-            FailedStateException, SomeLogicalStoragesNotReachableException,
-            NoLogicalStorageAttachedException, ReadOnlyStateException {
+            FailedStateException, ReadOnlyStateException, JmsHealthCheckException {
+
         log.debug("Deleting object with id " + id + ".");
-        List<StorageService> reachableAdapters = storageProvider.createAdaptersForModifyOperation();
-        ArchivalObject archivalObject = archivalDbService.deleteObject(id);
-        async.deleteObject(archivalObject.toDto(), reachableAdapters);
+        jmsSender.healthCheck();
+        Pair<ArchivalObject, ObjectAudit> res = archivalDbService.deleteObject(id);
+        ArchivalObject objectInDb = res.getLeft();
+
+        try {
+            storagesContextRegistry.findProcessingObjectContexts(objectInDb.getId()).forEach(c -> c.getStopSignal().set(true));
+            Set<Storage> allStorages = storageProvider.getAllStorages();
+            for (Storage a : allStorages) {
+                jmsSender.modifyObject(a.getId(), objectInDb.toDto(), res.getRight().getCreated(), JmsAction.DELETE);
+            }
+        } catch (Exception e) {
+            log.error("deletion of object {} failed", objectInDb.getId(), e);
+            archivalDbService.setObjectsState(ObjectState.DELETION_FAILURE, objectInDb.getId());
+        }
+
+        //just optimization.. not needed to interfere with transactions
+        queueManager.deleteNotProcessingStoreRequests(Set.of(id), res.getRight().getCreated());
     }
 
     /**
@@ -167,49 +200,39 @@ public class ArchivalService {
      */
     public void rollbackObject(ArchivalObject objectToRollback) throws
             SomeLogicalStoragesNotReachableException,
-            NoLogicalStorageAttachedException, ReadOnlyStateException {
+            NoLogicalStorageAttachedException, ReadOnlyStateException, JmsHealthCheckException {
+
         String id = objectToRollback.getId();
         log.debug("Rolling back object with id " + id + ".");
-        List<StorageService> reachableAdapters = storageProvider.createAdaptersForModifyOperation();
         List<ArchivalObject> objectsToRollback = new ArrayList<>();
         objectsToRollback.add(objectToRollback);
         if (objectToRollback instanceof AipSip) {
             List<AipXml> xmls = ((AipSip) objectToRollback).getXmls();
             objectsToRollback.addAll(xmls);
         }
+        Instant now = Instant.now();
+        jmsSender.healthCheck();
+
         for (ArchivalObject objectInDb : objectsToRollback) {
-            switch (objectInDb.getState()) {
-                case ROLLED_BACK:
-                    continue;
-                case PROCESSING:
-                case PRE_PROCESSING:
-                    Pair<AtomicBoolean, Lock> rollbackFlag = ApplicationContextUtils.getProcessingObjects().get(id);
-                    if (rollbackFlag != null) {
-                        rollbackFlag.getRight().lock();
-                        try {
-                            objectInDb = archivalDbService.getObject(id);
-                            //if object is still processing, just set rollback flag
-                            if (objectInDb.getState() == ObjectState.PROCESSING || objectInDb.getState() == ObjectState.PRE_PROCESSING) {
-                                rollbackFlag.getLeft().set(true);
-                                continue;
-                            }
-                        } finally {
-                            rollbackFlag.getRight().unlock();
-                        }
-                    } else {
-                        objectInDb = archivalDbService.getObject(id);
-                        //object can't be processing as it was not in processingObjects map
-                        if (objectInDb.getState() == ObjectState.PROCESSING || objectInDb.getState() == ObjectState.PRE_PROCESSING) {
-                            throw new GeneralException("Fatal error: object which has to be rolled back is not present in processing objects map" +
-                                    "but in DB it is marked as " + objectInDb.getState() + ". This is unexpected state.");
-                        }
-                    }
-                    //if object was processing and has just switched to archived, it continues with the following case (there is no break in above block)
-                default:
-                    archivalDbService.rollbackObject(objectInDb);
-                    async.rollbackObject(objectInDb.toDto(), reachableAdapters);
+            if (objectInDb.getState() == ObjectState.ROLLED_BACK) {
+                continue;
+            }
+            Pair<ArchivalObject, ObjectAudit> res = archivalDbService.rollbackObject(objectInDb);
+            Set<Storage> allStorages = storageProvider.getAllStorages();
+
+            try {
+                storagesContextRegistry.findProcessingObjectContexts(objectInDb.getId()).forEach(c -> c.getStopSignal().set(true));
+                for (Storage a : allStorages) {
+                    jmsSender.modifyObject(a.getId(), res.getLeft().toDto(), res.getRight().getCreated(), JmsAction.ROLLBACK);
+                }
+            } catch (Exception e) {
+                log.error("rollback of object {} failed", objectInDb.getId(), e);
+                archivalDbService.setObjectsState(ObjectState.ROLLBACK_FAILURE, objectInDb.getId());
             }
         }
+
+        //just optimization.. not needed to interfer with transactions
+        queueManager.deleteNotProcessingStoreRequests(objectsToRollback.stream().map(DomainObject::getId).collect(Collectors.toSet()), now);
     }
 
     /**
@@ -224,7 +247,7 @@ public class ArchivalService {
     public void forgetObject(ArchivalObject objectToForget) throws
             StateException,
             SomeLogicalStoragesNotReachableException,
-            NoLogicalStorageAttachedException, ReadOnlyStateException, StorageException {
+            NoLogicalStorageAttachedException, ReadOnlyStateException, StorageException, JmsHealthCheckException {
         String id = objectToForget.getId();
         log.debug("Forget object with id " + id + ".");
         List<ArchivalObject> allObjectsToForget = new ArrayList<>();
@@ -245,18 +268,79 @@ public class ArchivalService {
                     throw new StateException(archivalObject);
             }
         }
-        List<StorageService> reachableAdapters = storageProvider.createAdaptersForModifyOperation();
-
         ArrayList<ArchivalObject> allObjectsToForgetReversedOrder = new ArrayList<>(allObjectsToForget);
         Collections.reverse(allObjectsToForgetReversedOrder);
+        jmsSender.healthCheck();
+        Instant dbTimestamp = archivalDbService.forgetObjects(allObjectsToForgetReversedOrder);
+        Set<Storage> allStorages = storageProvider.getAllStorages();
+
         for (ArchivalObject archivalObject : allObjectsToForgetReversedOrder) {
-            for (StorageService reachableAdapter : reachableAdapters) {
-                reachableAdapter.forgetObject(archivalObject.toDto().getStorageId(), archivalObject.getOwner().getDataSpace(), null);
+            storagesContextRegistry.findProcessingObjectContexts(id).forEach(c -> c.getStopSignal().set(true));
+            for (Storage a : allStorages) {
+                jmsSender.modifyObject(a.getId(), archivalObject.toDto(), dbTimestamp, JmsAction.FORGET);
             }
-            archivalDbService.forgetObject(archivalObject);
+        }
+        log.info("Object with id " + id + " have been forgotten.");
+
+        //just optimization.. not needed to interfer with transactions
+        queueManager.deleteNotProcessingStoreRequests(allObjectsToForgetReversedOrder.stream().map(DomainObject::getId).collect(Collectors.toSet()), dbTimestamp);
+    }
+
+    /**
+     * Performs clean up of provided objects (candidates are failed or hanging ones).
+     * 1. deleting the objects with state DELETION_FAILURE
+     * 2. rolling back all other objects
+     * <p>
+     *
+     * @param objects objects to be cleaned
+     */
+    public void cleanUp(List<ArchivalObject> objects, Instant timestamp) throws JmsHealthCheckException {
+
+        if (!objects.stream().allMatch(o -> CLEANUP_ALLOWED_STATES.contains(o.getState()))) {
+            throw new IllegalArgumentException("some object was in unsupported state");
         }
 
-        log.info("Object with id " + id + " have been forgotten.");
+        jmsSender.healthCheck();
+
+        for (ArchivalObject archivalObject : objects) {
+            storagesContextRegistry.findProcessingObjectContexts(archivalObject.getId()).forEach(c -> c.getStopSignal().set(true));
+        }
+        queueManager.deleteNotProcessingStoreRequests(objects.stream().map(DomainObject::getId).collect(Collectors.toSet()), timestamp);
+
+        log.info("sending messages to clean storage of objects {}", StringUtils.join(objects, ","));
+        Collection<Storage> allStorages = storageProvider.getAllStorages();
+
+        Set<ArchivalObject> rolledBackObjects = new HashSet<>();
+        Set<ArchivalObject> deletedObjects = new HashSet<>();
+        for (ArchivalObject archivalObject : objects) {
+            if (archivalObject.getState() == DELETION_FAILURE) {
+                deletedObjects.add(archivalObject);
+            } else {
+                rolledBackObjects.add(archivalObject);
+            }
+        }
+
+        if (!rolledBackObjects.isEmpty()) {
+            archivalDbService.setObjectsState(ObjectState.ROLLED_BACK, rolledBackObjects.stream().map(DomainObject::getId).toArray(String[]::new));
+            log.info("successfully rolled back " + rolledBackObjects.size() + " objects in DB");
+            for (ArchivalObject archivalObject : rolledBackObjects) {
+                for (Storage a : allStorages) {
+                    jmsSender.modifyObject(a.getId(), archivalObject.toDto(), timestamp, JmsAction.ROLLBACK);
+                }
+            }
+            log.debug("sent rollback messages for objects: " + Arrays.toString(rolledBackObjects.stream().map(o -> o.toDto().toString()).toArray()));
+        }
+
+        if (!deletedObjects.isEmpty()) {
+            archivalDbService.setObjectsState(ObjectState.DELETED, deletedObjects.stream().map(DomainObject::getId).toArray(String[]::new));
+            log.info("successfully deleted " + deletedObjects.size() + " objects in DB");
+            for (ArchivalObject archivalObject : deletedObjects) {
+                for (Storage a : allStorages) {
+                    jmsSender.modifyObject(a.getId(), archivalObject.toDto(), timestamp, JmsAction.DELETE);
+                }
+            }
+            log.debug("sent delete messages for objects: " + Arrays.toString(deletedObjects.stream().map(o -> o.toDto().toString()).toArray()));
+        }
     }
 
     /**
@@ -272,7 +356,7 @@ public class ArchivalService {
      * @throws ObjectCouldNotBeRetrievedException if object is corrupted at the given storages
      */
     private ObjectRetrievalResource retrieveObject(ArchivalObjectDto archivalObject)
-            throws ObjectCouldNotBeRetrievedException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
+            throws ObjectCouldNotBeRetrievedException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException, SomeLogicalStoragesNotReachableException {
         return retrieveObject(archivalObject, null);
     }
 
@@ -290,7 +374,7 @@ public class ArchivalService {
      * @throws ObjectCouldNotBeRetrievedException if object is corrupted at the given storages
      */
     ObjectRetrievalResource retrieveObject(ArchivalObjectDto archivalObject, List<StorageService> servicesNotToBeUsed)
-            throws ObjectCouldNotBeRetrievedException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
+            throws ObjectCouldNotBeRetrievedException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException, SomeLogicalStoragesNotReachableException {
         log.debug("Retrieving archival object with storage id " + archivalObject.getStorageId() + ".");
 
         List<StorageService> storageServicesByPriorities = storageProvider.createAdaptersForRead();
@@ -343,9 +427,8 @@ public class ArchivalService {
         String storageName = storageService.getStorage().getName();
         log.debug("Storage: " + storageName + " chosen to retrieve object: " + objectDto.getStorageId());
 
-        ObjectRetrievalResource objectFromStorage = storageService.getObject(objectDto.getStorageId(), objectDto.getOwner().getDataSpace());
-        String tmpFileId = objectFromStorage.getId();
-        File tmpFile = tmpFolder.resolve(tmpFileId).toFile();
+        ObjectRetrievalResource objectFromStorage = storageService.getObject(objectDto.getStorageId(), objectDto.getDataSpace());
+        File tmpFile = fileLocationResolver.getFileTmpPath(objectFromStorage.getId()).toFile();
         boolean valid = copyObjectToTmpFolderAndVerifyChecksum(objectDto.getDatabaseId(), objectFromStorage.getInputStream(), objectDto.getChecksum(), tmpFile, storageName);
         if (!valid)
             return null;
@@ -427,9 +510,9 @@ public class ArchivalService {
      */
     boolean recoverSingleObject(StorageService storageService, ArchivalObjectDto objectDto, String tmpFileId) {
         log.debug("Recovering object " + objectDto.getStorageId() + " at storage " + storageService.getStorage().getName() + ".");
-        try (FileInputStream objectInputStream = new FileInputStream(tmpFolder.resolve(tmpFileId).toFile())) {
+        try (FileInputStream objectInputStream = new FileInputStream(fileLocationResolver.getFileTmpPath(tmpFileId).toFile())) {
             objectDto.setInputStream(objectInputStream);
-            storageService.storeObject(objectDto, new AtomicBoolean(false), objectDto.getOwner().getDataSpace());
+            storageService.storeObject(objectDto, new AtomicBoolean(false), objectDto.getDataSpace(), Instant.now());
             log.info("Object " + objectDto.getStorageId() + " has been successfully recovered at storage " +
                     storageService.getStorage().getName() + ".");
         } catch (StorageException e) {
@@ -477,11 +560,6 @@ public class ArchivalService {
     }
 
     @Autowired
-    public void setTmpFolder(@Value("${spring.servlet.multipart.location}") String path) {
-        this.tmpFolder = Paths.get(path);
-    }
-
-    @Autowired
     public void setStorageProvider(StorageProvider storageProvider) {
         this.storageProvider = storageProvider;
     }
@@ -492,7 +570,22 @@ public class ArchivalService {
     }
 
     @Autowired
-    public void setAsync(ArchivalAsyncService async) {
-        this.async = async;
+    public void setFileLocationResolver(FileLocationResolver fileLocationResolver) {
+        this.fileLocationResolver = fileLocationResolver;
+    }
+
+    @Autowired
+    public void setQueueManager(JmsQueueManager queueManager) {
+        this.queueManager = queueManager;
+    }
+
+    @Autowired
+    public void setStoragesContextRegistry(StoragesContextRegistry storagesContextRegistry) {
+        this.storagesContextRegistry = storagesContextRegistry;
+    }
+
+    @Autowired
+    public void setJmsSender(JmsSender jmsSender) {
+        this.jmsSender = jmsSender;
     }
 }

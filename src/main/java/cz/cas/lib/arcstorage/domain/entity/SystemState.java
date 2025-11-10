@@ -28,6 +28,9 @@ public class SystemState extends DomainObject {
 
     private Instant lastVerifiedObjectCreation;
 
+    @ManyToOne
+    private Storage primaryStorage;
+
     public SystemState(int minStorageCount, boolean readOnly) {
         this.minStorageCount = minStorageCount;
         this.readOnly = readOnly;

@@ -6,11 +6,12 @@ import cz.cas.lib.arcstorage.domain.entity.ArchivalObject;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.MissingObject;
+import cz.cas.lib.arcstorage.jms.JmsHealthCheckException;
+import cz.cas.lib.arcstorage.jms.JmsSender;
 import cz.cas.lib.arcstorage.mail.ArcstorageMailCenter;
 import cz.cas.lib.arcstorage.security.Role;
 import cz.cas.lib.arcstorage.security.user.UserDetails;
 import cz.cas.lib.arcstorage.service.exception.BadXmlVersionProvidedException;
-import cz.cas.lib.arcstorage.service.exception.InvalidChecksumException;
 import cz.cas.lib.arcstorage.service.exception.ReadOnlyStateException;
 import cz.cas.lib.arcstorage.service.exception.state.*;
 import cz.cas.lib.arcstorage.service.exception.storage.NoLogicalStorageAttachedException;
@@ -22,7 +23,6 @@ import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import cz.cas.lib.arcstorage.storage.exception.StorageException;
 import cz.cas.lib.arcstorage.storage.fs.FsAdapter;
 import cz.cas.lib.arcstorage.storage.fs.LocalFsProcessor;
-import cz.cas.lib.arcstorage.storagesync.newstorage.exception.SynchronizationInProgressException;
 import cz.cas.lib.arcstorage.util.SetUtils;
 import lombok.Getter;
 import lombok.NonNull;
@@ -31,14 +31,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -59,14 +58,15 @@ import static cz.cas.lib.arcstorage.util.Utils.*;
 @Slf4j
 public class AipService {
 
-    private ArchivalAsyncService async;
     private ArchivalDbService archivalDbService;
     private StorageProvider storageProvider;
-    private Path tmpFolder;
+    private FileLocationResolver fileLocationResolver;
     private ExecutorService executorService;
     private ArcstorageMailCenter arcstorageMailCenter;
     private ArchivalService archivalService;
     private UserDetails userDetails;
+    private JmsQueueProcessor jmsQueueProcessor;
+    private JmsSender jmsSender;
 
     /**
      * Retrieves reference to AIP. This method choose one {@link Storage} and COPIES THE WHOLE AIP INTO WORKSPACE.
@@ -89,7 +89,7 @@ public class AipService {
     public AipRetrievalResource getAip(String sipId, boolean all) throws RollbackStateException,
             StillProcessingStateException, DeletedStateException, FailedStateException,
             ObjectCouldNotBeRetrievedException, RemovedStateException, NoLogicalStorageReachableException,
-            NoLogicalStorageAttachedException {
+            NoLogicalStorageAttachedException, SomeLogicalStoragesNotReachableException {
         log.debug("Retrieving AIP with id " + sipId + ".");
 
         AipSip sipEntity = archivalDbService.getAip(sipId);
@@ -132,7 +132,7 @@ public class AipService {
      */
     public Pair<Integer, ObjectRetrievalResource> getXml(String sipId, Integer version) throws
             FailedStateException, RollbackStateException, StillProcessingStateException,
-            ObjectCouldNotBeRetrievedException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
+            ObjectCouldNotBeRetrievedException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException, SomeLogicalStoragesNotReachableException {
         log.debug("Retrieving XML of AIP with id " + sipId + ".");
 
         AipSip sipEntity = archivalDbService.getAip(sipId);
@@ -151,7 +151,7 @@ public class AipService {
 
     public Pair<ArchivalObjectDto, ObjectRetrievalResource> getObject(String id) throws
             FailedStateException, RollbackStateException, StillProcessingStateException,
-            ObjectCouldNotBeRetrievedException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
+            ObjectCouldNotBeRetrievedException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException, SomeLogicalStoragesNotReachableException {
         log.debug("Retrieving object with id " + id + ".");
         ArchivalObject object = archivalDbService.getObject(id);
         if (object == null || (userDetails.getRole() != Role.ROLE_ADMIN && !object.getOwner().getDataSpace().equals(userDetails.getDataSpace()))) {
@@ -172,19 +172,14 @@ public class AipService {
      *
      * @param aip AIP to store
      * @return SIP ID of created AIP
-     * @throws SomeLogicalStoragesNotReachableException
-     * @throws InvalidChecksumException
      * @throws IOException
-     * @throws NoLogicalStorageAttachedException
      * @throws ReadOnlyStateException
      */
-    public void saveAip(AipDto aip) throws InvalidChecksumException, SomeLogicalStoragesNotReachableException, IOException,
-            NoLogicalStorageAttachedException, ReadOnlyStateException {
+    public void saveAip(AipDto aip) throws IOException, ReadOnlyStateException {
         log.debug("Saving AIP with id " + aip.getSip().getStorageId());
         Path tmpSipPath = null;
         Path tmpXmlPath = null;
         AipSip aipSip;
-        List<StorageService> reachableAdapters;
 
         try (BufferedInputStream sipIs = new BufferedInputStream(aip.getSip().getInputStream());
              BufferedInputStream xmlIs = new BufferedInputStream(aip.getXml().getInputStream())) {
@@ -192,18 +187,14 @@ public class AipService {
             aipSip = registrationResult.getLeft();
             aip.getXml().setDatabaseId(aipSip.getLatestXml().getId());
             try {
-                if (registrationResult.getRight())
-                    reachableAdapters = storageProvider.createAdaptersForModifyOperation();
-                else
-                    reachableAdapters = storageProvider.createAdaptersForWriteOperation();
                 //validate checksum of XML
-                tmpXmlPath = tmpFolder.resolve(aip.getXml().getDatabaseId());
+                tmpXmlPath = fileLocationResolver.getFileTmpPath(aip.getXml().getDatabaseId());
                 Files.copy(xmlIs, tmpXmlPath, StandardCopyOption.REPLACE_EXISTING);
                 log.debug("XML content of AIP with id " + aip.getSip().getStorageId() + " has been stored to temporary storage.");
                 validateChecksum(aip.getXml().getChecksum(), tmpXmlPath);
                 log.debug("Checksum of XML of AIP with id " + aip.getSip().getStorageId() + " has been validated.");
                 //copy SIP to tmp file and validate its checksum
-                tmpSipPath = tmpFolder.resolve(aip.getSip().getDatabaseId());
+                tmpSipPath = fileLocationResolver.getFileTmpPath(aip.getSip().getDatabaseId());
                 Files.copy(sipIs, tmpSipPath, StandardCopyOption.REPLACE_EXISTING);
                 log.debug("SIP content of AIP with id " + aip.getSip().getStorageId() + " has been stored to temporary storage.");
                 validateChecksum(aip.getSip().getChecksum(), tmpSipPath);
@@ -222,7 +213,15 @@ public class AipService {
         aip.getXml().setState(ObjectState.PROCESSING);
 
         archivalDbService.setObjectsState(ObjectState.PROCESSING, aip.getSip().getDatabaseId(), aip.getXml().getDatabaseId());
-        async.saveAip(aip, new TmpFileHolder(tmpSipPath.toFile()), new TmpFileHolder(tmpXmlPath.toFile()), reachableAdapters, aipSip.getOwner().getDataSpace(), userDetails.getId());
+
+        try {
+            Storage primaryStorage = storageProvider.getPrimaryStorage();
+            jmsSender.healthCheck();
+            jmsSender.saveAip(primaryStorage.getId(), aip, userDetails.getId());
+        } catch (Exception e) {
+            log.error("saveAip {} failed", aip.getSip().getStorageId(), e);
+            archivalDbService.setObjectsState(ObjectState.ARCHIVAL_FAILURE, aip.getSip().getDatabaseId(), aip.getXml().getDatabaseId());
+        }
     }
 
     /**
@@ -234,29 +233,22 @@ public class AipService {
      * @param xml      Stream of xml file
      * @param checksum checksum of the XML
      * @param version  version of the XML
-     * @throws SomeLogicalStoragesNotReachableException
      * @throws IOException
-     * @throws NoLogicalStorageAttachedException
      */
     public void saveXml(String sipId, InputStream xml, Checksum checksum, Integer version, boolean sync)
-            throws SomeLogicalStoragesNotReachableException, IOException, NoLogicalStorageAttachedException,
+            throws IOException,
             DeletedStateException, FailedStateException, RollbackStateException, StillProcessingStateException,
-            BadXmlVersionProvidedException, ReadOnlyStateException {
+            BadXmlVersionProvidedException, ReadOnlyStateException, SomeLogicalStoragesNotReachableException {
         String logPrefix = sync ? "Synchronously" : "Asynchronously";
         log.debug(logPrefix + " saving XML in version " + version + " of AIP with id " + sipId + ".");
-        List<StorageService> reachableAdapters;
-        AipXml xmlEntity;
         Path tmpXmlPath = null;
+        AipXml xmlEntity;
 
         try (BufferedInputStream xmlIs = new BufferedInputStream(xml)) {
             Pair<AipXml, Boolean> registrationResult = archivalDbService.registerXmlUpdate(sipId, checksum, version);
             xmlEntity = registrationResult.getLeft();
             try {
-                if (registrationResult.getRight())
-                    reachableAdapters = storageProvider.createAdaptersForModifyOperation();
-                else
-                    reachableAdapters = storageProvider.createAdaptersForWriteOperation();
-                tmpXmlPath = tmpFolder.resolve(xmlEntity.getId());
+                tmpXmlPath = fileLocationResolver.getFileTmpPath(xmlEntity.getId());
                 Files.copy(xmlIs, tmpXmlPath, StandardCopyOption.REPLACE_EXISTING);
                 log.debug("XML content of AIP with id " + sipId + " has been stored to temporary storage.");
                 validateChecksum(xmlEntity.getChecksum(), tmpXmlPath);
@@ -274,7 +266,19 @@ public class AipService {
         log.debug("State of object with id " + xmlEntity.getId() + " changed to " + ObjectState.PROCESSING);
         ArchivalObjectDto objectDto = xmlEntity.toDto();
         objectDto.setInputStream(xml);
-        async.saveObject(objectDto, new TmpFileHolder(tmpXmlPath.toFile()), reachableAdapters, sync, userDetails.getId());
+
+        if (sync) {
+            jmsQueueProcessor.saveObjectAtPrimary(storageProvider.createPrimaryStorageAdapter(), objectDto, Instant.now(), userDetails.getId(), true);
+        } else {
+            try {
+                Storage primaryStorage = storageProvider.getPrimaryStorage();
+                jmsSender.healthCheck();
+                jmsSender.saveObject(primaryStorage.getId(), objectDto, null, userDetails.getId());
+            } catch (Exception e) {
+                log.error("saveObject {} failed", objectDto.getStorageId(), e);
+                archivalDbService.setObjectsState(ObjectState.ARCHIVAL_FAILURE, objectDto.getDatabaseId());
+            }
+        }
     }
 
     /**
@@ -282,7 +286,7 @@ public class AipService {
      *
      * @param aipId
      */
-    public void rollbackOrForgetXml(String aipId, int xmlVersion, boolean forget) throws NoLogicalStorageAttachedException, SomeLogicalStoragesNotReachableException, StorageException, StateException {
+    public void rollbackOrForgetXml(String aipId, int xmlVersion, boolean forget) throws NoLogicalStorageAttachedException, SomeLogicalStoragesNotReachableException, StorageException, StateException, JmsHealthCheckException {
         String action = forget ? "forget" : "rollback";
         AipSip sip = archivalDbService.findSip(aipId);
         if (sip == null) {
@@ -336,9 +340,10 @@ public class AipService {
      * <ol>
      * <li>First list of storages at which the AIPs should be verified is created.
      * If the <b>storageId parameter is specified</b> the storage is checked for reachability and if not reachable
-     * (or is just synchronizing) exception is thrown. Otherwise the storage is added to the list.
-     * If the <b>storageId parameter is null</b>, then the the list of storages which are reachable and not synchronizing
-     * is created and verification is done at every such storage. If there is no such storage, exception is thrown.
+     * exception is thrown. Otherwise the storage is added to the list.
+     * If the <b>storageId parameter is null</b>, then all storages are checked for reachability.
+     * If there are any detached or unreachable storages the check is skipped.
+     * Otherwise the verification is done at every storage.
      * </li>
      * <li>Then at every storage from the list all AIPs which are in state with property {@link ObjectState#metadataMustBeStoredAtLogicalStorage()} = true,
      * are verified. If there is either metadata or data inconsistency between the AIP at storage and in DB, AIP recovery process starts in other thread (asynchronous)
@@ -355,27 +360,31 @@ public class AipService {
      *
      * @param aipSips   list of AIPs which state should be verified, ordered by creation time (ascending)
      * @param storageId id of storage at which aip state should be verified, if null is set then verification will be done at all reachable stores
-     * @return states of all objects of reachable storage service/services
+     * @return states of all objects of reachable storage service/services OR null if the verification was skipped
      * @throws NoLogicalStorageAttachedException        if storageId is null and there is not even one logical storage attached
      * @throws NoLogicalStorageReachableException       if storageId is null and there is not even one logical storage reachable
      * @throws SomeLogicalStoragesNotReachableException if storageId is specified and the storage is not reachable
-     * @throws SynchronizationInProgressException       if storageId is specified and the storage is just synchronizing
      * @throws IllegalArgumentException                 if aipSips list is null or empty
      */
-    public List<AipConsistencyVerificationResultDto> verifyAipsAtStorage(List<AipSip> aipSips, String storageId) throws NoLogicalStorageAttachedException, NoLogicalStorageReachableException, SomeLogicalStoragesNotReachableException, SynchronizationInProgressException {
+    public List<AipConsistencyVerificationResultDto> verifyAipsAtStorage(List<AipSip> aipSips, String storageId) throws NoLogicalStorageAttachedException, NoLogicalStorageReachableException, SomeLogicalStoragesNotReachableException {
         List<StorageService> reachableStorages;
         notNull(aipSips, () -> new IllegalArgumentException("List of AIPs to verify can't be null"));
         if (aipSips.isEmpty())
             throw new IllegalArgumentException("List of AIPs to verify can't be empty");
         if (storageId == null) {
+            Pair<List<StorageService>, List<StorageService>> storages = storageProvider.checkReachabilityOfAllStorages(false);
+            Set<Storage> detachedStorages = storages.getLeft().stream().map(StorageService::getStorage).filter(Storage::isDetached).collect(Collectors.toSet());
+            Set<Storage> unreachableStorages = storages.getRight().stream().map(StorageService::getStorage).collect(Collectors.toSet());
+            if (!detachedStorages.isEmpty() || !unreachableStorages.isEmpty()) {
+                log.info("skipping aips verification as some storages are either detached: {} or unreachable: {}", detachedStorages, unreachableStorages);
+                return null;
+            }
             reachableStorages = storageProvider.createAdaptersForRead();
         } else {
             StorageService adapter = storageProvider.createAdapter(storageId);
             Storage storage = adapter.getStorage();
             if (!storage.isReachable())
                 throw new SomeLogicalStoragesNotReachableException(storage);
-            if (storage.isSynchronizing())
-                throw new SynchronizationInProgressException();
             reachableStorages = asList(adapter);
         }
         List<AipConsistencyVerificationResultDto> allImmediateResults = new ArrayList<>();
@@ -447,7 +456,7 @@ public class AipService {
             DeletedStateException,
             FailedStateException,
             IOException,
-            UnsupportedEncodingException {
+            SomeLogicalStoragesNotReachableException {
         Path aipDataPath = getPathForLocalStorageStreaming(sipId);
         exportAipReducedByFileList(sipId, aipDataPath, outputStream, filePaths);
     }
@@ -478,7 +487,7 @@ public class AipService {
             DeletedStateException,
             FailedStateException,
             IOException,
-            UnsupportedEncodingException {
+            SomeLogicalStoragesNotReachableException {
         Path aipDataPath = getPathForLocalStorageStreaming(sipId);
         exportAipReducedByRegexes(sipId, aipDataPath, outputStream, dataReduction);
     }
@@ -489,6 +498,7 @@ public class AipService {
      * of the AIP state in DB so as providing a {@link Path} to AIP data.
      *
      * @param sipId        id of the AIP to retrieve
+     * @param aipData      path to tmp folder in which aip data are stored
      * @param filePaths    list of files we want to extract from ZIP
      * @param outputStream output stream into which result zip is stored
      * @throws IOException if there were an IO exception during processing
@@ -507,6 +517,7 @@ public class AipService {
      * of the AIP state in DB so as providing a {@link Path} to AIP data.
      *
      * @param sipId         id of the AIP to retrieve
+     * @param aipData       path to tmp folder in which aip data are stored
      * @param dataReduction specification of reduction of files we do not want to extract from ZIP
      * @param outputStream  output stream into which result zip is stored
      * @throws IOException if there were an IO exception during processing
@@ -563,7 +574,7 @@ public class AipService {
      * starts recovery process - tries to obtain object from other storage and recover the copy at failing storage.
      * <p>
      * If the AIP is in state with {@link ObjectState#metadataMustBeStoredAtLogicalStorage()} false, then no verification
-     * at storage is done and no recovery is started. These objects should be cleaned up using {@link ArchivalAsyncService#cleanUp(List, List)}.
+     * at storage is done and no recovery is started. These objects should be cleaned up using {@link ArchivalService#cleanUp(List, Instant)}.
      * The same applies to all AIP XMLs of the AIP.
      * </p>
      *
@@ -648,7 +659,7 @@ public class AipService {
             for (ObjectConsistencyVerificationResultDto checkedObject : checkedObjects) {
                 if (checkedObject.getState().contentMustBeStoredAtLogicalStorage() && !checkedObject.isContentConsistent()) {
                     recResDto.getContentInconsistencyObjectsIds().add(checkedObject.getStorageId());
-                    String recoveryMsg = "Recovery of content of object: " + checkedObject.getStorageId() + " has ";
+                    String recoveryMsg = "Recovery of content of object: " + checkedObject.getStorageId() + " from other storage has ";
                     ArchivalObject object = archivalDbService.getObject(checkedObject.getDatabaseId());
                     ObjectRetrievalResource objectRetrievalResource;
                     try {
@@ -656,7 +667,7 @@ public class AipService {
                         ArchivalObjectDto archivalObjectDto = null;
                         try {
                             archivalObjectDto = new ArchivalObjectDto(object.toDto(), objectRetrievalResource.getInputStream());
-                            storageService.storeObject(archivalObjectDto, new AtomicBoolean(false), archivalObjectDto.getOwner().getDataSpace());
+                            storageService.storeObject(archivalObjectDto, new AtomicBoolean(false), archivalObjectDto.getDataSpace(), Instant.now());
                             log.debug(recoveryMsg + "succeeded");
                             recResDto.getContentRecoveredObjectsIds().add(checkedObject.getStorageId());
                         } finally {
@@ -669,8 +680,9 @@ public class AipService {
                     }
                 } else if (!checkedObject.isMetadataConsistent()) {
                     recResDto.getMetadataInconsistencyObjectsIds().add(checkedObject.getStorageId());
-                    String recoveryMsg = "Recovery of metadata of object: " + checkedObject.getStorageId() + " has ";
+                    String recoveryMsg = "Recovery of metadata (DB -> storage) of object: " + checkedObject.getStorageId() + " has ";
                     ArchivalObject object = archivalDbService.getObject(checkedObject.getDatabaseId());
+                    log.debug("Metadata mismatch between DB and storage. DB: {} Storage: {}", object, checkedObject);
                     try {
                         storageService.storeObjectMetadata(object.toDto(), object.getOwner().getDataSpace());
                         log.debug(recoveryMsg + "succeeded");
@@ -701,7 +713,7 @@ public class AipService {
      * @throws ObjectCouldNotBeRetrievedException if AIP is corrupted at the given storages
      */
     private AipRetrievalResource retrieveAip(AipSip sipEntity, List<AipXml> xmls)
-            throws ObjectCouldNotBeRetrievedException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException {
+            throws ObjectCouldNotBeRetrievedException, NoLogicalStorageReachableException, NoLogicalStorageAttachedException, SomeLogicalStoragesNotReachableException {
         log.debug("Retrieving AIP with id " + sipEntity.getId() + ".");
 
         List<StorageService> storageServicesByPriorities = storageProvider.createAdaptersForRead();
@@ -741,10 +753,10 @@ public class AipService {
 
         AipRetrievalResource aipFromStorage = storageService.getAip(sipEntity.getId(), sipEntity.getOwner().getDataSpace(), xmls.stream()
                 .map(AipXml::getVersion)
-                .collect(Collectors.toList())
+                .toList()
                 .toArray(new Integer[xmls.size()]));
         String tmpSipFileId = aipFromStorage.getId();
-        File tmpSipFile = tmpFolder.resolve(tmpSipFileId).toFile();
+        File tmpSipFile = fileLocationResolver.getFileTmpPath(tmpSipFileId).toFile();
 
         AipRetrievalResult result = new AipRetrievalResult(aipFromStorage, storageService);
 
@@ -769,7 +781,7 @@ public class AipService {
         //copy xmls to tmp folders and verify checksum
         for (AipXml xmlEntity : xmls) {
             String tmpXmlFileId = toXmlId(aipFromStorage.getId(), xmlEntity.getVersion());
-            File tmpXmlFile = tmpFolder.resolve(tmpXmlFileId).toFile();
+            File tmpXmlFile = fileLocationResolver.getFileTmpPath(tmpXmlFileId).toFile();
             boolean xmlValid = archivalService.copyObjectToTmpFolderAndVerifyChecksum(xmlEntity.getId(), aipFromStorage.getXmls().get(xmlEntity.getVersion()),
                     xmlEntity.getChecksum(), tmpXmlFile, storageName);
 
@@ -814,7 +826,7 @@ public class AipService {
         List<AipRetrievalResult> invalidChecksumResults = new ArrayList<>();
 
         if (latestInvalidChecksumResult != null) {
-            tmpFolder.resolve(latestInvalidChecksumResult.getAipFromStorage().getId()).toFile().delete();
+            fileLocationResolver.getFileTmpPath(latestInvalidChecksumResult.getAipFromStorage().getId()).toFile().delete();
             invalidChecksumResults.add(latestInvalidChecksumResult);
         }
 
@@ -829,7 +841,7 @@ public class AipService {
                     break;
                 }
                 invalidChecksumResults.add(result);
-                tmpFolder.resolve(result.getAipFromStorage().getId()).toFile().delete();
+                fileLocationResolver.getFileTmpPath(result.getAipFromStorage().getId()).toFile().delete();
             } catch (StorageException e) {
                 //try other storages when the current storage has failed
                 log.error("Storage error has occurred during retrieval process of AIP " + sipEntity.getId() + " from storage " +
@@ -873,7 +885,7 @@ public class AipService {
         return result.getAipFromStorage();
     }
 
-    private Path getPathForLocalStorageStreaming(String sipId) throws NoLogicalStorageAttachedException, NoLogicalStorageReachableException, RollbackStateException, DeletedStateException, StillProcessingStateException, FailedStateException, IOStorageException {
+    private Path getPathForLocalStorageStreaming(String sipId) throws NoLogicalStorageAttachedException, NoLogicalStorageReachableException, RollbackStateException, DeletedStateException, StillProcessingStateException, FailedStateException, IOStorageException, SomeLogicalStoragesNotReachableException {
         Optional<StorageService> storageService = storageProvider.createAdaptersForRead().stream().filter(s ->
                 (s.getStorage().getStorageType() == StorageType.FS || s.getStorage().getStorageType() == StorageType.ZFS) && isLocalhost(s.getStorage())).findFirst();
         if (storageService.isEmpty())
@@ -949,11 +961,6 @@ public class AipService {
     }
 
     @Autowired
-    public void setAsyncService(ArchivalAsyncService async) {
-        this.async = async;
-    }
-
-    @Autowired
     public void setStorageProvider(StorageProvider storageProvider) {
         this.storageProvider = storageProvider;
     }
@@ -964,8 +971,8 @@ public class AipService {
     }
 
     @Autowired
-    public void setTmpFolder(@Value("${spring.servlet.multipart.location}") String path) {
-        this.tmpFolder = Paths.get(path);
+    public void setFileLocationResolver(FileLocationResolver fileLocationResolver) {
+        this.fileLocationResolver = fileLocationResolver;
     }
 
     @Autowired
@@ -981,5 +988,15 @@ public class AipService {
     @Autowired
     public void setUserDetails(UserDetails userDetails) {
         this.userDetails = userDetails;
+    }
+
+    @Autowired
+    public void setJmsQueueProcessor(JmsQueueProcessor jmsQueueProcessor) {
+        this.jmsQueueProcessor = jmsQueueProcessor;
+    }
+
+    @Autowired
+    public void setJmsSender(JmsSender jmsSender) {
+        this.jmsSender = jmsSender;
     }
 }

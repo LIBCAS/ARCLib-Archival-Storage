@@ -7,6 +7,8 @@ import java.io.IOException;
 
 public abstract class StorageSessionHolder implements Closeable {
 
+    private static final int SAFE_CLOSE_SLEEP_MS = 1000;
+
     /**
      * Connection which was used to obtain the files during the session (ssh connection etc.).
      */
@@ -23,13 +25,13 @@ public abstract class StorageSessionHolder implements Closeable {
      * Connection should remain open until all input streams retrieved during the session are read or no longer needed.
      * </p>
      */
-    public void close() throws IOException{
+    public void close() throws IOException {
         if (connection == null)
             return;
         //developer usually calls this right after data are read but it should wait a while because used technology can
         // use some internal after-transfer messaging which would be broken by immediate connection closing
         try {
-            Thread.sleep(1000);
+            Thread.sleep(SAFE_CLOSE_SLEEP_MS);
             connection.close();
         } catch (IOException | InterruptedException e) {
             throw new GeneralException("can't close connection", e);

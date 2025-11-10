@@ -1,7 +1,8 @@
 package cz.cas.lib.arcstorage.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import cz.cas.lib.arcstorage.domain.entity.ObjectType;
-import cz.cas.lib.arcstorage.domain.entity.User;
+import cz.cas.lib.arcstorage.jms.ArchivalObjectJmsDto;
 import lombok.*;
 
 import java.io.InputStream;
@@ -16,14 +17,12 @@ import java.util.Objects;
 @Getter
 @AllArgsConstructor
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
-public class ArchivalObjectDto {
+public class ArchivalObjectDto implements ArchivalObjectJmsDto {
     private String storageId;
     private String databaseId;
     private Checksum checksum;
-    /**
-     * object may be populated just with id
-     */
-    private User owner;
+    private String dataSpace;
+    @JsonIgnore
     private InputStream inputStream;
     private ObjectState state;
     private Instant created;
@@ -59,14 +58,15 @@ public class ArchivalObjectDto {
 
     /**
      * copies the object and assigns new stream to it
+     *
      * @param oldDto
      * @param newInputStream
      */
-    public ArchivalObjectDto(ArchivalObjectDto oldDto, InputStream newInputStream){
+    public ArchivalObjectDto(ArchivalObjectDto oldDto, InputStream newInputStream) {
         this.storageId = oldDto.storageId;
         this.databaseId = oldDto.databaseId;
         this.checksum = oldDto.checksum;
-        this.owner = oldDto.owner;
+        this.dataSpace = oldDto.dataSpace;
         this.inputStream = newInputStream;
         this.state = oldDto.state;
         this.created = oldDto.created;

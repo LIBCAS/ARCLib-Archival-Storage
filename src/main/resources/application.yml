@@ -1,11 +1,14 @@
 server:
   port: 8081
 spring:
+  activemq:
+    #broker-url: tcp://localhost:61616 # for standalone ActiveMQ
+    broker-url: vm://localhost # for embedded ActiveMQ
   servlet:
     multipart:
       max-file-size: -1
       max-request-size: -1
-      location: tmp # folder to which uploaded files are written before sent to logical storages.. also used when downloading files etc.
+      location: tmp # folder to which uploaded files are written before sent to logical storages.. also used when downloading files etc; ; use absolute path
   application:
     name: arcstorage
   datasource:
@@ -47,16 +50,20 @@ mail:
       tasks:
   enabled: true
 arcstorage:
+  # taken into account only if broker-url: vm://localhost
+  embedded-queue:
+    data-dir: data/kahadb
   optionalFeatures:
     forgetObject: false
     incrementalBackup: false
   threadPools:
-    batchOps: 16 # threads for asynchronous batch operations (saveAip, saveXml, deleteAip etc.)
     scheduled: 2 # threads reserved for periodical jobs (e.g. reachability check)
   # tmpFolderUploadSizeLimit: 500000 # in MB, if tmp folder reach the limit, all multipart upload requests will fail, not value set means no limit
   connectionTimeout: 5000 # timeout for initial connection to remote logical storage, in milliseconds
   stateChangeTransactionTimeout: 5 # timeout of all DB transactions that changes the state of an archival object, in seconds
   synchronizationInitTimeout: 15 # timeout until which all processing objects should reach final state, otherwise the synchronization wont start, in seconds
+  jmsMessageProcessTimeout: -1 # timeout to process any JMS message, in seconds .. -1 for no timeout
+  jmsQueueConsumerThreads: 8
   cleanUpAtApplicationStart: false # automatically clean up all processing and failed objects from storage
   backupDirPath: backup
   consistencyCheck:
@@ -68,8 +75,14 @@ arcstorage:
   ssh:
     authKey: --path to private key--
     userName: --username--
-env: production
-logging.file.path: ../logs
+logging:
+  file:
+    path: ../logs
+  level:
+    net.schmizz: WARN
+    cz.cas.lib.arcstorage:
+      security.basic: INFO
+      storage.fs.SshjOutputStreamSource: WARN
 springdoc:
   packages-to-scan: cz.cas.lib
   paths-to-match: "/**"

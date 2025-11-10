@@ -2,13 +2,11 @@ package cz.cas.lib.arcstorage.storage.fs;
 
 import cz.cas.lib.arcstorage.domain.entity.ObjectType;
 import cz.cas.lib.arcstorage.domain.entity.Storage;
-import cz.cas.lib.arcstorage.domain.entity.User;
 import cz.cas.lib.arcstorage.dto.*;
 import cz.cas.lib.arcstorage.exception.GeneralException;
 import cz.cas.lib.arcstorage.storage.StorageServiceTest;
 import cz.cas.lib.arcstorage.storage.exception.CantParseMetadataFile;
 import cz.cas.lib.arcstorage.storage.exception.FileCorruptedAfterStoreException;
-import cz.cas.lib.arcstorage.storage.exception.FileDoesNotExistException;
 import cz.cas.lib.arcstorage.storage.exception.IOStorageException;
 import lombok.Getter;
 import org.apache.commons.io.FileUtils;
@@ -122,7 +120,7 @@ public class LocalProcessorTest extends StorageServiceTest {
         String sipId = testName.getMethodName();
         String xmlId = toXmlId(sipId, 1);
         Path path = getFolderPath(sipId);
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, dataSpace);
 
@@ -140,7 +138,7 @@ public class LocalProcessorTest extends StorageServiceTest {
         String sipId = testName.getMethodName();
         AtomicBoolean rollback = new AtomicBoolean(false);
         String xmlId = toXmlId(sipId, 99);
-        service.storeObject(new ArchivalObjectDto(xmlId, "databaseId", XML_CHECKSUM, new User("ownerId"), getXmlStream(), ObjectState.PROCESSING, Instant.now(), ObjectType.XML), rollback, dataSpace);
+        service.storeObject(new ArchivalObjectDto(xmlId, "databaseId", XML_CHECKSUM, getDataSpace(), getXmlStream(), ObjectState.PROCESSING, Instant.now(), ObjectType.XML), rollback, dataSpace, Instant.now());
         Path path = getFolderPath(xmlId);
         assertThat(isInState(path.resolve(xmlId), ObjectState.ARCHIVED), is(true));
         assertThat(streamToString(new FileInputStream(path.resolve(xmlId).toFile())), is(XML_CONTENT));
@@ -151,12 +149,12 @@ public class LocalProcessorTest extends StorageServiceTest {
     @Override
     public void removeSipMultipleTimesOk() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, dataSpace);
 
-        service.remove(aip.getSip(), dataSpace, false);
-        service.remove(aip.getSip(), dataSpace, false);
+        service.remove(aip.getSip(), dataSpace, Instant.now());
+        service.remove(aip.getSip(), dataSpace, Instant.now());
 
         Path path = getFolderPath(sipId);
         assertThat(streamToString(new FileInputStream(path.resolve(sipId).toFile())), is(SIP_CONTENT));
@@ -167,13 +165,13 @@ public class LocalProcessorTest extends StorageServiceTest {
     @Override
     public void renewSipMultipleTimesOk() throws Exception {
         String sipId = testName.getMethodName();
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, dataSpace);
 
-        service.remove(aip.getSip(), dataSpace, false);
-        service.renew(aip.getSip(), dataSpace, false);
-        service.renew(aip.getSip(), dataSpace, false);
+        service.remove(aip.getSip(), dataSpace, Instant.now());
+        service.renew(aip.getSip(), dataSpace, Instant.now());
+        service.renew(aip.getSip(), dataSpace, Instant.now());
 
         Path path = getFolderPath(sipId);
         assertThat(streamToString(new FileInputStream(path.resolve(sipId).toFile())), is(SIP_CONTENT));
@@ -185,12 +183,12 @@ public class LocalProcessorTest extends StorageServiceTest {
     public void deleteSipMultipleTimesOk() throws Exception {
         String sipId = testName.getMethodName();
         String xmlId = toXmlId(sipId, 1);
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, dataSpace);
 
-        service.delete(aip.getSip(), dataSpace, false);
-        service.delete(aip.getSip(), dataSpace, false);
+        service.delete(aip.getSip(), dataSpace, Instant.now());
+        service.delete(aip.getSip(), dataSpace, Instant.now());
 
         Path path = getFolderPath(sipId);
         assertThat(Files.exists(path.resolve(sipId)), is(false));
@@ -227,7 +225,7 @@ public class LocalProcessorTest extends StorageServiceTest {
             service.storeFile(getFolderPath(fileId), dto, rollback);
         }
         assertThat(isInState(path.resolve(fileId), ObjectState.PROCESSING), is(true));
-        service.rollbackFile(path, dto);
+        service.rollbackFile(path, dto, Instant.now());
 
         assertThat(Files.exists(path.resolve(fileId)), is(false));
         assertThat(isInState(path.resolve(fileId), ObjectState.ROLLED_BACK), is(true));
@@ -241,8 +239,8 @@ public class LocalProcessorTest extends StorageServiceTest {
 
         ArchivalObjectDto dto = new ArchivalObjectDto(fileId, null, SIP_CHECKSUM, null, getSipStream(), ObjectState.ARCHIVED, Instant.now(), ObjectType.SIP);
         service.storeFile(path, dto, new AtomicBoolean(false));
-        service.rollbackFile(path, dto);
-        service.rollbackFile(path, dto);
+        service.rollbackFile(path, dto, Instant.now());
+        service.rollbackFile(path, dto, Instant.now());
 
         assertThat(Files.exists(path.resolve(fileId)), is(false));
         assertThat(isInState(path.resolve(fileId), ObjectState.ROLLED_BACK), is(true));
@@ -254,7 +252,7 @@ public class LocalProcessorTest extends StorageServiceTest {
         String fileId = testName.getMethodName();
         Path path = getFolderPath(fileId);
         ArchivalObjectDto dto = new ArchivalObjectDto(fileId, null, XML_CHECKSUM, null, null, ObjectState.ARCHIVED, Instant.now(), ObjectType.XML);
-        service.rollbackFile(path, dto);
+        service.rollbackFile(path, dto, Instant.now());
         assertThat(isInState(path.resolve(fileId), ObjectState.ROLLED_BACK), is(true));
     }
 
@@ -263,11 +261,11 @@ public class LocalProcessorTest extends StorageServiceTest {
     public void rollbackAipOk() throws Exception {
         String sipId = testName.getMethodName();
         String xmlId = toXmlId(sipId, 1);
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, dataSpace);
 
-        service.rollbackAip(aip, dataSpace);
+        service.rollbackAip(aip, dataSpace, Instant.now());
 
         Path path = getFolderPath(sipId);
         assertThat(Files.exists(path.resolve(sipId)), is(false));
@@ -282,10 +280,10 @@ public class LocalProcessorTest extends StorageServiceTest {
     public void rollbackXmlOk() throws Exception {
         String sipId = testName.getMethodName();
         String xmlId = toXmlId(sipId, 1);
-        AipDto aip = new AipDto("ownerId", sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
+        AipDto aip = new AipDto(getDataSpace(), sipId, getSipStream(), SIP_CHECKSUM, getXmlStream(), XML_CHECKSUM);
         AtomicBoolean rollback = new AtomicBoolean(false);
         service.storeAip(aip, rollback, dataSpace);
-        service.rollbackObject(aip.getXml(), dataSpace);
+        service.rollbackObject(aip.getXml(), dataSpace, Instant.now());
 
         Path path = getFolderPath(sipId);
 
@@ -319,7 +317,7 @@ public class LocalProcessorTest extends StorageServiceTest {
         return streamToString(new FileInputStream(fileBasePath.resolveSibling(fileBasePath.getFileName() + "." + checksumType).toFile()));
     }
 
-    private boolean isInState(Path fileBasePath, ObjectState state) throws CantParseMetadataFile, IOStorageException, FileDoesNotExistException {
+    private boolean isInState(Path fileBasePath, ObjectState state) throws CantParseMetadataFile, IOStorageException {
         ObjectMetadata metadataAtStorage = readObjectMetadata(fileBasePath.getParent(), fileBasePath.getFileName().toString());
         return state == metadataAtStorage.getState();
     }
@@ -345,7 +343,7 @@ public class LocalProcessorTest extends StorageServiceTest {
         }
 
         @Override
-        void storeFile(Path folder, ArchivalObjectDto dto, AtomicBoolean rollback) throws IOStorageException, CantParseMetadataFile, FileCorruptedAfterStoreException, FileDoesNotExistException {
+        void storeFile(Path folder, ArchivalObjectDto dto, AtomicBoolean rollback) throws IOStorageException, CantParseMetadataFile, FileCorruptedAfterStoreException {
             if (rollback.get())
                 return;
             try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(folder.resolve(dto.getStorageId()).toFile()))) {
@@ -363,7 +361,7 @@ public class LocalProcessorTest extends StorageServiceTest {
                 boolean rollbackInterruption = !verifyChecksum(new FileInputStream(folder.resolve(dto.getStorageId()).toFile()), dto.getChecksum(), rollback, storage);
                 if (rollbackInterruption)
                     return;
-                setState(folder, dto, ObjectState.ARCHIVED, false);
+                setState(folder, dto, ObjectState.ARCHIVED, Instant.now());
             } catch (IOException e) {
                 rollback.set(true);
                 throw new IOStorageException(e, storage);
@@ -378,7 +376,7 @@ public class LocalProcessorTest extends StorageServiceTest {
         }
     }
 
-    private ObjectMetadata readObjectMetadata(Path folder, String fileId) throws IOStorageException, CantParseMetadataFile, FileDoesNotExistException {
+    private ObjectMetadata readObjectMetadata(Path folder, String fileId) throws IOStorageException, CantParseMetadataFile {
         Path file = folder.resolve(fileId + ".meta");
         List<String> lines;
         try {

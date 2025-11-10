@@ -1,17 +1,14 @@
 package cz.cas.lib.arcstorage.domain.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import cz.cas.lib.arcstorage.domain.store.InstantGenerator;
 import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
 import cz.cas.lib.arcstorage.dto.Checksum;
 import cz.cas.lib.arcstorage.dto.ObjectState;
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.GenerationTime;
-import org.hibernate.annotations.GeneratorType;
 
-import jakarta.persistence.*;
 import java.time.Instant;
 
 /**
@@ -32,7 +29,9 @@ public class ArchivalObject extends DomainObject {
     })
     private Checksum checksum;
 
-    @GeneratorType(type = InstantGenerator.class, when = GenerationTime.INSERT)
+    /**
+     * intentionally not generated upon insert since timestamp may need to be generated once and marked at multiple places
+     */
     private Instant created;
 
     @Enumerated(EnumType.STRING)
@@ -51,7 +50,7 @@ public class ArchivalObject extends DomainObject {
      * subclasses should override this
      */
     public ArchivalObjectDto toDto() {
-        return new ArchivalObjectDto(id, id, checksum, getOwner(), null, state, created, ObjectType.OBJECT);
+        return new ArchivalObjectDto(id, id, checksum, getOwner().getDataSpace(), null, state, created, ObjectType.OBJECT);
     }
 
     @Override

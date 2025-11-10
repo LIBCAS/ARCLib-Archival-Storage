@@ -2,6 +2,7 @@ package cz.cas.lib.arcstorage.storage.fs;
 
 import cz.cas.lib.arcstorage.domain.entity.Storage;
 import cz.cas.lib.arcstorage.dto.ArchivalObjectDto;
+import cz.cas.lib.arcstorage.dto.ChecksumType;
 import cz.cas.lib.arcstorage.dto.ObjectState;
 import cz.cas.lib.arcstorage.dto.StorageStateDto;
 import cz.cas.lib.arcstorage.storage.StorageService;
@@ -58,17 +59,17 @@ public class ZfsStorageService implements FsAdapter {
     /**
      * Creates a new ZFS storage service.
      *
-     * @param storage     storage
+     * @param storage        storage
      * @param sshKeyFilePath path to private key used for authentication to remote server
      */
-    public ZfsStorageService(Storage storage, String rootDirPath, String poolName, String sshKeyFilePath, String sshUserName, int connectionTimeout) {
+    public ZfsStorageService(Storage storage, String rootDirPath, String poolName, String sshKeyFilePath, String sshUserName, int connectionTimeout, Map<ChecksumType, String> optimizedChecksumComputationCommands) {
         this.storage = storage;
         this.rootDirPath = rootDirPath;
         this.poolName = poolName;
-        if(isLocalhost(storage))
+        if (isLocalhost(storage))
             this.fsProcessor = new LocalFsProcessor(storage, rootDirPath);
         else {
-            this.fsProcessor = new RemoteFsProcessor(storage, rootDirPath, sshKeyFilePath, sshUserName, connectionTimeout);
+            this.fsProcessor = new RemoteFsProcessor(storage, rootDirPath, sshKeyFilePath, sshUserName, connectionTimeout, optimizedChecksumComputationCommands);
             this.sshKeyFilePath = sshKeyFilePath;
             this.sshUserName = sshUserName;
         }
@@ -86,12 +87,12 @@ public class ZfsStorageService implements FsAdapter {
         List<String> poolRawData;
         List<String> datasetRawData;
         List<String> stateAndScrubbingData;
-        if(isLocalStorage) {
+        if (isLocalStorage) {
             poolRawData = fetchDataFromLocal(poolCmd, storage);
             datasetRawData = fetchDataFromLocal(datasetCmd, storage);
             stateAndScrubbingData = fetchDataFromLocal(stateAndScrubbingCmd, storage);
         } else {
-            try(SSHClient ssh = new SSHClient()) {
+            try (SSHClient ssh = new SSHClient()) {
                 datasetCmd = "sudo " + datasetCmd;
                 poolCmd = "sudo " + poolCmd;
                 stateAndScrubbingCmd = "sudo " + stateAndScrubbingCmd;
@@ -101,7 +102,7 @@ public class ZfsStorageService implements FsAdapter {
                 datasetRawData = fetchDataFromRemote(ssh, datasetCmd, storage);
                 poolRawData = fetchDataFromRemote(ssh, poolCmd, storage);
                 stateAndScrubbingData = fetchDataFromRemote(ssh, stateAndScrubbingCmd, storage);
-            } catch(IOException e) {
+            } catch (IOException e) {
                 throw new SshException(e, storage);
             }
         }
@@ -117,15 +118,15 @@ public class ZfsStorageService implements FsAdapter {
     }
 
     private void parseAndFillStorageState(List<String> datasetListOutput, String datasetCmd, List<String> poolListOutput, String poolCmd, Map<String, Object> map) throws CmdOutputParsingException {
-        if(datasetListOutput.size() < 2)
+        if (datasetListOutput.size() < 2)
             throw new CmdOutputParsingException(datasetCmd, datasetListOutput, storage);
-        if(poolListOutput.size() < 2)
+        if (poolListOutput.size() < 2)
             throw new CmdOutputParsingException(poolCmd, poolListOutput, storage);
         Pattern poolRegex = Pattern.compile("([^\\s]+)\\s*([^\\s]+)\\s*([^\\s]+)\\s*([^\\s]+)\\s*([^\\s]+)\\s*([^\\s]+)\\s*([^\\s]+)\\s*([^\\s]+)\\s*([^\\s]+)\\s*([^\\s]+)");
         Pattern datasetRegex = Pattern.compile("([^\\s]+)\\s*([^\\s]+)\\s*([^\\s]+)\\s*([^\\s]+)\\s*([^\\s]+)");
         Matcher matcher = datasetRegex.matcher(datasetListOutput.get(1));
         boolean found = matcher.find();
-        if(found) {
+        if (found) {
             map.put("dataset", new DatasetInfoDto(matcher.group(1), matcher.group(2), matcher.group(3)));
         } else {
             throw new CmdOutputParsingException(datasetCmd, datasetListOutput, storage);
@@ -135,8 +136,8 @@ public class ZfsStorageService implements FsAdapter {
         found = poolHeaderMatcher.find() && poolInfoMatcher.find();
         Map<String, String> poolMap = new HashMap<>();
         map.put("pool", poolMap);
-        if(found) {
-            for(int i = 0; i < poolHeaderMatcher.groupCount(); i++) {
+        if (found) {
+            for (int i = 0; i < poolHeaderMatcher.groupCount(); i++) {
                 String key = poolHeaderMatcher.group(i + 1);
                 poolMap.put(key, poolInfoMatcher.group(i + 1));
             }
